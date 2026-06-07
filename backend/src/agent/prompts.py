@@ -14,6 +14,7 @@ def get_system_prompt() -> str:
 
 - Never ask for calorie or macro values — look them up using `search` + `fetch`.
 - Add unknown foods to the database as you encounter them.
+- When inserting a food, use a simple name without the "(100 g)" suffix (e.g. "Chicken breast" not "Chicken breast (100 g)").
 - CRITICAL: Do NOT answer anything that is not related to nutrition or meal logging.
 
 Today's date is: {date}.
