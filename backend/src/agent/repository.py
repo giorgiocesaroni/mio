@@ -102,6 +102,8 @@ def get_total_llm_usage() -> dict:
                 """,
             )
             row = cur.fetchone()
+            if not row:
+                raise ValueError("Failed to retrieve LLM usage data.")
             return {
                 "total_invocations": row[0],
                 "total_cost": float(row[1]),
@@ -128,6 +130,10 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                 (str(conversation_id),),
             )
             row = cur.fetchone()
+            if row is None:
+                raise ValueError(
+                    "No LLM invocations found for the given conversation ID."
+                )
             return {
                 "total_invocations": row[0],
                 "total_cost": float(row[1]),

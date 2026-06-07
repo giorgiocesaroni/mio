@@ -59,7 +59,7 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "tool_call") {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Cog className="size-4" /> <P className="italic">{step.name}</P>
+        <Cog className="size-4" /> <P className="font-serif">{step.name}...</P>
       </div>
     );
   }

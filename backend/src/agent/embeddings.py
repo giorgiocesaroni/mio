@@ -1,13 +1,13 @@
 from google.genai import Client, types
 
-_client = Client()
-_EMBEDDING_MODEL = "gemini-embedding-2"
-
 
 def generate_embedding(text: str) -> list[float]:
-    result = _client.models.embed_content(
-        model=_EMBEDDING_MODEL,
+    client = Client()
+    result = client.models.embed_content(
+        model="gemini-embedding-2",
         contents=text,
         config=types.EmbedContentConfig(output_dimensionality=768),
     )
+    if not result.embeddings or not result.embeddings[0].values:
+        raise ValueError("No embeddings returned from the API.")
     return result.embeddings[0].values

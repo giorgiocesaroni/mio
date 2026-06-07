@@ -3,3 +3,5 @@
 *.backup
 *.code-workspace
 .env
+.venv
+.vscode
