@@ -6,7 +6,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
 export const Card = ({ className, children, ...props }: CardProps) => (
   <div
     className={twMerge(
-      "bg-muted-background border border-border p-4 rounded-2xl",
+      "bg-muted-background border border-muted-background p-4 rounded-2xl",
       className,
     )}
     {...props}

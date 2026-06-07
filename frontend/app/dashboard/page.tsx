@@ -74,7 +74,7 @@ function DailyFoodLogsWithFoods() {
   return (
     <div className="grid gap-4">
       {dailyFoodLogsView?.map((log) => (
-        <Card key={log.log_id} className="overflow-auto">
+        <Card key={log.log_id} className="overflow-auto grid gap-2">
           <div className="flex justify-between items-center gap-4">
             <P className="truncate text-foreground font-medium">
               {log.food_name}
@@ -83,7 +83,7 @@ function DailyFoodLogsWithFoods() {
               {new Date(log.log_created_at!).toLocaleTimeString()}
             </P>
           </div>
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-4 items-center text-sm">
             <P>{log.log_quantity_g} g</P>
             <P>
               {(
@@ -91,6 +91,30 @@ function DailyFoodLogsWithFoods() {
                 ((log.food_calories_kcal ?? 0) / 100)
               ).toFixed()}{" "}
               Kcal
+            </P>
+            <P className="">
+              P{" "}
+              {(
+                (log.log_quantity_g ?? 0) *
+                ((log.food_protein_g ?? 0) / 100)
+              ).toFixed()}{" "}
+              g
+            </P>
+            <P className="">
+              C{" "}
+              {(
+                (log.log_quantity_g ?? 0) *
+                ((log.food_carbs_g ?? 0) / 100)
+              ).toFixed()}{" "}
+              g
+            </P>
+            <P className="">
+              F{" "}
+              {(
+                (log.log_quantity_g ?? 0) *
+                ((log.food_fat_g ?? 0) / 100)
+              ).toFixed()}{" "}
+              g
             </P>
           </div>
         </Card>
