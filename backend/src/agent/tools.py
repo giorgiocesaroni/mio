@@ -143,8 +143,8 @@ insert_food_declaration = models.FunctionDeclaration(
 
 def insert_food_tool(
     name: str, protein_g: int, carbs_g: int, fat_g: int, calories_kcal: int
-) -> None:
-    repository.insert_food(
+) -> str:
+    food_id = repository.insert_food(
         models.InsertFoodInput(
             name=name,
             protein_g=protein_g,
@@ -153,6 +153,7 @@ def insert_food_tool(
             calories_kcal=calories_kcal,
         )
     )
+    return str(food_id)
 
 
 update_food_declaration = models.FunctionDeclaration(

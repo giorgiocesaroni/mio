@@ -76,8 +76,7 @@ def _get_tool_response(tool_call: models.FunctionCall) -> models.FunctionRespons
                     "food": tools.get_food_by_id_tool(tool_call.args["food_id"])
                 }
             case "insert_food":
-                tools.insert_food_tool(**tool_call.args)
-                response = {"success": True}
+                response = {"food_id": tools.insert_food_tool(**tool_call.args)}
             case "update_food":
                 tools.update_food_tool(**tool_call.args)
                 response = {"success": True}

@@ -224,7 +224,7 @@ def get_food_by_id(food_id: UUID) -> Optional[models.Food]:
             return None
 
 
-def insert_food(food: models.InsertFoodInput) -> None:
+def insert_food(food: models.InsertFoodInput) -> UUID:
     embedding = embeddings.generate_embedding(food.name)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
@@ -232,6 +232,7 @@ def insert_food(food: models.InsertFoodInput) -> None:
                 """
                 INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, embedding)
                 VALUES (%s, %s, %s, %s, %s, %s::vector)
+                RETURNING id
                 """,
                 (
                     food.name,
@@ -242,6 +243,10 @@ def insert_food(food: models.InsertFoodInput) -> None:
                     _embedding_to_str(embedding),
                 ),
             )
+            row = cur.fetchone()
+            if row is None:
+                raise Exception("Failed to insert food: no ID returned.")
+            return row[0]
 
 
 def update_food(food: models.UpdateFoodInput) -> None:
