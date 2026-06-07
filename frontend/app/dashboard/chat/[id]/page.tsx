@@ -7,7 +7,7 @@ import { ArrowLeft, Cog } from "lucide-react";
 import { Button } from "@/app/components/button";
 import { ChatEditor } from "@/app/components/chat-editor";
 import { Card } from "@/app/components/card";
-import { P } from "@/app/components/typography";
+import { H1, P } from "@/app/components/typography";
 
 type ToolCallStep = {
   type: "tool_call";
@@ -28,6 +28,13 @@ type UserMessageStep = {
 };
 
 type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep;
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning.";
+  if (hour < 18) return "Good afternoon.";
+  return "Good evening.";
+}
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
@@ -262,11 +269,27 @@ export default function Home() {
         />
       </header>
 
-      <div className="flex-1 grid gap-4 p-4 content-start">
-        {steps.map((step, i) => (
-          <StepDisplay key={i} step={step} />
-        ))}
-        <div ref={bottomRef} />
+      <div
+        className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid gap-4 p-4 content-start"}`}
+      >
+        {steps.length === 0 ? (
+          <H1 className="md:text-2xl text-2xl text-muted-foreground">
+            {getGreeting()}
+          </H1>
+        ) : (
+          steps.map((step, i) => <StepDisplay key={i} step={step} />)
+        )}
+        {steps.length > 0 && (
+          <div
+            ref={bottomRef}
+            className={
+              "flex transition-colors duration-200 size-4 rounded-full" +
+              (isLoading
+                ? " bg-red-500 animate-pulse"
+                : " bg-border animate-none")
+            }
+          ></div>
+        )}
       </div>
 
       {/* <input

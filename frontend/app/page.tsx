@@ -2,6 +2,7 @@
 
 import { Brain, Code, Globe, Heart, Key } from "lucide-react";
 import { H1, P } from "./components/typography";
+import { Logo } from "./components/logo";
 import {
   Card,
   CardDescription,
@@ -16,9 +17,7 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-5xl font-sans md:p-12 p-6 grid content-center gap-16 min-h-screen">
       <section className="flex flex-col gap-8 items-center text-center">
-        <div className="border rounded-2xl aspect-square md:size-18 size-14 flex items-center justify-center bg-red-500 text-background-alt">
-          <p className="md:text-5xl text-4xl font-serif">m</p>
-        </div>
+        <Logo className="bg-red-500" />
         <H1>Effortless food tracking.</H1>
         <P className="max-w-lg md:text-lg">
           With Mio, you can easily track your food intake with voice, text, and
