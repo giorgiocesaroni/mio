@@ -57,11 +57,12 @@ function MacroCard({
   return (
     <button type="button" onClick={onClick} className="block text-left">
       <Card className="cursor-pointer">
-        <CardDescription>{label}</CardDescription>
+        <CardDescription>
+          {label} {suffix && ` ${suffix}`}
+        </CardDescription>
         <CardHeader>
           <CardTitle>
             {displayValue} {unit}
-            {suffix && ` ${suffix}`}
           </CardTitle>
         </CardHeader>
       </Card>
