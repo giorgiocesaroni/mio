@@ -4,12 +4,12 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `do
 
 ## Repository Structure
 
-| Directory   | Notes                             | Core Technologies  |
-| ----------- | --------------------------------- | ------------------ |
-| `frontend/` | The frontend of the application.  | Next.js            |
-| `backend/`  | The backend of the application.   | Python             |
-| `docs/`     | The documentation of the project. |                    |
-| `database/` | Database views and migrations.    | Postgres, Supabase |
+| Directory   | Notes                                   | Core Technologies  |
+| ----------- | --------------------------------------- | ------------------ |
+| `frontend/` | The frontend of the application.        | Next.js            |
+| `backend/`  | The backend of the application.         | Python             |
+| `docs/`     | The documentation of the project.       |                    |
+| `database/` | Database schema, views, and migrations. | Postgres, Supabase |
 
 ## `backend/`
 
