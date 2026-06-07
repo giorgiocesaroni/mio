@@ -247,7 +247,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-dvh">
+    <div className="flex flex-col min-h-screen">
       <header className="p-4 sticky top-0">
         <div className="flex items-center gap-2">
           <Button
@@ -269,7 +269,7 @@ export default function Home() {
         <div ref={bottomRef} />
       </div>
 
-      <input
+      {/* <input
         ref={imageInputRef}
         type="file"
         accept="image/*"
@@ -279,7 +279,7 @@ export default function Home() {
           if (file) handleImageSelect(file);
           e.target.value = "";
         }}
-      />
+      /> */}
 
       <div className="p-4 sticky bottom-0">
         <ChatEditor

@@ -5,6 +5,20 @@ import { Card } from "./card";
 import { Button } from "./button";
 import { ArrowUp, Mic, Plus } from "lucide-react";
 
+export const ChatChip = ({
+  className,
+  children,
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <Button
+    className={twMerge(
+      "rounded-full text-sm px-3 border-muted-background bg-muted-background font-normal",
+      className,
+    )}
+  >
+    {children}
+  </Button>
+);
+
 interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   placeholder?: string;
   text: string;
@@ -29,8 +43,9 @@ export const ChatEditor = ({
         className,
       )}
     >
-      <input
-        className="flex-1 outline-none p-2 h-fit"
+      <textarea
+        autoFocus={true}
+        className="flex-1 outline-none p-2 field-sizing-content resize-none max-h-[50vh]"
         placeholder={placeholder}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -61,17 +76,3 @@ export const ChatEditor = ({
     </Card>
   );
 };
-
-export const ChatChip = ({
-  className,
-  children,
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <Button
-    className={twMerge(
-      "rounded-full text-sm px-3 border-muted-background bg-muted-background font-normal",
-      className,
-    )}
-  >
-    {children}
-  </Button>
-);

@@ -42,13 +42,9 @@ export function MessageContent({ text }: { text: string }) {
           </Card>
         ),
         th: ({ children }) => (
-          <th className="px-2 py-1 font-semibold text-left font-serif">
-            {children}
-          </th>
+          <th className="px-2 py-1 font-semibold text-left">{children}</th>
         ),
-        td: ({ children }) => (
-          <td className="px-2 py-1 font-serif">{children}</td>
-        ),
+        td: ({ children }) => <td className="px-2 py-1">{children}</td>,
       }}
     >
       {text}

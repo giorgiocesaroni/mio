@@ -79,7 +79,7 @@ function DailyFoodLogsWithFoods() {
             <P className="truncate text-foreground font-medium">
               {log.food_name}
             </P>
-            <P className="whitespace-nowrap">
+            <P className="whitespace-nowrap text-sm">
               {new Date(log.log_created_at!).toLocaleTimeString()}
             </P>
           </div>
