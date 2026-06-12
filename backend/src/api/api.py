@@ -6,11 +6,12 @@ import base64
 import json
 import os
 from uuid import UUID
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
+import supabase
 
 app = FastAPI()
 
@@ -22,6 +23,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+supabase_client = supabase.create_client(
+    os.getenv("SUPABASE_URL", ""),
+    os.getenv("SUPABASE_KEY", ""),
+)
+
+
+def _get_user_id_from_jwt(request: Request) -> str:
+    """Retrives the user from the JWT."""
+
+    jwt = request.headers.get("Authorization")
+
+    if jwt is None:
+        raise HTTPException(status_code=403, detail="Missing JWT token")
+
+    try:
+        _, token = jwt.split(" ")
+        response = supabase_client.auth.get_user(token)
+        if response is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid JWT token",
+            )
+        return response.user.id
+    except Exception as e:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid JWT token",
+        )
 
 
 def _parse_message(msg: dict) -> models.MessageType:
@@ -64,7 +94,12 @@ def _parse_message(msg: dict) -> models.MessageType:
 
 
 @app.post("/chat")
-async def chat_endpoint(request: Request):
+async def chat_endpoint(
+    request: Request,
+    user_id: str = Depends(
+        _get_user_id_from_jwt,
+    ),
+):
     body = await request.json()
     inp = models.RunAgentInput(
         conversation_id=body["conversation_id"],
@@ -90,7 +125,12 @@ async def chat_endpoint(request: Request):
 
 
 @app.get("/conversations/{conversation_id}/messages")
-async def get_conversation_messages(conversation_id: UUID):
+async def get_conversation_messages(
+    conversation_id: UUID,
+    user_id: str = Depends(
+        _get_user_id_from_jwt,
+    ),
+):
     steps = service.get_conversation_history(conversation_id)
     return [step.model_dump() for step in steps]
 
