@@ -8,26 +8,11 @@ import { Button } from "@/app/components/button";
 import { ChatEditor } from "@/app/components/chat-editor";
 import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
-
-type ToolCallStep = {
-  type: "tool_call";
-  name: string;
-  args: Record<string, unknown>;
-};
-
-type MessageStep = {
-  type: "message";
-  text: string;
-};
-
-type UserMessageStep = {
-  type: "user_message";
-  text: string;
-  data?: string;
-  mime_type?: string;
-};
-
-type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep;
+import {
+  type RunAgentStep,
+  getConversationMessages,
+  streamChat,
+} from "@/repository/backend/queries";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -77,20 +62,6 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   );
 }
 
-function parseStep(data: unknown): RunAgentStep | null {
-  if (typeof data === "string") {
-    try {
-      return JSON.parse(data);
-    } catch {
-      return null;
-    }
-  }
-  if (typeof data === "object" && data !== null && "type" in data) {
-    return data as RunAgentStep;
-  }
-  return null;
-}
-
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -124,45 +95,9 @@ export default function Home() {
       abortRef.current = controller;
 
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/chat`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              conversation_id: conversationId,
-              message: payload,
-            }),
-            signal: controller.signal,
-          },
+        await streamChat(conversationId, payload, controller.signal, (step) =>
+          setSteps((prev) => [...prev, step]),
         );
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            if (!part.startsWith("data: ")) continue;
-            try {
-              const step = parseStep(JSON.parse(part.slice(6)));
-              if (step && step.type !== "user_message") {
-                setSteps((prev) => [...prev, step]);
-              }
-            } catch {
-              // skip malformed events
-            }
-          }
-        }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Stream error:", err);
@@ -176,14 +111,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!conversationId) return;
-    fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/conversations/${conversationId}/messages`,
-    )
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch history");
-        return res.json();
-      })
-      .then((data: RunAgentStep[]) => setSteps(data))
+    getConversationMessages(conversationId)
+      .then((data) => setSteps(data))
       .catch((err) => console.error("Failed to load history:", err));
   }, [conversationId]);
 

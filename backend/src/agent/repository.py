@@ -26,6 +26,7 @@ db_connection_params = {
 
 def get_messages_by_conversation_id(
     conversation_id: UUID,
+    user_id: str,
 ) -> list[models.Content]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
@@ -33,56 +34,58 @@ def get_messages_by_conversation_id(
                 """
                 SELECT raw_content
                 FROM messages
-                WHERE conversation_id = %s
+                WHERE conversation_id = %s AND user_id = %s
                 ORDER BY created_at ASC
                 """,
-                (conversation_id,),
+                (conversation_id, user_id),
             )
             rows = cur.fetchall()
             return [models.Content.model_validate(row[0]) for row in rows]
 
 
-def create_conversation_if_not_exists(conversation_id: UUID) -> None:
+def create_conversation_if_not_exists(conversation_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO conversations (id)
-                VALUES (%s)
+                INSERT INTO conversations (id, user_id)
+                VALUES (%s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                (conversation_id,),
+                (conversation_id, user_id),
             )
 
 
-def insert_conversation_message(conversation_id: UUID, content: models.Content) -> None:
+def insert_conversation_message(conversation_id: UUID, content: models.Content, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO messages (conversation_id, raw_content)
-                VALUES (%s, %s)
+                INSERT INTO messages (conversation_id, raw_content, user_id)
+                VALUES (%s, %s, %s)
                 """,
-                (conversation_id, content.model_dump_json()),
+                (conversation_id, content.model_dump_json(), user_id),
             )
 
 
 def insert_llm_invocation(
     total_cost: float,
     raw_usage_metadata: dict,
+    user_id: str,
     conversation_id: Optional[UUID] = None,
 ) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO llm_invocations (total_cost, raw_usage_metadata, conversation_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO llm_invocations (total_cost, raw_usage_metadata, conversation_id, user_id)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (
                     total_cost,
                     json.dumps(raw_usage_metadata),
                     str(conversation_id) if conversation_id else None,
+                    user_id,
                 ),
             )
 
@@ -150,7 +153,7 @@ def _embedding_to_str(embedding: list[float]) -> str:
 # Foods
 
 
-def search_foods(query: str, limit: int = 10) -> list[models.Food]:
+def search_foods(query: str, limit: int = 10, user_id: str = "") -> list[models.Food]:
     embedding = embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
@@ -158,11 +161,11 @@ def search_foods(query: str, limit: int = 10) -> list[models.Food]:
                 """
                 SELECT id, name, protein_g, carbs_g, fat_g, calories_kcal
                 FROM foods
-                WHERE embedding IS NOT NULL
+                WHERE embedding IS NOT NULL AND user_id = %s
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (_embedding_to_str(embedding), limit),
+                (user_id, _embedding_to_str(embedding), limit),
             )
             rows = cur.fetchall()
             return [
@@ -178,14 +181,15 @@ def search_foods(query: str, limit: int = 10) -> list[models.Food]:
             ]
 
 
-def get_all_foods() -> list[models.Food]:
+def get_all_foods(user_id: str) -> list[models.Food]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, name, protein_g, carbs_g, fat_g, calories_kcal
                 FROM foods
+                WHERE user_id = %s
                 ORDER BY name ASC
-                """)
+                """, (user_id,))
             rows = cur.fetchall()
             return [
                 models.Food(
@@ -200,16 +204,16 @@ def get_all_foods() -> list[models.Food]:
             ]
 
 
-def get_food_by_id(food_id: UUID) -> Optional[models.Food]:
+def get_food_by_id(food_id: UUID, user_id: str) -> Optional[models.Food]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, name, protein_g, carbs_g, fat_g, calories_kcal
                 FROM foods
-                WHERE id = %s
+                WHERE id = %s AND user_id = %s
                 """,
-                (food_id,),
+                (food_id, user_id),
             )
             row = cur.fetchone()
             if row:
@@ -224,14 +228,14 @@ def get_food_by_id(food_id: UUID) -> Optional[models.Food]:
             return None
 
 
-def insert_food(food: models.InsertFoodInput) -> UUID:
+def insert_food(food: models.InsertFoodInput, user_id: str) -> UUID:
     embedding = embeddings.generate_embedding(food.name)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, embedding)
-                VALUES (%s, %s, %s, %s, %s, %s::vector)
+                INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, embedding, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s::vector, %s)
                 RETURNING id
                 """,
                 (
@@ -241,6 +245,7 @@ def insert_food(food: models.InsertFoodInput) -> UUID:
                     food.fat_g,
                     food.calories_kcal,
                     _embedding_to_str(embedding),
+                    user_id,
                 ),
             )
             row = cur.fetchone()
@@ -249,7 +254,7 @@ def insert_food(food: models.InsertFoodInput) -> UUID:
             return row[0]
 
 
-def update_food(food: models.UpdateFoodInput) -> None:
+def update_food(food: models.UpdateFoodInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -260,7 +265,7 @@ def update_food(food: models.UpdateFoodInput) -> None:
                     carbs_g = COALESCE(%s, carbs_g),
                     fat_g = COALESCE(%s, fat_g),
                     calories_kcal = COALESCE(%s, calories_kcal)
-                WHERE id = %s
+                WHERE id = %s AND user_id = %s
                 """,
                 (
                     food.name,
@@ -269,6 +274,7 @@ def update_food(food: models.UpdateFoodInput) -> None:
                     food.fat_g,
                     food.calories_kcal,
                     food.id,
+                    user_id,
                 ),
             )
     if food.name is not None:
@@ -276,27 +282,27 @@ def update_food(food: models.UpdateFoodInput) -> None:
         with psycopg.connect(**db_connection_params) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE foods SET embedding = %s::vector WHERE id = %s",
-                    (_embedding_to_str(new_embedding), food.id),
+                    "UPDATE foods SET embedding = %s::vector WHERE id = %s AND user_id = %s",
+                    (_embedding_to_str(new_embedding), food.id, user_id),
                 )
 
 
-def delete_food(food_id: UUID) -> None:
+def delete_food(food_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 DELETE FROM foods
-                WHERE id = %s
+                WHERE id = %s AND user_id = %s
                 """,
-                (food_id,),
+                (food_id, user_id),
             )
 
 
 # Food Logs
 
 
-def get_food_logs_by_day(day: str) -> list[models.FoodLogWithFood]:
+def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -306,10 +312,10 @@ def get_food_logs_by_day(day: str) -> list[models.FoodLogWithFood]:
                     f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal
                 FROM food_logs fl
                 JOIN foods f ON f.id = fl.food_id
-                WHERE DATE(fl.created_at) = %s
+                WHERE DATE(fl.created_at) = %s AND fl.user_id = %s
                 ORDER BY fl.created_at ASC
                 """,
-                (day,),
+                (day, user_id),
             )
             return [
                 models.FoodLogWithFood(
@@ -329,19 +335,19 @@ def get_food_logs_by_day(day: str) -> list[models.FoodLogWithFood]:
             ]
 
 
-def insert_food_log(food_log: models.InsertFoodLogInput) -> None:
+def insert_food_log(food_log: models.InsertFoodLogInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO food_logs (food_id, quantity_g)
-                VALUES (%s, %s)
+                INSERT INTO food_logs (food_id, quantity_g, user_id)
+                VALUES (%s, %s, %s)
                 """,
-                (str(food_log.food_id), food_log.quantity_g),
+                (str(food_log.food_id), food_log.quantity_g, user_id),
             )
 
 
-def update_food_log(input: models.UpdateFoodLogInput) -> None:
+def update_food_log(input: models.UpdateFoodLogInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -349,52 +355,55 @@ def update_food_log(input: models.UpdateFoodLogInput) -> None:
                 UPDATE food_logs
                 SET food_id = COALESCE(%s, food_id),
                     quantity_g = COALESCE(%s, quantity_g)
-                WHERE id = %s
+                WHERE id = %s AND user_id = %s
                 """,
                 (
                     str(input.food_id) if input.food_id is not None else None,
                     input.quantity_g,
                     input.id,
+                    user_id,
                 ),
             )
 
 
-def delete_food_log(food_log_id: UUID) -> None:
+def delete_food_log(food_log_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 DELETE FROM food_logs
-                WHERE id = %s
+                WHERE id = %s AND user_id = %s
                 """,
-                (str(food_log_id),),
+                (str(food_log_id), user_id),
             )
 
 
 # Goals
 
 
-def get_current_goal() -> Optional[models.Goal]:
+def get_current_goal(user_id: str) -> Optional[models.Goal]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=class_row(models.Goal)) as cur:
             cur.execute(
                 """
                 SELECT id, created_at, weight_kg, calories_kcal, protein_g, carbs_g, fat_g, goal
                 FROM goals
+                WHERE user_id = %s
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
+                (user_id,),
             )
             return cur.fetchone()
 
 
-def insert_goal(goal: models.InsertGoalInput) -> None:
+def insert_goal(goal: models.InsertGoalInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO goals (weight_kg, calories_kcal, protein_g, carbs_g, fat_g, goal)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO goals (weight_kg, calories_kcal, protein_g, carbs_g, fat_g, goal, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     goal.weight_kg,
@@ -403,6 +412,7 @@ def insert_goal(goal: models.InsertGoalInput) -> None:
                     goal.carbs_g,
                     goal.fat_g,
                     goal.goal,
+                    user_id,
                 ),
             )
 
@@ -410,27 +420,29 @@ def insert_goal(goal: models.InsertGoalInput) -> None:
 # Measurements
 
 
-def get_latest_measurement() -> Optional[models.Measurement]:
+def get_latest_measurement(user_id: str) -> Optional[models.Measurement]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=class_row(models.Measurement)) as cur:
             cur.execute(
                 """
                 SELECT id, weight_kg, created_at
                 FROM measurements
+                WHERE user_id = %s
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
+                (user_id,),
             )
             return cur.fetchone()
 
 
-def insert_measurement(measurement: models.InsertMeasurementInput) -> None:
+def insert_measurement(measurement: models.InsertMeasurementInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO measurements (weight_kg)
-                VALUES (%s)
+                INSERT INTO measurements (weight_kg, user_id)
+                VALUES (%s, %s)
                 """,
-                (measurement.weight_kg,),
+                (measurement.weight_kg, user_id),
             )

@@ -70,8 +70,8 @@ search_foods_declaration = models.FunctionDeclaration(
 )
 
 
-def search_foods_tool(query: str, limit: int = 10) -> list[dict]:
-    foods = repository.search_foods(query, limit)
+def search_foods_tool(user_id: str, query: str, limit: int = 10) -> list[dict]:
+    foods = repository.search_foods(query, limit, user_id)
     return [f.model_dump() for f in foods]
 
 
@@ -88,8 +88,8 @@ get_all_foods_declaration = models.FunctionDeclaration(
 )
 
 
-def get_all_foods_tool() -> list[dict]:
-    foods = repository.get_all_foods()
+def get_all_foods_tool(user_id: str) -> list[dict]:
+    foods = repository.get_all_foods(user_id)
     return [f.model_dump() for f in foods]
 
 
@@ -110,8 +110,8 @@ get_food_by_id_declaration = models.FunctionDeclaration(
 )
 
 
-def get_food_by_id_tool(food_id: UUID) -> dict | None:
-    food = repository.get_food_by_id(food_id)
+def get_food_by_id_tool(user_id: str, food_id: UUID) -> dict | None:
+    food = repository.get_food_by_id(food_id, user_id)
     return food.model_dump() if food else None
 
 
@@ -142,7 +142,7 @@ insert_food_declaration = models.FunctionDeclaration(
 
 
 def insert_food_tool(
-    name: str, protein_g: int, carbs_g: int, fat_g: int, calories_kcal: int
+    user_id: str, name: str, protein_g: int, carbs_g: int, fat_g: int, calories_kcal: int
 ) -> str:
     food_id = repository.insert_food(
         models.InsertFoodInput(
@@ -151,7 +151,8 @@ def insert_food_tool(
             carbs_g=carbs_g,
             fat_g=fat_g,
             calories_kcal=calories_kcal,
-        )
+        ),
+        user_id,
     )
     return str(food_id)
 
@@ -182,6 +183,7 @@ update_food_declaration = models.FunctionDeclaration(
 
 
 def update_food_tool(
+    user_id: str,
     id: UUID,
     name: str | None = None,
     protein_g: int | None = None,
@@ -197,7 +199,8 @@ def update_food_tool(
             carbs_g=carbs_g,
             fat_g=fat_g,
             calories_kcal=calories_kcal,
-        )
+        ),
+        user_id,
     )
 
 
@@ -218,8 +221,8 @@ delete_food_declaration = models.FunctionDeclaration(
 )
 
 
-def delete_food_tool(food_id: UUID) -> None:
-    repository.delete_food(food_id)
+def delete_food_tool(user_id: str, food_id: UUID) -> None:
+    repository.delete_food(food_id, user_id)
 
 
 # Food Logs
@@ -240,10 +243,10 @@ get_daily_summary_declaration = models.FunctionDeclaration(
 )
 
 
-def get_daily_summary_tool(day: str) -> dict:
-    logs = repository.get_food_logs_by_day(day)
-    latest_measurement = repository.get_latest_measurement()
-    current_goal = repository.get_current_goal()
+def get_daily_summary_tool(user_id: str, day: str) -> dict:
+    logs = repository.get_food_logs_by_day(day, user_id)
+    latest_measurement = repository.get_latest_measurement(user_id)
+    current_goal = repository.get_current_goal(user_id)
     return {
         "logs": [log.model_dump() for log in logs],
         "latest_measurement": latest_measurement.model_dump() if latest_measurement else None,
@@ -272,9 +275,10 @@ insert_food_log_declaration = models.FunctionDeclaration(
 )
 
 
-def insert_food_log_tool(food_id: UUID, quantity_g: int) -> None:
+def insert_food_log_tool(user_id: str, food_id: UUID, quantity_g: int) -> None:
     repository.insert_food_log(
-        models.InsertFoodLogInput(food_id=food_id, quantity_g=quantity_g)
+        models.InsertFoodLogInput(food_id=food_id, quantity_g=quantity_g),
+        user_id,
     )
 
 
@@ -302,10 +306,11 @@ update_food_log_declaration = models.FunctionDeclaration(
 
 
 def update_food_log_tool(
-    id: UUID, food_id: Optional[UUID] = None, quantity_g: int | None = None
+    user_id: str, id: UUID, food_id: Optional[UUID] = None, quantity_g: int | None = None
 ) -> None:
     repository.update_food_log(
-        models.UpdateFoodLogInput(id=id, food_id=food_id, quantity_g=quantity_g)
+        models.UpdateFoodLogInput(id=id, food_id=food_id, quantity_g=quantity_g),
+        user_id,
     )
 
 
@@ -326,8 +331,8 @@ delete_food_log_declaration = models.FunctionDeclaration(
 )
 
 
-def delete_food_log_tool(food_log_id: UUID) -> None:
-    repository.delete_food_log(food_log_id)
+def delete_food_log_tool(user_id: str, food_log_id: UUID) -> None:
+    repository.delete_food_log(food_log_id, user_id)
 
 
 # Goals
@@ -343,8 +348,8 @@ get_current_goal_declaration = models.FunctionDeclaration(
 )
 
 
-def get_current_goal_tool() -> dict | None:
-    goal = repository.get_current_goal()
+def get_current_goal_tool(user_id: str) -> dict | None:
+    goal = repository.get_current_goal(user_id)
     return goal.model_dump() if goal else None
 
 
@@ -390,6 +395,7 @@ insert_goal_declaration = models.FunctionDeclaration(
 
 
 def insert_goal_tool(
+    user_id: str,
     weight_kg: int,
     calories_kcal: int,
     protein_g: int,
@@ -405,7 +411,8 @@ def insert_goal_tool(
             carbs_g=carbs_g,
             fat_g=fat_g,
             goal=goal,  # type: ignore
-        )
+        ),
+        user_id,
     )
 
 
@@ -422,8 +429,8 @@ get_latest_measurements_declaration = models.FunctionDeclaration(
 )
 
 
-def get_latest_measurements_tool() -> dict | None:
-    measurement = repository.get_latest_measurement()
+def get_latest_measurements_tool(user_id: str) -> dict | None:
+    measurement = repository.get_latest_measurement(user_id)
     return measurement.model_dump() if measurement else None
 
 
@@ -443,7 +450,8 @@ insert_measurement_declaration = models.FunctionDeclaration(
 )
 
 
-def insert_measurement_tool(weight_kg: float) -> None:
+def insert_measurement_tool(user_id: str, weight_kg: float) -> None:
     repository.insert_measurement(
-        models.InsertMeasurementInput(weight_kg=weight_kg)
+        models.InsertMeasurementInput(weight_kg=weight_kg),
+        user_id,
     )

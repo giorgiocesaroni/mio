@@ -1,10 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "./client";
 import { Database } from "./types";
 
-const supabase = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-);
+export const supabase = createClient<Database>();
 
 export const getDailyMacrosView = async () => {
   const { data, error } = await supabase

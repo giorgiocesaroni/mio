@@ -103,6 +103,7 @@ async def chat_endpoint(
     body = await request.json()
     inp = models.RunAgentInput(
         conversation_id=body["conversation_id"],
+        user_id=user_id,
         message=_parse_message(body["message"]),
     )
 
@@ -131,7 +132,7 @@ async def get_conversation_messages(
         _get_user_id_from_jwt,
     ),
 ):
-    steps = service.get_conversation_history(conversation_id)
+    steps = service.get_conversation_history(conversation_id, user_id)
     return [step.model_dump() for step in steps]
 
 

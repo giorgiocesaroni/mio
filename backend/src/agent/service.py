@@ -26,20 +26,21 @@ async def run_agent(
     input: models.RunAgentInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
     user_input = _convert_input(input.message)
-    repository.create_conversation_if_not_exists(input.conversation_id)
-    repository.insert_conversation_message(input.conversation_id, user_input)
-    contents = repository.get_messages_by_conversation_id(input.conversation_id)
+    repository.create_conversation_if_not_exists(input.conversation_id, input.user_id)
+    repository.insert_conversation_message(input.conversation_id, user_input, input.user_id)
+    contents = repository.get_messages_by_conversation_id(input.conversation_id, input.user_id)
     system_prompt = prompts.get_system_prompt()
     if input.channel_instructions:
         system_prompt = f"{system_prompt}\n\n{input.channel_instructions}"
 
     agent_input = models.AgentInput(
         conversation_id=input.conversation_id,
+        user_id=input.user_id,
         system_prompt=system_prompt,
         contents=[*contents, user_input],
     )
     async for content in agent(agent_input):
-        repository.insert_conversation_message(input.conversation_id, content)
+        repository.insert_conversation_message(input.conversation_id, content, input.user_id)
         if content.role == "model" and content.parts:
             for part in content.parts:
                 if part.function_call and part.function_call.name:
@@ -63,8 +64,8 @@ def get_conversation_usage(conversation_id: UUID) -> dict:
     return repository.get_conversation_llm_usage(conversation_id)
 
 
-def get_conversation_history(conversation_id: UUID) -> list[models.RunAgentStep]:
-    contents = repository.get_messages_by_conversation_id(conversation_id)
+def get_conversation_history(conversation_id: UUID, user_id: str) -> list[models.RunAgentStep]:
+    contents = repository.get_messages_by_conversation_id(conversation_id, user_id)
     steps: list[models.RunAgentStep] = []
     for content in contents:
         if content.role == "user" and content.parts:

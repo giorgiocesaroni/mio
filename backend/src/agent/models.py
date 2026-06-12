@@ -29,6 +29,7 @@ ThinkingLevel = google.genai.types.ThinkingLevel
 
 class AgentInput(BaseModel):
     conversation_id: UUID
+    user_id: str
     system_prompt: str
     contents: list[Content]
 
@@ -74,6 +75,7 @@ MessageType = RunAgentUserMessage
 
 class RunAgentInput(BaseModel):
     conversation_id: UUID
+    user_id: str
     message: MessageType
     channel_instructions: Optional[str] = None
 

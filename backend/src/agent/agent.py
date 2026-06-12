@@ -57,7 +57,7 @@ async def _invoke_model(
     raise Exception("Failed to invoke model after 3 attempts.")
 
 
-def _get_tool_response(tool_call: models.FunctionCall) -> models.FunctionResponse:
+def _get_tool_response(tool_call: models.FunctionCall, user_id: str) -> models.FunctionResponse:
     if tool_call.args is None:
         raise Exception("Tool call arguments are missing.")
     response = None
@@ -68,41 +68,41 @@ def _get_tool_response(tool_call: models.FunctionCall) -> models.FunctionRespons
             case "fetch":
                 response = {"results": tools.fetch_tool(**tool_call.args)}
             case "search_foods":
-                response = {"foods": tools.search_foods_tool(**tool_call.args)}
+                response = {"foods": tools.search_foods_tool(user_id=user_id, **tool_call.args)}
             case "get_all_foods":
-                response = {"foods": tools.get_all_foods_tool()}
+                response = {"foods": tools.get_all_foods_tool(user_id=user_id)}
             case "get_food_by_id":
                 response = {
-                    "food": tools.get_food_by_id_tool(tool_call.args["food_id"])
+                    "food": tools.get_food_by_id_tool(user_id=user_id, food_id=tool_call.args["food_id"])
                 }
             case "insert_food":
-                response = {"food_id": tools.insert_food_tool(**tool_call.args)}
+                response = {"food_id": tools.insert_food_tool(user_id=user_id, **tool_call.args)}
             case "update_food":
-                tools.update_food_tool(**tool_call.args)
+                tools.update_food_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "delete_food":
-                tools.delete_food_tool(tool_call.args["food_id"])
+                tools.delete_food_tool(user_id=user_id, food_id=tool_call.args["food_id"])
                 response = {"success": True}
             case "get_daily_summary":
-                response = tools.get_daily_summary_tool(tool_call.args["day"])
+                response = tools.get_daily_summary_tool(user_id=user_id, day=tool_call.args["day"])
             case "insert_food_log":
-                tools.insert_food_log_tool(**tool_call.args)
+                tools.insert_food_log_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "update_food_log":
-                tools.update_food_log_tool(**tool_call.args)
+                tools.update_food_log_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "delete_food_log":
-                tools.delete_food_log_tool(tool_call.args["food_log_id"])
+                tools.delete_food_log_tool(user_id=user_id, food_log_id=tool_call.args["food_log_id"])
                 response = {"success": True}
             case "get_current_goal":
-                response = {"goal": tools.get_current_goal_tool()}
+                response = {"goal": tools.get_current_goal_tool(user_id=user_id)}
             case "insert_goal":
-                tools.insert_goal_tool(**tool_call.args)
+                tools.insert_goal_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "get_latest_measurements":
-                response = {"latest_measurement": tools.get_latest_measurements_tool()}
+                response = {"latest_measurement": tools.get_latest_measurements_tool(user_id=user_id)}
             case "insert_measurement":
-                tools.insert_measurement_tool(**tool_call.args)
+                tools.insert_measurement_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
     except Exception as e:
         response = {"error": str(e)}
@@ -127,6 +127,7 @@ async def agent(
             repository.insert_llm_invocation(
                 total_cost=cost,
                 raw_usage_metadata=response.usage_metadata.model_dump(),
+                user_id=input.user_id,
                 conversation_id=input.conversation_id,
             )
         content = response.candidates[0].content if response.candidates else None
@@ -145,7 +146,7 @@ async def agent(
         tool_results = []
         for part in parts:
             if part.function_call:
-                tool_response = _get_tool_response(part.function_call)
+                tool_response = _get_tool_response(part.function_call, input.user_id)
                 tool_results.append(tool_response)
         tool_content = models.Content(
             role="user",
