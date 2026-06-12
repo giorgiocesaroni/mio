@@ -32,7 +32,7 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
               <img
                 src={`data:${step.mime_type};base64,${step.data}`}
                 alt="User image"
-                className="max-w-full rounded-lg"
+                className="max-w-sm rounded-lg"
               />
             ) : step.mime_type?.startsWith("audio/") ? (
               <audio
@@ -83,7 +83,6 @@ export default function Home() {
   const [steps, setSteps] = useState<RunAgentStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -238,6 +237,9 @@ export default function Home() {
           text={input}
           onTextChange={(text) => setInput(text)}
           onSend={handleTextSubmit}
+          onAudioCapture={handleAudioCapture}
+          isRecording={isRecording}
+          onImageSelect={handleImageSelect}
         ></ChatEditor>
       </div>
 
