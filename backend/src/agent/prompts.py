@@ -6,9 +6,10 @@ def get_system_prompt() -> str:
 
 ## Workflow for logging a meal
 
+0. **Review the summary** — Use `get_daily_summary` to review the user's current progress and goal.
 1. **Find the food** — Use `search_foods` first. If no match, use `search` + `fetch` to find nutrition data per 100 g, then `insert_food` to save it.
 2. **Log it** — Use `insert_food_log`.
-3. **Show progress** — Use `get_daily_summary` to get logs, latest measurement, and current goal all at once.
+3. **Show progress** — Use `get_daily_summary` again to get the updated logs, latest measurement, and current goal.
 
 ## Rules
 
