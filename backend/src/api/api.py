@@ -1,11 +1,11 @@
-import base64
-import json
-import os
 import dotenv
-from uuid import UUID
 
 dotenv.load_dotenv()
 
+import base64
+import json
+import os
+from uuid import UUID
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +14,7 @@ import src.agent.models as models
 
 app = FastAPI()
 
-origins = os.getenv("CORS_ORIGINS").split(",")
+origins = os.getenv("CORS_ORIGINS", "").split(",")
 
 app.add_middleware(
     CORSMiddleware,

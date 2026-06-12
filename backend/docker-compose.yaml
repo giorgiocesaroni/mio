@@ -1,0 +1,26 @@
+name: mio
+
+services:
+  api:
+    container_name: api
+    build: .
+    volumes:
+      - .env:/app/.env
+    # command: uv run src/api/api.py
+    restart: always
+  proxy:
+    image: steveltn/https-portal:1
+    container_name: https-portal
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      DOMAINS: localhost -> http://api:8000
+      STAGE: local
+      RESOLVER: 127.0.0.11 ipv6=off valid=20s
+      DYNAMIC_UPSTREAM: true
+    volumes:
+      - https-portal-data:/var/lib/https-portal
+
+volumes:
+  https-portal-data:
