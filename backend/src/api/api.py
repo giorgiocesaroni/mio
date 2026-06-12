@@ -93,6 +93,11 @@ def _parse_message(msg: dict) -> models.MessageType:
             raise ValueError(f"Unknown message type: {msg.get('type')}")
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.post("/chat")
 async def chat_endpoint(
     request: Request,
@@ -139,4 +144,4 @@ async def get_conversation_messages(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
