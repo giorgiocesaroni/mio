@@ -27,12 +27,12 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       <Card className={`justify-self-end px-4 py-2`}>
         {step.data ? (
           <div className="space-y-2">
-            <p className="text-sm text-green-700">{step.text}</p>
+            {/* <p className="text-sm text-green-700">{step.text}</p> */}
             {step.mime_type?.startsWith("image/") ? (
               <img
                 src={`data:${step.mime_type};base64,${step.data}`}
                 alt="User image"
-                className="max-w-sm rounded-lg"
+                className="max-w-24 max-h-24 object-cover rounded-lg"
               />
             ) : step.mime_type?.startsWith("audio/") ? (
               <audio

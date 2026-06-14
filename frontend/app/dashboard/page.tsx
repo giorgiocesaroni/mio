@@ -130,8 +130,8 @@ function DailyFoodLogsWithFoods() {
   return (
     <div className="grid gap-4">
       {dailyFoodLogsView?.map((log) => (
-        <Card key={log.log_id} className="overflow-auto grid gap-2">
-          <div className="flex justify-between items-center gap-4">
+        <Card key={log.log_id} className="grid gap-2">
+          <div className="overflow-auto flex justify-between items-center gap-4">
             <P className="truncate text-foreground font-medium">
               {log.food_name}
             </P>
