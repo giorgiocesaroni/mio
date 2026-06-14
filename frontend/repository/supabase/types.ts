@@ -18,14 +18,17 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          user_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -34,19 +37,28 @@ export type Database = {
           created_at: string
           food_id: string
           id: string
+          quantity: number | null
           quantity_g: number
+          serving_size_id: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
           food_id: string
           id?: string
+          quantity?: number | null
           quantity_g: number
+          serving_size_id?: string | null
+          user_id: string
         }
         Update: {
           created_at?: string
           food_id?: string
           id?: string
+          quantity?: number | null
           quantity_g?: number
+          serving_size_id?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -54,6 +66,13 @@ export type Database = {
             columns: ["food_id"]
             isOneToOne: false
             referencedRelation: "foods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "food_logs_serving_size_id_fkey"
+            columns: ["serving_size_id"]
+            isOneToOne: false
+            referencedRelation: "serving_sizes"
             referencedColumns: ["id"]
           },
         ]
@@ -68,6 +87,7 @@ export type Database = {
           id: string
           name: string
           protein_g: number
+          user_id: string | null
         }
         Insert: {
           calories_kcal: number
@@ -78,6 +98,7 @@ export type Database = {
           id?: string
           name: string
           protein_g: number
+          user_id?: string | null
         }
         Update: {
           calories_kcal?: number
@@ -88,6 +109,7 @@ export type Database = {
           id?: string
           name?: string
           protein_g?: number
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -100,6 +122,7 @@ export type Database = {
           goal: string
           id: string
           protein_g: number
+          user_id: string
           weight_kg: number
         }
         Insert: {
@@ -110,6 +133,7 @@ export type Database = {
           goal: string
           id?: string
           protein_g: number
+          user_id: string
           weight_kg: number
         }
         Update: {
@@ -120,28 +144,64 @@ export type Database = {
           goal?: string
           id?: string
           protein_g?: number
+          user_id?: string
           weight_kg?: number
         }
         Relationships: []
       }
       llm_invocations: {
         Row: {
+          conversation_id: string | null
           created_at: string
           id: string
           raw_usage_metadata: Json
           total_cost: number
+          user_id: string
         }
         Insert: {
+          conversation_id?: string | null
           created_at?: string
           id?: string
           raw_usage_metadata: Json
           total_cost: number
+          user_id: string
         }
         Update: {
+          conversation_id?: string | null
           created_at?: string
           id?: string
           raw_usage_metadata?: Json
           total_cost?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_invocations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      measurements: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+          weight_kg: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+          weight_kg: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+          weight_kg?: number
         }
         Relationships: []
       }
@@ -151,18 +211,21 @@ export type Database = {
           created_at: string
           id: string
           raw_content: Json
+          user_id: string
         }
         Insert: {
           conversation_id: string
           created_at?: string
           id?: string
           raw_content: Json
+          user_id: string
         }
         Update: {
           conversation_id?: string
           created_at?: string
           id?: string
           raw_content?: Json
+          user_id?: string
         }
         Relationships: [
           {
@@ -170,6 +233,41 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      serving_sizes: {
+        Row: {
+          created_at: string
+          food_id: string | null
+          grams: number
+          id: string
+          label: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          food_id?: string | null
+          grams: number
+          id?: string
+          label: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          food_id?: string | null
+          grams?: number
+          id?: string
+          label?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "serving_sizes_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "foods"
             referencedColumns: ["id"]
           },
         ]

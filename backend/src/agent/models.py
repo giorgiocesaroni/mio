@@ -84,12 +84,38 @@ class RunAgentInput(BaseModel):
         return str(conversation_id)
 
 
+class ServingSize(BaseModel):
+    id: UUID
+    label: str
+    grams: float
+
+    @field_serializer("id")
+    def serialize_id(self, id: UUID) -> str:
+        return str(id)
+
+
+class InsertServingSizeInput(BaseModel):
+    label: str
+    grams: float
+
+
+class UpdateServingSizeInput(BaseModel):
+    id: UUID
+    label: Optional[str] = None
+    grams: Optional[float] = None
+
+    @field_serializer("id")
+    def serialize_id(self, id: UUID) -> str:
+        return str(id)
+
+
 class InsertFoodInput(BaseModel):
     name: str
     protein_g: int
     carbs_g: int
     fat_g: int
     calories_kcal: int
+    serving_sizes: list[InsertServingSizeInput] = Field(default_factory=list)
 
 
 class UpdateFoodInput(BaseModel):
@@ -108,19 +134,34 @@ class Food(BaseModel):
     carbs_g: int
     fat_g: int
     calories_kcal: int
+    serving_sizes: list[ServingSize] = Field(default_factory=list)
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:
         return str(id)
 
 
-class InsertFoodLogInput(BaseModel):
+class InsertFoodLogByGramsInput(BaseModel):
     food_id: UUID
-    quantity_g: int
+    quantity_g: float
 
     @field_serializer("food_id")
     def serialize_food_id(self, food_id: UUID) -> str:
         return str(food_id)
+
+
+class InsertFoodLogByServingSizeInput(BaseModel):
+    food_id: UUID
+    serving_size_id: UUID
+    quantity: float
+
+    @field_serializer("food_id")
+    def serialize_food_id(self, food_id: UUID) -> str:
+        return str(food_id)
+
+    @field_serializer("serving_size_id")
+    def serialize_serving_size_id(self, serving_size_id: UUID) -> str:
+        return str(serving_size_id)
 
 
 class UpdateFoodLogInput(BaseModel):
@@ -140,7 +181,9 @@ class UpdateFoodLogInput(BaseModel):
 class FoodLog(BaseModel):
     id: UUID
     food_id: UUID
-    quantity_g: int
+    quantity_g: Optional[float] = None
+    serving_size_id: Optional[UUID] = None
+    quantity: Optional[float] = None
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:
@@ -150,11 +193,17 @@ class FoodLog(BaseModel):
     def serialize_food_id(self, food_id: UUID) -> str:
         return str(food_id)
 
+    @field_serializer("serving_size_id")
+    def serialize_serving_size_id(self, serving_size_id: Optional[UUID]) -> Optional[str]:
+        return str(serving_size_id) if serving_size_id is not None else None
+
 
 class FoodLogWithFood(BaseModel):
     id: UUID
     food_id: UUID
-    quantity_g: int
+    quantity_g: Optional[float] = None
+    serving_size_id: Optional[UUID] = None
+    quantity: Optional[float] = None
     food: Food
 
     @field_serializer("id")
@@ -164,6 +213,10 @@ class FoodLogWithFood(BaseModel):
     @field_serializer("food_id")
     def serialize_food_id(self, food_id: UUID) -> str:
         return str(food_id)
+
+    @field_serializer("serving_size_id")
+    def serialize_serving_size_id(self, serving_size_id: Optional[UUID]) -> Optional[str]:
+        return str(serving_size_id) if serving_size_id is not None else None
 
 
 class Goal(BaseModel):

@@ -38,8 +38,13 @@ async def _invoke_model(
                                 tools.insert_food_declaration,
                                 tools.update_food_declaration,
                                 tools.delete_food_declaration,
+                                tools.get_serving_sizes_by_food_id_declaration,
+                                tools.insert_serving_size_declaration,
+                                tools.update_serving_size_declaration,
+                                tools.delete_serving_size_declaration,
                                 tools.get_daily_summary_declaration,
-                                tools.insert_food_log_declaration,
+                                tools.insert_food_log_by_grams_declaration,
+                                tools.insert_food_log_by_serving_size_declaration,
                                 tools.update_food_log_declaration,
                                 tools.delete_food_log_declaration,
                                 tools.get_current_goal_declaration,
@@ -83,7 +88,7 @@ def _get_tool_response(
                 }
             case "insert_food":
                 response = {
-                    "food_id": tools.insert_food_tool(user_id=user_id, **tool_call.args)
+                    "food": tools.insert_food_tool(user_id=user_id, **tool_call.args)
                 }
             case "update_food":
                 tools.update_food_tool(user_id=user_id, **tool_call.args)
@@ -93,12 +98,38 @@ def _get_tool_response(
                     user_id=user_id, food_id=tool_call.args["food_id"]
                 )
                 response = {"success": True}
+            case "get_serving_sizes_by_food_id":
+                response = {
+                    "serving_sizes": tools.get_serving_sizes_by_food_id_tool(
+                        user_id=user_id, food_id=tool_call.args["food_id"]
+                    )
+                }
+            case "insert_serving_size":
+                response = {
+                    "serving_size": tools.insert_serving_size_tool(
+                        user_id=user_id, **tool_call.args
+                    )
+                }
+            case "update_serving_size":
+                response = {
+                    "serving_size": tools.update_serving_size_tool(
+                        user_id=user_id, **tool_call.args
+                    )
+                }
+            case "delete_serving_size":
+                tools.delete_serving_size_tool(
+                    user_id=user_id, serving_size_id=tool_call.args["serving_size_id"]
+                )
+                response = {"success": True}
             case "get_daily_summary":
                 response = tools.get_daily_summary_tool(
                     user_id=user_id, day=tool_call.args["day"]
                 )
-            case "insert_food_log":
-                tools.insert_food_log_tool(user_id=user_id, **tool_call.args)
+            case "insert_food_log_by_grams":
+                tools.insert_food_log_by_grams_tool(user_id=user_id, **tool_call.args)
+                response = {"success": True}
+            case "insert_food_log_by_serving_size":
+                tools.insert_food_log_by_serving_size_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "update_food_log":
                 tools.update_food_log_tool(user_id=user_id, **tool_call.args)

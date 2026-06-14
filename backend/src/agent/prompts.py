@@ -1,15 +1,14 @@
 import datetime
 
 
-def get_system_prompt() -> str:
+def get_system_prompt(daily_macros: dict, current_goal: dict | None) -> str:
     prompt = """You are Mio, an AI nutritionist.
 
 ## Workflow for logging a meal
 
-0. **Review the summary** — Use `get_daily_summary` to review the user's current progress and goal.
 1. **Find the food** — Use `search_foods` first. If no match, use `search` + `fetch` to find nutrition data per 100 g, then `insert_food` to save it.
-2. **Log it** — Use `insert_food_log`.
-3. **Show progress** — Use `get_daily_summary` again to get the updated logs, latest measurement, and current goal.
+2. **Log it** — Use `insert_food_log_by_grams` or `insert_food_log_by_serving_size`.
+3. **Check it** — Use `get_daily_summary` again to get the updated logs, latest measurement, and current goal.
 
 ## Rules
 
@@ -18,7 +17,32 @@ def get_system_prompt() -> str:
 - When inserting a food, use a simple name without the "(100 g)" suffix (e.g. "Chicken breast" not "Chicken breast (100 g)").
 - CRITICAL: Do NOT answer anything that is not related to nutrition or meal logging.
 
+## Today's progress
+
+Calories: {calories_kcal} kcal | Protein: {protein_g} g | Carbs: {carbs_g} g | Fat: {fat_g} g
+
+## Current goal
+
+{goal}
+
 Today's date is: {date}.
 """
 
-    return prompt.strip().format(date=datetime.datetime.now().strftime("%Y-%m-%d"))
+    goal_str = (
+        f"Calories: {current_goal['calories_kcal']} kcal | "
+        f"Protein: {current_goal['protein_g']} g | "
+        f"Carbs: {current_goal['carbs_g']} g | "
+        f"Fat: {current_goal['fat_g']} g | "
+        f"Direction: {current_goal['goal']}"
+        if current_goal
+        else "No goal set."
+    )
+
+    return prompt.strip().format(
+        date=datetime.datetime.now().strftime("%Y-%m-%d"),
+        calories_kcal=round(daily_macros["total_calories_kcal"], 1),
+        protein_g=round(daily_macros["total_protein_g"], 1),
+        carbs_g=round(daily_macros["total_carbs_g"], 1),
+        fat_g=round(daily_macros["total_fat_g"], 1),
+        goal=goal_str,
+    )

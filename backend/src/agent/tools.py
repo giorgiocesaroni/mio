@@ -135,6 +135,24 @@ insert_food_declaration = models.FunctionDeclaration(
                 "type": "integer",
                 "description": "Caloric value in kcal.",
             },
+            "serving_sizes": {
+                "type": "array",
+                "description": "Optional list of serving sizes for this food.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {
+                            "type": "string",
+                            "description": "Human-readable label (e.g. '1 cup', '1 slice').",
+                        },
+                        "grams": {
+                            "type": "number",
+                            "description": "Weight of this serving in grams.",
+                        },
+                    },
+                    "required": ["label", "grams"],
+                },
+            },
         },
         "required": ["name", "protein_g", "carbs_g", "fat_g", "calories_kcal"],
     },
@@ -142,19 +160,28 @@ insert_food_declaration = models.FunctionDeclaration(
 
 
 def insert_food_tool(
-    user_id: str, name: str, protein_g: int, carbs_g: int, fat_g: int, calories_kcal: int
-) -> str:
-    food_id = repository.insert_food(
+    user_id: str,
+    name: str,
+    protein_g: int,
+    carbs_g: int,
+    fat_g: int,
+    calories_kcal: int,
+    serving_sizes: list[dict] | None = None,
+) -> dict:
+    food = repository.insert_food(
         models.InsertFoodInput(
             name=name,
             protein_g=protein_g,
             carbs_g=carbs_g,
             fat_g=fat_g,
             calories_kcal=calories_kcal,
+            serving_sizes=[
+                models.InsertServingSizeInput(**ss) for ss in (serving_sizes or [])
+            ],
         ),
         user_id,
     )
-    return str(food_id)
+    return food.model_dump()
 
 
 update_food_declaration = models.FunctionDeclaration(
@@ -225,11 +252,119 @@ def delete_food_tool(user_id: str, food_id: UUID) -> None:
     repository.delete_food(food_id, user_id)
 
 
+# Serving Sizes
+
+get_serving_sizes_by_food_id_declaration = models.FunctionDeclaration(
+    name="get_serving_sizes_by_food_id",
+    description="Returns all serving sizes for a given food.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "food_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID of the food.",
+            }
+        },
+        "required": ["food_id"],
+    },
+)
+
+
+def get_serving_sizes_by_food_id_tool(user_id: str, food_id: UUID) -> list[dict]:
+    sizes = repository.get_serving_sizes_by_food_id(food_id, user_id)
+    return [s.model_dump() for s in sizes]
+
+
+insert_serving_size_declaration = models.FunctionDeclaration(
+    name="insert_serving_size",
+    description="Adds a new serving size to an existing food.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "food_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID of the food to attach the serving size to.",
+            },
+            "label": {
+                "type": "string",
+                "description": "Human-readable label (e.g. '1 cup', '1 slice').",
+            },
+            "grams": {
+                "type": "number",
+                "description": "Weight of this serving in grams.",
+            },
+        },
+        "required": ["food_id", "label", "grams"],
+    },
+)
+
+
+def insert_serving_size_tool(user_id: str, food_id: UUID, label: str, grams: float) -> dict:
+    size = repository.insert_serving_size(
+        food_id,
+        models.InsertServingSizeInput(label=label, grams=grams),
+        user_id,
+    )
+    return size.model_dump()
+
+
+update_serving_size_declaration = models.FunctionDeclaration(
+    name="update_serving_size",
+    description="Updates an existing serving size. Only provided fields are changed.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID of the serving size to update.",
+            },
+            "label": {"type": "string", "description": "New label."},
+            "grams": {"type": "number", "description": "New weight in grams."},
+        },
+        "required": ["id"],
+    },
+)
+
+
+def update_serving_size_tool(
+    user_id: str, id: UUID, label: str | None = None, grams: float | None = None
+) -> dict:
+    size = repository.update_serving_size(
+        models.UpdateServingSizeInput(id=id, label=label, grams=grams),
+        user_id,
+    )
+    return size.model_dump()
+
+
+delete_serving_size_declaration = models.FunctionDeclaration(
+    name="delete_serving_size",
+    description="Deletes a serving size by its ID.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "serving_size_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID of the serving size to delete.",
+            }
+        },
+        "required": ["serving_size_id"],
+    },
+)
+
+
+def delete_serving_size_tool(user_id: str, serving_size_id: UUID) -> None:
+    repository.delete_serving_size(serving_size_id, user_id)
+
+
 # Food Logs
 
 get_daily_summary_declaration = models.FunctionDeclaration(
     name="get_daily_summary",
-    description="Returns food log entries for a given day, along with the latest weight measurement and current goal.",
+    description="Returns food log entries for a given day, the total macros and calories consumed, the latest weight measurement, and the current goal.",
     parameters_json_schema={
         "type": "object",
         "properties": {
@@ -245,18 +380,20 @@ get_daily_summary_declaration = models.FunctionDeclaration(
 
 def get_daily_summary_tool(user_id: str, day: str) -> dict:
     logs = repository.get_food_logs_by_day(day, user_id)
+    daily_macros = repository.get_daily_macros(day, user_id)
     latest_measurement = repository.get_latest_measurement(user_id)
     current_goal = repository.get_current_goal(user_id)
     return {
         "logs": [log.model_dump() for log in logs],
+        "daily_macros": daily_macros,
         "latest_measurement": latest_measurement.model_dump() if latest_measurement else None,
         "current_goal": current_goal.model_dump() if current_goal else None,
     }
 
 
-insert_food_log_declaration = models.FunctionDeclaration(
-    name="insert_food_log",
-    description="Logs a food entry for today.",
+insert_food_log_by_grams_declaration = models.FunctionDeclaration(
+    name="insert_food_log_by_grams",
+    description="Logs a food entry for today by specifying the quantity in grams.",
     parameters_json_schema={
         "type": "object",
         "properties": {
@@ -266,7 +403,7 @@ insert_food_log_declaration = models.FunctionDeclaration(
                 "description": "ID of the food being logged.",
             },
             "quantity_g": {
-                "type": "integer",
+                "type": "number",
                 "description": "Quantity consumed in grams.",
             },
         },
@@ -275,9 +412,48 @@ insert_food_log_declaration = models.FunctionDeclaration(
 )
 
 
-def insert_food_log_tool(user_id: str, food_id: UUID, quantity_g: int) -> None:
-    repository.insert_food_log(
-        models.InsertFoodLogInput(food_id=food_id, quantity_g=quantity_g),
+def insert_food_log_by_grams_tool(user_id: str, food_id: UUID, quantity_g: float) -> None:
+    repository.insert_food_log_by_grams(
+        models.InsertFoodLogByGramsInput(food_id=food_id, quantity_g=quantity_g),
+        user_id,
+    )
+
+
+insert_food_log_by_serving_size_declaration = models.FunctionDeclaration(
+    name="insert_food_log_by_serving_size",
+    description="Logs a food entry for today by specifying a serving size and the number of servings consumed.",
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "food_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the food being logged.",
+            },
+            "serving_size_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the serving size used.",
+            },
+            "quantity": {
+                "type": "number",
+                "description": "Number of servings consumed.",
+            },
+        },
+        "required": ["food_id", "serving_size_id", "quantity"],
+    },
+)
+
+
+def insert_food_log_by_serving_size_tool(
+    user_id: str, food_id: UUID, serving_size_id: UUID, quantity: float
+) -> None:
+    repository.insert_food_log_by_serving_size(
+        models.InsertFoodLogByServingSizeInput(
+            food_id=food_id,
+            serving_size_id=serving_size_id,
+            quantity=quantity,
+        ),
         user_id,
     )
 
