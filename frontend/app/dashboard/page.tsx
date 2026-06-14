@@ -136,7 +136,10 @@ function DailyFoodLogsWithFoods() {
               {log.food_name}
             </P>
             <P className="whitespace-nowrap text-sm">
-              {new Date(log.log_created_at!).toLocaleTimeString()}
+              {new Date(log.log_created_at!).toLocaleTimeString(undefined, {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </P>
           </div>
           <div className="flex gap-4 items-center text-sm">
