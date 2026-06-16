@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { MessageContent } from "../components/message-content";
-import { ArrowLeft, Cog } from "lucide-react";
-import { Button } from "@/app/components/button";
+import { Cog } from "lucide-react";
 import { ChatEditor } from "@/app/components/chat-editor";
 import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
+import { useChatLoading } from "../layout";
 import {
   type RunAgentStep,
   getConversationMessages,
@@ -76,12 +76,11 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export default function Home() {
-  const router = useRouter();
   const params = useParams();
   const conversationId = params.id as string;
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<RunAgentStep[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { isLoading, setIsLoading } = useChatLoading();
   const bottomRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -182,21 +181,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <header className="p-4 sticky top-0">
-        <div className="flex items-center gap-2">
-          <Button
-            className="bg-red-500 border-red-500 text-background-alt aspect-square px-2 py-2 rounded-full"
-            onClick={() => router.push("/dashboard")}
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-        </div>
-        <span
-          className={`size-2 rounded-full ${isLoading ? "bg-amber-500 animate-pulse" : "bg-green-500"}`}
-        />
-      </header>
-
+    <div className="flex flex-col flex-1">
       <div
         className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid gap-4 p-4 content-start"}`}
       >

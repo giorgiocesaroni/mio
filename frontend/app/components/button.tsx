@@ -9,6 +9,8 @@ const buttonVariants = cva(
         default: "border-foreground bg-foreground text-background",
         outline: "border-foreground bg-background text-foreground",
         ghost: "border-transparent",
+        secondary:
+          "bg-muted-background border-muted-background text-muted-foreground",
       },
     },
   },

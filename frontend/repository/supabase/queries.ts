@@ -30,6 +30,15 @@ export const getTotalLlmCost = async () => {
   return data;
 };
 
+export const getConversations = async () => {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data;
+};
+
 export const getCurrentGoal = async () => {
   const { data, error } = await supabase
     .from("goals")
