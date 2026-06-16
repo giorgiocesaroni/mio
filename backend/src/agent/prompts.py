@@ -1,7 +1,8 @@
 import datetime
+from zoneinfo import ZoneInfo
 
 
-def get_system_prompt(daily_macros: dict, current_goal: dict | None) -> str:
+def get_system_prompt(daily_macros: dict, current_goal: dict | None, timezone: str = "UTC") -> str:
     prompt = """You are Mio, an AI nutritionist.
 
 ## Workflow for logging a meal
@@ -15,6 +16,7 @@ def get_system_prompt(daily_macros: dict, current_goal: dict | None) -> str:
 - Never ask for calorie or macro values — look them up using `search` + `fetch`.
 - Add unknown foods to the database as you encounter them.
 - When inserting a food, use a simple name without the "(100 g)" suffix (e.g. "Chicken breast" not "Chicken breast (100 g)").
+- When logging a past meal, pass `logged_at` in `YYYY-MM-DD HH:MM` format using the user's local time — the backend will convert it to UTC automatically.
 - CRITICAL: Do NOT answer anything that is not related to nutrition or meal logging.
 
 ## Today's progress
@@ -25,7 +27,7 @@ Calories: {calories_kcal} kcal | Protein: {protein_g} g | Carbs: {carbs_g} g | F
 
 {goal}
 
-Today's date is: {date}.
+Today's date and time is: {date} (user's local time).
 """
 
     goal_str = (
@@ -39,7 +41,7 @@ Today's date is: {date}.
     )
 
     return prompt.strip().format(
-        date=datetime.datetime.now().strftime("%Y-%m-%d"),
+        date=datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d %H:%M"),
         calories_kcal=round(daily_macros["total_calories_kcal"], 1),
         protein_g=round(daily_macros["total_protein_g"], 1),
         carbs_g=round(daily_macros["total_carbs_g"], 1),

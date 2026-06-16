@@ -129,7 +129,9 @@ def _get_tool_response(
                 tools.insert_food_log_by_grams_tool(user_id=user_id, **tool_call.args)
                 response = {"success": True}
             case "insert_food_log_by_serving_size":
-                tools.insert_food_log_by_serving_size_tool(user_id=user_id, **tool_call.args)
+                tools.insert_food_log_by_serving_size_tool(
+                    user_id=user_id, **tool_call.args
+                )
                 response = {"success": True}
             case "update_food_log":
                 tools.update_food_log_tool(user_id=user_id, **tool_call.args)

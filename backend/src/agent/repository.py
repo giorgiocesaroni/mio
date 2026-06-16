@@ -1,7 +1,9 @@
 import json
 import os
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
+from zoneinfo import ZoneInfo
 import psycopg
 from psycopg.rows import class_row
 import src.agent.models as models
@@ -22,6 +24,25 @@ db_connection_params = {
 }
 
 # Conversations and Messages
+
+
+def get_user_timezone(user_id: str) -> str:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT timezone FROM profiles WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row and row[0] else "UTC"
+
+
+def _localize_to_utc(logged_at: str, timezone: str) -> datetime:
+    """Parse a naive 'YYYY-MM-DD HH:MM' string as local time and return a UTC-aware datetime."""
+    naive = datetime.strptime(logged_at, "%Y-%m-%d %H:%M")
+    local = naive.replace(tzinfo=ZoneInfo(timezone))
+    return local.astimezone(ZoneInfo("UTC"))
+
 
 
 def get_messages_by_conversation_id(
@@ -377,6 +398,7 @@ def delete_food(food_id: UUID, user_id: str) -> None:
 
 
 def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]:
+    tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -388,11 +410,11 @@ def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]
                 FROM food_logs fl
                 JOIN foods f ON f.id = fl.food_id
                 LEFT JOIN serving_sizes ss ON ss.food_id = f.id
-                WHERE DATE(fl.created_at) = %s AND fl.user_id = %s
+                WHERE DATE(fl.created_at AT TIME ZONE %s) = %s AND fl.user_id = %s
                 GROUP BY fl.id, f.id
                 ORDER BY fl.created_at ASC
                 """,
-                (day, user_id),
+                (tz, day, user_id),
             )
             return [
                 models.FoodLogWithFood(
@@ -420,13 +442,24 @@ def insert_food_log_by_grams(
 ) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO food_logs (food_id, quantity_g, user_id)
-                VALUES (%s, %s, %s)
-                """,
-                (str(input.food_id), input.quantity_g, user_id),
-            )
+            if input.logged_at is not None:
+                tz = get_user_timezone(user_id)
+                utc_dt = _localize_to_utc(input.logged_at, tz)
+                cur.execute(
+                    """
+                    INSERT INTO food_logs (food_id, quantity_g, user_id, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (str(input.food_id), input.quantity_g, user_id, utc_dt),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO food_logs (food_id, quantity_g, user_id)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (str(input.food_id), input.quantity_g, user_id),
+                )
 
 
 def insert_food_log_by_serving_size(
@@ -434,18 +467,35 @@ def insert_food_log_by_serving_size(
 ) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO food_logs (food_id, serving_size_id, quantity, user_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (
-                    str(input.food_id),
-                    str(input.serving_size_id),
-                    input.quantity,
-                    user_id,
-                ),
-            )
+            if input.logged_at is not None:
+                tz = get_user_timezone(user_id)
+                utc_dt = _localize_to_utc(input.logged_at, tz)
+                cur.execute(
+                    """
+                    INSERT INTO food_logs (food_id, serving_size_id, quantity, user_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(input.food_id),
+                        str(input.serving_size_id),
+                        input.quantity,
+                        user_id,
+                        utc_dt,
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO food_logs (food_id, serving_size_id, quantity, user_id)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        str(input.food_id),
+                        str(input.serving_size_id),
+                        input.quantity,
+                        user_id,
+                    ),
+                )
 
 
 def update_food_log(input: models.UpdateFoodLogInput, user_id: str) -> None:
@@ -455,12 +505,14 @@ def update_food_log(input: models.UpdateFoodLogInput, user_id: str) -> None:
                 """
                 UPDATE food_logs
                 SET food_id = COALESCE(%s, food_id),
-                    quantity_g = COALESCE(%s, quantity_g)
+                    quantity_g = COALESCE(%s, quantity_g),
+                    created_at = COALESCE(%s, created_at)
                 WHERE id = %s AND user_id = %s
                 """,
                 (
                     str(input.food_id) if input.food_id is not None else None,
                     input.quantity_g,
+                    _localize_to_utc(input.logged_at, get_user_timezone(user_id)) if input.logged_at is not None else None,
                     input.id,
                     user_id,
                 ),
@@ -480,6 +532,7 @@ def delete_food_log(food_log_id: UUID, user_id: str) -> None:
 
 
 def get_daily_macros(day: str, user_id: str) -> dict:
+    tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -492,11 +545,13 @@ def get_daily_macros(day: str, user_id: str) -> dict:
                 FROM food_logs fl
                 JOIN foods f ON f.id = fl.food_id
                 LEFT JOIN serving_sizes ss ON ss.id = fl.serving_size_id
-                WHERE DATE(fl.created_at) = %s AND fl.user_id = %s
+                WHERE DATE(fl.created_at AT TIME ZONE %s) = %s AND fl.user_id = %s
                 """,
-                (day, user_id),
+                (tz, day, user_id),
             )
             row = cur.fetchone()
+            if row is None:
+                raise ValueError("Failed to retrieve daily macros.")
             return {
                 "total_protein_g": float(row[0]),
                 "total_carbs_g": float(row[1]),

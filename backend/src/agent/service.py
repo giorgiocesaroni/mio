@@ -2,6 +2,7 @@ import base64
 import datetime
 from typing import AsyncGenerator
 from uuid import UUID
+from zoneinfo import ZoneInfo
 import src.agent.models as models
 import src.agent.repository as repository
 from src.agent.agent import agent
@@ -30,12 +31,14 @@ async def run_agent(
     repository.create_conversation_if_not_exists(input.conversation_id, input.user_id)
     repository.insert_conversation_message(input.conversation_id, user_input, input.user_id)
     contents = repository.get_messages_by_conversation_id(input.conversation_id, input.user_id)
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    timezone = repository.get_user_timezone(input.user_id)
+    today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
     daily_macros = repository.get_daily_macros(today, input.user_id)
     current_goal = repository.get_current_goal(input.user_id)
     system_prompt = prompts.get_system_prompt(
         daily_macros=daily_macros,
         current_goal=current_goal.model_dump() if current_goal else None,
+        timezone=timezone,
     )
     if input.channel_instructions:
         system_prompt = f"{system_prompt}\n\n{input.channel_instructions}"

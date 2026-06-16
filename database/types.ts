@@ -38,7 +38,7 @@ export type Database = {
           food_id: string
           id: string
           quantity: number | null
-          quantity_g: number
+          quantity_g: number | null
           serving_size_id: string | null
           user_id: string
         }
@@ -47,7 +47,7 @@ export type Database = {
           food_id: string
           id?: string
           quantity?: number | null
-          quantity_g: number
+          quantity_g?: number | null
           serving_size_id?: string | null
           user_id: string
         }
@@ -56,7 +56,7 @@ export type Database = {
           food_id?: string
           id?: string
           quantity?: number | null
-          quantity_g?: number
+          quantity_g?: number | null
           serving_size_id?: string | null
           user_id?: string
         }
@@ -236,6 +236,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          timezone: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          timezone?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          timezone?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       serving_sizes: {
         Row: {

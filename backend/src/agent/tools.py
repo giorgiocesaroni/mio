@@ -301,7 +301,9 @@ insert_serving_size_declaration = models.FunctionDeclaration(
 )
 
 
-def insert_serving_size_tool(user_id: str, food_id: UUID, label: str, grams: float) -> dict:
+def insert_serving_size_tool(
+    user_id: str, food_id: UUID, label: str, grams: float
+) -> dict:
     size = repository.insert_serving_size(
         food_id,
         models.InsertServingSizeInput(label=label, grams=grams),
@@ -386,14 +388,16 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
     return {
         "logs": [log.model_dump() for log in logs],
         "daily_macros": daily_macros,
-        "latest_measurement": latest_measurement.model_dump() if latest_measurement else None,
+        "latest_measurement": (
+            latest_measurement.model_dump() if latest_measurement else None
+        ),
         "current_goal": current_goal.model_dump() if current_goal else None,
     }
 
 
 insert_food_log_by_grams_declaration = models.FunctionDeclaration(
     name="insert_food_log_by_grams",
-    description="Logs a food entry for today by specifying the quantity in grams.",
+    description="Logs a food entry by specifying the quantity in grams. Defaults to now if no time is provided.",
     parameters_json_schema={
         "type": "object",
         "properties": {
@@ -406,22 +410,30 @@ insert_food_log_by_grams_declaration = models.FunctionDeclaration(
                 "type": "number",
                 "description": "Quantity consumed in grams.",
             },
+            "logged_at": {
+                "type": "string",
+                "description": "The date and time of the log entry, in YYYY-MM-DD HH:MM format. Defaults to now.",
+            },
         },
         "required": ["food_id", "quantity_g"],
     },
 )
 
 
-def insert_food_log_by_grams_tool(user_id: str, food_id: UUID, quantity_g: float) -> None:
+def insert_food_log_by_grams_tool(
+    user_id: str, food_id: UUID, quantity_g: float, logged_at: str | None = None
+) -> None:
     repository.insert_food_log_by_grams(
-        models.InsertFoodLogByGramsInput(food_id=food_id, quantity_g=quantity_g),
+        models.InsertFoodLogByGramsInput(
+            food_id=food_id, quantity_g=quantity_g, logged_at=logged_at
+        ),
         user_id,
     )
 
 
 insert_food_log_by_serving_size_declaration = models.FunctionDeclaration(
     name="insert_food_log_by_serving_size",
-    description="Logs a food entry for today by specifying a serving size and the number of servings consumed.",
+    description="Logs a food entry by specifying a serving size and the number of servings consumed. Defaults to now if no time is provided.",
     parameters_json_schema={
         "type": "object",
         "properties": {
@@ -439,6 +451,10 @@ insert_food_log_by_serving_size_declaration = models.FunctionDeclaration(
                 "type": "number",
                 "description": "Number of servings consumed.",
             },
+            "logged_at": {
+                "type": "string",
+                "description": "The date and time of the log entry, in YYYY-MM-DD HH:MM format. Defaults to now.",
+            },
         },
         "required": ["food_id", "serving_size_id", "quantity"],
     },
@@ -446,13 +462,18 @@ insert_food_log_by_serving_size_declaration = models.FunctionDeclaration(
 
 
 def insert_food_log_by_serving_size_tool(
-    user_id: str, food_id: UUID, serving_size_id: UUID, quantity: float
+    user_id: str,
+    food_id: UUID,
+    serving_size_id: UUID,
+    quantity: float,
+    logged_at: str | None = None,
 ) -> None:
     repository.insert_food_log_by_serving_size(
         models.InsertFoodLogByServingSizeInput(
             food_id=food_id,
             serving_size_id=serving_size_id,
             quantity=quantity,
+            logged_at=logged_at,
         ),
         user_id,
     )
@@ -475,6 +496,10 @@ update_food_log_declaration = models.FunctionDeclaration(
                 "description": "New food ID.",
             },
             "quantity_g": {"type": "integer", "description": "New quantity in grams."},
+            "logged_at": {
+                "type": "string",
+                "description": "New date and time for the log entry, in YYYY-MM-DD HH:MM format.",
+            },
         },
         "required": ["id"],
     },
@@ -482,10 +507,16 @@ update_food_log_declaration = models.FunctionDeclaration(
 
 
 def update_food_log_tool(
-    user_id: str, id: UUID, food_id: Optional[UUID] = None, quantity_g: int | None = None
+    user_id: str,
+    id: UUID,
+    food_id: Optional[UUID] = None,
+    quantity_g: int | None = None,
+    logged_at: str | None = None,
 ) -> None:
     repository.update_food_log(
-        models.UpdateFoodLogInput(id=id, food_id=food_id, quantity_g=quantity_g),
+        models.UpdateFoodLogInput(
+            id=id, food_id=food_id, quantity_g=quantity_g, logged_at=logged_at
+        ),
         user_id,
     )
 

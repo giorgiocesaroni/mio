@@ -144,6 +144,7 @@ class Food(BaseModel):
 class InsertFoodLogByGramsInput(BaseModel):
     food_id: UUID
     quantity_g: float
+    logged_at: str | None = None
 
     @field_serializer("food_id")
     def serialize_food_id(self, food_id: UUID) -> str:
@@ -154,6 +155,7 @@ class InsertFoodLogByServingSizeInput(BaseModel):
     food_id: UUID
     serving_size_id: UUID
     quantity: float
+    logged_at: str | None = None
 
     @field_serializer("food_id")
     def serialize_food_id(self, food_id: UUID) -> str:
@@ -168,6 +170,9 @@ class UpdateFoodLogInput(BaseModel):
     id: UUID
     food_id: Optional[UUID]
     quantity_g: Optional[int]
+    logged_at: str | None = (
+        None  # YYYY-MM-DD HH:MM; when None the existing created_at is left unchanged
+    )
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:
@@ -194,7 +199,9 @@ class FoodLog(BaseModel):
         return str(food_id)
 
     @field_serializer("serving_size_id")
-    def serialize_serving_size_id(self, serving_size_id: Optional[UUID]) -> Optional[str]:
+    def serialize_serving_size_id(
+        self, serving_size_id: Optional[UUID]
+    ) -> Optional[str]:
         return str(serving_size_id) if serving_size_id is not None else None
 
 
@@ -215,7 +222,9 @@ class FoodLogWithFood(BaseModel):
         return str(food_id)
 
     @field_serializer("serving_size_id")
-    def serialize_serving_size_id(self, serving_size_id: Optional[UUID]) -> Optional[str]:
+    def serialize_serving_size_id(
+        self, serving_size_id: Optional[UUID]
+    ) -> Optional[str]:
         return str(serving_size_id) if serving_size_id is not None else None
 
 
