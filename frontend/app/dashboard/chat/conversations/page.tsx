@@ -33,24 +33,21 @@ export default function ConversationsPage() {
 
       <div className="grid gap-3">
         {conversations?.map((conv) => (
-          <button
+          <Card
             key={conv.id}
-            type="button"
-            className="text-left"
             onClick={() => router.push(`/dashboard/chat/${conv.id}`)}
+            className="flex items-center justify-between gap-4 cursor-pointer hover:bg-muted transition-colors overflow-auto"
           >
-            <Card className="flex items-center justify-between gap-4 cursor-pointer hover:bg-muted transition-colors">
-              <P className="truncate">{conv.id}</P>
-              <P className="text-sm text-muted-foreground whitespace-nowrap">
-                {new Date(conv.created_at).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "numeric",
-                })}
-              </P>
-            </Card>
-          </button>
+            <P className="truncate">{conv.id}</P>
+            <P className="text-sm text-muted-foreground whitespace-nowrap">
+              {new Date(conv.created_at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "numeric",
+              })}
+            </P>
+          </Card>
         ))}
       </div>
     </div>
