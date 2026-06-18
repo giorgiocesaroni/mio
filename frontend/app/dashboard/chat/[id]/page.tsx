@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { MessageContent } from "../components/message-content";
 import { Cog } from "lucide-react";
-import { ChatEditor } from "@/app/components/chat-editor";
+import { ChatEditor, type PendingAttachment } from "@/app/components/chat-editor";
 import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
 import { useChatLoading } from "../layout";
@@ -84,6 +84,7 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -123,26 +124,36 @@ export default function Home() {
   }, [steps]);
 
   const handleTextSubmit = async (str: string) => {
-    if (!str.trim() || isLoading) return;
+    if ((!str.trim() && pendingAttachments.length === 0) || isLoading) return;
     const text = str.trim();
     setInput("");
-    setSteps((prev) => [...prev, { type: "user_message", text }]);
-    await sendMessage({ parts: [{ text }] });
+    const attachments = pendingAttachments;
+    setPendingAttachments([]);
+
+    const parts: object[] = [];
+    if (text) parts.push({ text });
+    for (const att of attachments) parts.push({ data: att.data, mime_type: att.mime_type });
+
+    // For the step display, show the first attachment if any (existing StepDisplay handles one)
+    if (attachments.length > 0) {
+      // Emit one step per attachment, plus a text step if present
+      if (text) setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
+      for (const att of attachments)
+        setSteps((prev) => [
+          ...prev,
+          { type: "user_message" as const, text: att.name, data: att.data, mime_type: att.mime_type },
+        ]);
+    } else {
+      setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
+    }
+
+    await sendMessage({ parts });
   };
 
   const handleImageSelect = async (file: File) => {
     if (isLoading) return;
     const base64 = await readFileAsBase64(file);
-    setSteps((prev) => [
-      ...prev,
-      {
-        type: "user_message",
-        text: file.name,
-        data: base64,
-        mime_type: file.type,
-      },
-    ]);
-    await sendMessage({ parts: [{ data: base64, mime_type: file.type }] });
+    setPendingAttachments((prev) => [...prev, { data: base64, mime_type: file.type, name: file.name }]);
   };
 
   const handleAudioCapture = async () => {
@@ -157,23 +168,11 @@ export default function Home() {
     const chunks: Blob[] = [];
     mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
     mediaRecorder.onstop = async () => {
-      if (isLoading) return;
       const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
       const base64 = await readFileAsBase64(
         new File([blob], "voice", { type: mediaRecorder.mimeType }),
       );
-      setSteps((prev) => [
-        ...prev,
-        {
-          type: "user_message",
-          text: "Voice memo",
-          data: base64,
-          mime_type: mediaRecorder.mimeType,
-        },
-      ]);
-      await sendMessage({
-        parts: [{ data: base64, mime_type: mediaRecorder.mimeType }],
-      });
+      setPendingAttachments((prev) => [...prev, { data: base64, mime_type: mediaRecorder.mimeType, name: "Voice memo" }]);
       stream.getTracks().forEach((t) => t.stop());
     };
     mediaRecorder.start();
@@ -225,6 +224,8 @@ export default function Home() {
           onAudioCapture={handleAudioCapture}
           isRecording={isRecording}
           onImageSelect={handleImageSelect}
+          pendingAttachments={pendingAttachments}
+          onRemoveAttachment={(i) => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
         ></ChatEditor>
       </div>
 

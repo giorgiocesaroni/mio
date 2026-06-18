@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { twMerge } from "tailwind-merge";
 import { Card } from "./card";
 import { Button } from "./button";
-import { ArrowUp, Mic, Plus } from "lucide-react";
+import { ArrowUp, ImageIcon, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
@@ -20,6 +20,12 @@ export const ChatChip = ({
   </Button>
 );
 
+export interface PendingAttachment {
+  data: string;
+  mime_type: string;
+  name: string;
+}
+
 interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   placeholder?: string;
   text: string;
@@ -28,6 +34,8 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onAudioCapture?: () => void;
   isRecording?: boolean;
   onImageSelect?: (file: File) => void;
+  pendingAttachments?: PendingAttachment[];
+  onRemoveAttachment?: (index: number) => void;
 }
 
 export const ChatEditor = ({
@@ -39,11 +47,12 @@ export const ChatEditor = ({
   onAudioCapture,
   isRecording = false,
   onImageSelect,
+  pendingAttachments = [],
+  onRemoveAttachment,
   children,
   ...props
 }: ChatEditorProps) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
-  console.debug({ text });
   return (
     <Card
       className={twMerge(
@@ -51,6 +60,32 @@ export const ChatEditor = ({
         className,
       )}
     >
+      {pendingAttachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-2 pt-1">
+          {pendingAttachments.map((att, i) => (
+            <div key={i} className="relative size-16 shrink-0">
+              {att.mime_type.startsWith("image/") ? (
+                <img
+                  src={`data:${att.mime_type};base64,${att.data}`}
+                  alt={att.name}
+                  className="size-16 object-cover rounded-xl border border-border"
+                />
+              ) : (
+                <div className="size-16 rounded-xl border border-border bg-muted-background flex items-center justify-center">
+                  <Mic className="size-6 text-muted-foreground" />
+                </div>
+              )}
+              <button
+                onClick={() => onRemoveAttachment?.(i)}
+                className="absolute -top-1.5 -right-1.5 size-4 flex items-center justify-center bg-background border border-border rounded-full text-muted-foreground hover:text-foreground"
+                title="Remove"
+              >
+                <X className="size-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
         autoFocus={true}
         className="flex-1 outline-none p-2 field-sizing-content resize-none max-h-[50vh]"
@@ -98,7 +133,7 @@ export const ChatEditor = ({
           <Mic className="size-4" />
         </Button>
         <Button
-          disabled={!text}
+          disabled={!text && pendingAttachments.length === 0}
           className="bg-red-500 text-background-alt rounded-full aspect-square py-2 px-2"
           onClick={() => onSend?.(text)}
         >
