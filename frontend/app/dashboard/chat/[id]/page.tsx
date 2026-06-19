@@ -118,7 +118,7 @@ export default function Home() {
     queryKey: ["messages", conversationId],
     queryFn: () => getConversationMessages(conversationId),
     enabled: !!conversationId,
-    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -134,7 +134,12 @@ export default function Home() {
   }, [steps]);
 
   const handleTextSubmit = async (str: string) => {
-    if ((!str.trim() && pendingAttachments.length === 0) || isLoading || isFetchingHistory) return;
+    if (
+      (!str.trim() && pendingAttachments.length === 0) ||
+      isLoading ||
+      isFetchingHistory
+    )
+      return;
     const text = str.trim();
     setInput("");
     const attachments = pendingAttachments;
