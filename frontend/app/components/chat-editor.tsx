@@ -31,6 +31,7 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   text: string;
   onTextChange: (text: string) => void;
   onSend?: (text: string) => void;
+  disabled?: boolean;
   onAudioCapture?: () => void;
   isRecording?: boolean;
   onImageSelect?: (file: File) => void;
@@ -44,6 +45,7 @@ export const ChatEditor = ({
   onTextChange,
   placeholder = "Type a message...",
   onSend,
+  disabled = false,
   onAudioCapture,
   isRecording = false,
   onImageSelect,
@@ -88,7 +90,8 @@ export const ChatEditor = ({
       )}
       <textarea
         autoFocus={true}
-        className="flex-1 outline-none p-2 field-sizing-content resize-none max-h-[50vh]"
+        disabled={disabled}
+        className="flex-1 outline-none p-2 field-sizing-content resize-none max-h-[50vh] disabled:opacity-50"
         placeholder={placeholder}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -114,6 +117,7 @@ export const ChatEditor = ({
           }}
         />
         <Button
+          disabled={disabled}
           className="bg-muted-background border-muted-background rounded-full aspect-square py-2 px-2"
           onClick={() => imageInputRef.current?.click()}
           title="Choose an image"
@@ -127,13 +131,14 @@ export const ChatEditor = ({
               ? "bg-red-500 border-red-500 text-white animate-pulse"
               : "bg-muted-background border-muted-background",
           )}
+          disabled={disabled}
           onClick={onAudioCapture}
           title={isRecording ? "Stop recording" : "Record voice memo"}
         >
           <Mic className="size-4" />
         </Button>
         <Button
-          disabled={!text && pendingAttachments.length === 0}
+          disabled={disabled || (!text && pendingAttachments.length === 0)}
           className="bg-red-500 text-background-alt rounded-full aspect-square py-2 px-2"
           onClick={() => onSend?.(text)}
         >

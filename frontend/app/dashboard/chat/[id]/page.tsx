@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { MessageContent } from "../components/message-content";
 import { Cog } from "lucide-react";
-import { ChatEditor, type PendingAttachment } from "@/app/components/chat-editor";
+import {
+  ChatEditor,
+  type PendingAttachment,
+} from "@/app/components/chat-editor";
 import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
 import { useChatLoading } from "../layout";
@@ -84,7 +88,9 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    PendingAttachment[]
+  >([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -108,12 +114,16 @@ export default function Home() {
     [conversationId],
   );
 
+  const { isFetching: isFetchingHistory, data: historyData } = useQuery({
+    queryKey: ["messages", conversationId],
+    queryFn: () => getConversationMessages(conversationId),
+    enabled: !!conversationId,
+    staleTime: Infinity,
+  });
+
   useEffect(() => {
-    if (!conversationId) return;
-    getConversationMessages(conversationId)
-      .then((data) => setSteps(data))
-      .catch((err) => console.error("Failed to load history:", err));
-  }, [conversationId]);
+    if (historyData && historyData.length > 0) setSteps(historyData);
+  }, [historyData]);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -124,7 +134,7 @@ export default function Home() {
   }, [steps]);
 
   const handleTextSubmit = async (str: string) => {
-    if ((!str.trim() && pendingAttachments.length === 0) || isLoading) return;
+    if ((!str.trim() && pendingAttachments.length === 0) || isLoading || isFetchingHistory) return;
     const text = str.trim();
     setInput("");
     const attachments = pendingAttachments;
@@ -132,16 +142,23 @@ export default function Home() {
 
     const parts: object[] = [];
     if (text) parts.push({ text });
-    for (const att of attachments) parts.push({ data: att.data, mime_type: att.mime_type });
+    for (const att of attachments)
+      parts.push({ data: att.data, mime_type: att.mime_type });
 
     // For the step display, show the first attachment if any (existing StepDisplay handles one)
     if (attachments.length > 0) {
       // Emit one step per attachment, plus a text step if present
-      if (text) setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
+      if (text)
+        setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
       for (const att of attachments)
         setSteps((prev) => [
           ...prev,
-          { type: "user_message" as const, text: att.name, data: att.data, mime_type: att.mime_type },
+          {
+            type: "user_message" as const,
+            text: att.name,
+            data: att.data,
+            mime_type: att.mime_type,
+          },
         ]);
     } else {
       setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
@@ -153,7 +170,10 @@ export default function Home() {
   const handleImageSelect = async (file: File) => {
     if (isLoading) return;
     const base64 = await readFileAsBase64(file);
-    setPendingAttachments((prev) => [...prev, { data: base64, mime_type: file.type, name: file.name }]);
+    setPendingAttachments((prev) => [
+      ...prev,
+      { data: base64, mime_type: file.type, name: file.name },
+    ]);
   };
 
   const handleAudioCapture = async () => {
@@ -172,7 +192,10 @@ export default function Home() {
       const base64 = await readFileAsBase64(
         new File([blob], "voice", { type: mediaRecorder.mimeType }),
       );
-      setPendingAttachments((prev) => [...prev, { data: base64, mime_type: mediaRecorder.mimeType, name: "Voice memo" }]);
+      setPendingAttachments((prev) => [
+        ...prev,
+        { data: base64, mime_type: mediaRecorder.mimeType, name: "Voice memo" },
+      ]);
       stream.getTracks().forEach((t) => t.stop());
     };
     mediaRecorder.start();
@@ -218,6 +241,7 @@ export default function Home() {
 
       <div className="p-4 sticky bottom-0">
         <ChatEditor
+          disabled={isFetchingHistory || isLoading}
           text={input}
           onTextChange={(text) => setInput(text)}
           onSend={handleTextSubmit}
@@ -225,7 +249,9 @@ export default function Home() {
           isRecording={isRecording}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
-          onRemoveAttachment={(i) => setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+          onRemoveAttachment={(i) =>
+            setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
+          }
         ></ChatEditor>
       </div>
 
