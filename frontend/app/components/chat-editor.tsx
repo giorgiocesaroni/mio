@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { twMerge } from "tailwind-merge";
 import { Card } from "./card";
 import { Button } from "./button";
-import { ArrowUp, ImageIcon, Mic, Plus, X } from "lucide-react";
+import { ArrowUp, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
