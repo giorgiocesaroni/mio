@@ -135,10 +135,8 @@ export default function Home() {
     )
       return;
 
-    let id = conversationId;
-
-    if (isNew) {
-      id = v4();
+    if (!conversationId) {
+      const id = v4();
       // Shallow routing
       window.history.pushState(null, "", `/dashboard/chat/${id}`);
       setConversationId(id);
@@ -173,7 +171,7 @@ export default function Home() {
       setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
     }
 
-    await sendMessage(id!, { parts });
+    await sendMessage(conversationId!, { parts });
   };
 
   const handleImageSelect = async (file: File) => {
@@ -195,10 +193,10 @@ export default function Home() {
       if (!attachment) return;
 
       if (autoSend) {
-        let id = conversationId;
-        if (isNew) {
-          id = v4();
+        if (!conversationId) {
+          const id = v4();
           window.history.pushState(null, "", `/dashboard/chat/${id}`);
+          setConversationId(id);
         }
 
         const text = input.trim();
@@ -236,7 +234,7 @@ export default function Home() {
             },
           ]);
 
-        await sendMessage(id!, { parts });
+        await sendMessage(conversationId!, { parts });
       } else {
         setPendingAttachments((prev) => [
           ...prev,
