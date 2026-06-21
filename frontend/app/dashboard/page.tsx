@@ -18,7 +18,6 @@ import {
 import { Button } from "../components/button";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { v4 } from "uuid";
 
 function TotalCost() {
   const { data } = useQuery({
@@ -191,7 +190,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <TotalCost />
           <Button
-            onClick={() => router.push(`/dashboard/chat/${v4()}`)}
+            onClick={() => router.push("/dashboard/chat/new")}
             className="bg-red-500 border-red-500 text-background-alt aspect-square py-2 px-2 rounded-full"
           >
             <Plus className="size-4" />

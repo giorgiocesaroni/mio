@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { v4 } from "uuid";
 import { MessageContent } from "../components/message-content";
 import { Cog } from "lucide-react";
 import {
@@ -81,7 +82,10 @@ function readFileAsBase64(file: File): Promise<string> {
 
 export default function Home() {
   const params = useParams();
-  const conversationId = params.id as string;
+  const router = useRouter();
+  const rawId = params.id as string;
+  const isNew = rawId === "new";
+  const conversationId = isNew ? null : rawId;
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<RunAgentStep[]>([]);
   const { isLoading, setIsLoading } = useChatLoading();
@@ -94,13 +98,13 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (payload: object) => {
+    async (id: string, payload: object) => {
       setIsLoading(true);
       const controller = new AbortController();
       abortRef.current = controller;
 
       try {
-        await streamChat(conversationId, payload, controller.signal, (step) =>
+        await streamChat(id, payload, controller.signal, (step) =>
           setSteps((prev) => [...prev, step]),
         );
       } catch (err) {
@@ -111,13 +115,13 @@ export default function Home() {
         abortRef.current = null;
       }
     },
-    [conversationId],
+    [setIsLoading],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
-    queryKey: ["messages", conversationId],
-    queryFn: () => getConversationMessages(conversationId),
-    enabled: !!conversationId,
+    queryKey: ["messages", rawId],
+    queryFn: () => getConversationMessages(rawId),
+    enabled: !isNew,
     refetchOnWindowFocus: false,
   });
 
@@ -140,6 +144,15 @@ export default function Home() {
       isFetchingHistory
     )
       return;
+
+    let id = conversationId;
+
+    if (isNew) {
+      id = v4();
+      // Shallow routing
+      window.history.pushState(null, "", `/dashboard/chat/${id}`);
+    }
+
     const text = str.trim();
     setInput("");
     const attachments = pendingAttachments;
@@ -169,7 +182,7 @@ export default function Home() {
       setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
     }
 
-    await sendMessage({ parts });
+    await sendMessage(id!, { parts });
   };
 
   const handleImageSelect = async (file: File) => {
@@ -246,7 +259,7 @@ export default function Home() {
 
       <div className="p-4 sticky bottom-0">
         <ChatEditor
-          disabled={isFetchingHistory || isLoading}
+          disabled={isLoading || (!isNew && isFetchingHistory)}
           text={input}
           onTextChange={(text) => setInput(text)}
           onSend={handleTextSubmit}

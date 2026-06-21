@@ -2,7 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { v4 } from "uuid";
 import { getConversations } from "@/repository/supabase/queries";
 import { Button } from "@/app/components/button";
 import { Card } from "@/app/components/card";
@@ -17,7 +16,7 @@ export default function ConversationsPage() {
     queryFn: getConversations,
   });
 
-  const startNew = () => router.push(`/dashboard/chat/${v4()}`);
+  const startNew = () => router.push("/dashboard/chat/new");
 
   return (
     <div className="grid gap-8 p-4">
