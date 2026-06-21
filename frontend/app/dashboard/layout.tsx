@@ -3,5 +3,5 @@ export default function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <div className="font-sans">{children}</div>;
+  return <div className="font-sans max-w-3xl mx-auto">{children}</div>;
 }
