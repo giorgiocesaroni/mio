@@ -1,29 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useParams, useRouter } from "next/navigation";
-import { v4 } from "uuid";
-import { MessageContent } from "../components/message-content";
-import { Cog } from "lucide-react";
+import { Card } from "@/app/components/card";
 import {
   ChatEditor,
   type PendingAttachment,
 } from "@/app/components/chat-editor";
-import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
-import { useChatLoading } from "../layout";
+import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
+import { readFileAsBase64 } from "@/app/lib/utils";
 import {
   type RunAgentStep,
   getConversationMessages,
   streamChat,
 } from "@/repository/backend/queries";
+import { useQuery } from "@tanstack/react-query";
+import { Cog } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { v4 } from "uuid";
+import { MessageContent } from "../components/message-content";
+import { useChatLoading } from "../layout";
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return "Good morning.";
-  if (hour < 18) return "Good afternoon.";
-  return "Good evening.";
+  if (hour < 12) return "What are you eating for breakfast?";
+  if (hour < 18) return "What are your plans for the day?";
+  return "Good evening. How was your day?";
 }
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
@@ -67,31 +69,18 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   );
 }
 
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(",")[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function Home() {
   const params = useParams();
-  const router = useRouter();
   const rawId = params.id as string;
   const isNew = rawId === "new";
-  const conversationId = isNew ? null : rawId;
+  const [conversationId, setConversationId] = useState<string | null>(
+    isNew ? null : rawId,
+  );
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<RunAgentStep[]>([]);
   const { isLoading, setIsLoading } = useChatLoading();
   const bottomRef = useRef<HTMLDivElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
+  const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
@@ -138,6 +127,7 @@ export default function Home() {
   }, [steps]);
 
   const handleTextSubmit = async (str: string) => {
+    debugger;
     if (
       (!str.trim() && pendingAttachments.length === 0) ||
       isLoading ||
@@ -151,6 +141,7 @@ export default function Home() {
       id = v4();
       // Shallow routing
       window.history.pushState(null, "", `/dashboard/chat/${id}`);
+      setConversationId(id);
     }
 
     const text = str.trim();
@@ -194,31 +185,78 @@ export default function Home() {
     ]);
   };
 
-  const handleAudioCapture = async () => {
-    if (isRecording) {
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = mediaRecorder;
-    const chunks: Blob[] = [];
-    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
-      const base64 = await readFileAsBase64(
-        new File([blob], "voice", { type: mediaRecorder.mimeType }),
-      );
-      setPendingAttachments((prev) => [
-        ...prev,
-        { data: base64, mime_type: mediaRecorder.mimeType, name: "Voice memo" },
-      ]);
-      stream.getTracks().forEach((t) => t.stop());
-    };
-    mediaRecorder.start();
-    setIsRecording(true);
-  };
+  const handleRecordingStart = useCallback(() => {
+    startRecording();
+  }, [startRecording]);
+
+  const handleRecordingStop = useCallback(
+    async (autoSend: boolean) => {
+      const attachment = await stopRecording();
+      if (!attachment) return;
+
+      if (autoSend) {
+        let id = conversationId;
+        if (isNew) {
+          id = v4();
+          window.history.pushState(null, "", `/dashboard/chat/${id}`);
+        }
+
+        const text = input.trim();
+        const images = pendingAttachments;
+        const allAttachments = [
+          ...images,
+          {
+            data: attachment.data,
+            mime_type: attachment.mime_type,
+            name: "Voice memo",
+          },
+        ];
+
+        setInput("");
+        setPendingAttachments([]);
+
+        const parts: object[] = [];
+        if (text) parts.push({ text });
+        for (const att of allAttachments)
+          parts.push({ data: att.data, mime_type: att.mime_type });
+
+        if (text)
+          setSteps((prev) => [
+            ...prev,
+            { type: "user_message" as const, text },
+          ]);
+        for (const att of allAttachments)
+          setSteps((prev) => [
+            ...prev,
+            {
+              type: "user_message" as const,
+              text: att.name,
+              data: att.data,
+              mime_type: att.mime_type,
+            },
+          ]);
+
+        await sendMessage(id!, { parts });
+      } else {
+        setPendingAttachments((prev) => [
+          ...prev,
+          {
+            data: attachment.data,
+            mime_type: attachment.mime_type,
+            name: "Voice memo",
+          },
+        ]);
+      }
+    },
+    [
+      stopRecording,
+      conversationId,
+      isNew,
+      input,
+      pendingAttachments,
+      sendMessage,
+    ],
+  );
 
   return (
     <div className="flex flex-col flex-1">
@@ -245,25 +283,14 @@ export default function Home() {
         )}
       </div>
 
-      {/* <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleImageSelect(file);
-          e.target.value = "";
-        }}
-      /> */}
-
       <div className="p-4 sticky bottom-0">
         <ChatEditor
           disabled={isLoading || (!isNew && isFetchingHistory)}
           text={input}
           onTextChange={(text) => setInput(text)}
           onSend={handleTextSubmit}
-          onAudioCapture={handleAudioCapture}
+          onRecordingStart={handleRecordingStart}
+          onRecordingStop={handleRecordingStop}
           isRecording={isRecording}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
@@ -272,41 +299,6 @@ export default function Home() {
           }
         ></ChatEditor>
       </div>
-
-      {/* {!input.trim() ? (
-        <>
-          <button
-            type="button"
-            className="rounded-full size-10 bg-neutral-100 text-neutral-600 flex items-center justify-center cursor-pointer hover:bg-neutral-200 shrink-0 disabled:opacity-50"
-            disabled={isLoading}
-            onClick={() => imageInputRef.current?.click()}
-            title="Choose an image"
-          >
-            <Image className="size-4" />
-          </button>
-          <button
-            type="button"
-            className={`rounded-full size-10 flex items-center justify-center cursor-pointer shrink-0 disabled:opacity-50 ${
-              isRecording
-                ? "bg-red-500 text-white animate-pulse"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-            }`}
-            disabled={isLoading}
-            onClick={handleAudioCapture}
-            title={isRecording ? "Stop recording" : "Record voice memo"}
-          >
-            <Mic className="size-4" />
-          </button>
-        </>
-      ) : (
-        <button
-          type="submit"
-          className="rounded-full size-10 bg-green-700 text-white flex items-center justify-center cursor-pointer shrink-0"
-          disabled={isLoading}
-        >
-          ↑
-        </button>
-      )} */}
     </div>
   );
 }

@@ -32,7 +32,8 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onTextChange: (text: string) => void;
   onSend?: (text: string) => void;
   disabled?: boolean;
-  onAudioCapture?: () => void;
+  onRecordingStart?: () => void;
+  onRecordingStop?: (autoSend: boolean) => void;
   isRecording?: boolean;
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
@@ -46,7 +47,8 @@ export const ChatEditor = ({
   placeholder = "Type a message...",
   onSend,
   disabled = false,
-  onAudioCapture,
+  onRecordingStart,
+  onRecordingStop,
   isRecording = false,
   onImageSelect,
   pendingAttachments = [],
@@ -55,6 +57,8 @@ export const ChatEditor = ({
   ...props
 }: ChatEditorProps) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const pressTimestampRef = useRef(0);
+  const startedRecordingRef = useRef(false);
   return (
     <Card
       className={twMerge(
@@ -126,14 +130,34 @@ export const ChatEditor = ({
         </Button>
         <Button
           className={twMerge(
-            "rounded-full aspect-square py-2 px-2",
+            "rounded-full aspect-square py-2 px-2 select-none",
             isRecording
               ? "bg-red-500 border-red-500 text-white animate-pulse"
               : "bg-muted-background border-muted-background",
           )}
           disabled={disabled}
-          onClick={onAudioCapture}
           title={isRecording ? "Stop recording" : "Record voice memo"}
+          onPointerDown={() => {
+            pressTimestampRef.current = Date.now();
+            if (isRecording) {
+              onRecordingStop?.(false);
+            } else {
+              onRecordingStart?.();
+              startedRecordingRef.current = true;
+            }
+          }}
+          onPointerUp={() => {
+            if (startedRecordingRef.current) {
+              startedRecordingRef.current = false;
+              onRecordingStop?.(Date.now() - pressTimestampRef.current >= 500);
+            }
+          }}
+          onPointerCancel={() => {
+            if (startedRecordingRef.current) {
+              startedRecordingRef.current = false;
+              onRecordingStop?.(false);
+            }
+          }}
         >
           <Mic className="size-4" />
         </Button>
