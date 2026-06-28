@@ -29,8 +29,12 @@ async def run_agent(
 ) -> AsyncGenerator[models.RunAgentStep, None]:
     user_input = _convert_input(input.message)
     repository.create_conversation_if_not_exists(input.conversation_id, input.user_id)
-    repository.insert_conversation_message(input.conversation_id, user_input, input.user_id)
-    contents = repository.get_messages_by_conversation_id(input.conversation_id, input.user_id)
+    repository.insert_conversation_message(
+        input.conversation_id, user_input, input.user_id
+    )
+    contents = repository.get_messages_by_conversation_id(
+        input.conversation_id, input.user_id
+    )
     timezone = repository.get_user_timezone(input.user_id)
     today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
     daily_macros = repository.get_daily_macros(today, input.user_id)
@@ -50,7 +54,9 @@ async def run_agent(
         contents=[*contents, user_input],
     )
     async for content in agent(agent_input):
-        repository.insert_conversation_message(input.conversation_id, content, input.user_id)
+        repository.insert_conversation_message(
+            input.conversation_id, content, input.user_id
+        )
         if content.role == "model" and content.parts:
             for part in content.parts:
                 if part.function_call and part.function_call.name:
@@ -74,7 +80,9 @@ def get_conversation_usage(conversation_id: UUID) -> dict:
     return repository.get_conversation_llm_usage(conversation_id)
 
 
-def get_conversation_history(conversation_id: UUID, user_id: str) -> list[models.RunAgentStep]:
+def get_conversation_history(
+    conversation_id: UUID, user_id: str
+) -> list[models.RunAgentStep]:
     contents = repository.get_messages_by_conversation_id(conversation_id, user_id)
     steps: list[models.RunAgentStep] = []
     for content in contents:
@@ -84,7 +92,11 @@ def get_conversation_history(conversation_id: UUID, user_id: str) -> list[models
                     steps.append(
                         models.UserMessageStep(type="user_message", text=part.text)
                     )
-                elif part.inline_data:
+                elif (
+                    part.inline_data
+                    and part.inline_data.data
+                    and part.inline_data.mime_type
+                ):
                     data_b64 = base64.b64encode(part.inline_data.data).decode()
                     mime = part.inline_data.mime_type
                     label = (

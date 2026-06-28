@@ -15,12 +15,8 @@ db_connection_params = {
     "password": os.getenv("DB_PASSWORD", ""),
     "host": os.getenv("DB_HOST", ""),
     "port": int(os.getenv("DB_PORT", "")),
-    "prepare_threshold": None,
-    "keepalives": 1,
-    "keepalives_idle": 30,
-    "keepalives_interval": 10,
-    "keepalives_count": 5,
-    "connect_timeout": 10,
+    # "prepare_threshold": None,
+    # "connect_timeout": 5,
 }
 
 # Conversations and Messages
@@ -44,7 +40,6 @@ def _localize_to_utc(logged_at: str, timezone: str) -> datetime:
     return local.astimezone(ZoneInfo("UTC"))
 
 
-
 def get_messages_by_conversation_id(
     conversation_id: UUID,
     user_id: str,
@@ -53,7 +48,7 @@ def get_messages_by_conversation_id(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT raw_content
+                SELECT raw_content::json
                 FROM messages
                 WHERE conversation_id = %s AND user_id = %s
                 ORDER BY created_at ASC
@@ -512,7 +507,11 @@ def update_food_log(input: models.UpdateFoodLogInput, user_id: str) -> None:
                 (
                     str(input.food_id) if input.food_id is not None else None,
                     input.quantity_g,
-                    _localize_to_utc(input.logged_at, get_user_timezone(user_id)) if input.logged_at is not None else None,
+                    (
+                        _localize_to_utc(input.logged_at, get_user_timezone(user_id))
+                        if input.logged_at is not None
+                        else None
+                    ),
                     input.id,
                     user_id,
                 ),
