@@ -1,5 +1,6 @@
 import { supabase } from "@/repository/supabase/queries";
 import type { RunAgentStep } from "./types";
+import { queryClient } from "@/app/providers";
 
 export type {
   ToolCallStep,
@@ -81,4 +82,6 @@ export async function streamChat(
       }
     }
   }
+
+  queryClient.invalidateQueries();
 }
