@@ -4,8 +4,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 import google.genai
 
-ModelId = Literal["gemini-3-flash-preview"]
-
 Content = google.genai.types.Content
 
 Part = google.genai.types.Part

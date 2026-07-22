@@ -22,33 +22,12 @@ def get_google_genai_cost(
     usage_metadata: types.GenerateContentResponseUsageMetadata,
 ) -> float:
     model_cost_million_tokens = {
-        "gemini-3-flash-preview": {
-            "text_image_video_input": 0.50,
-            "cached_text_image_video_input": 0.05,
-            "audio_input": 1.00,
-            "cached_audio_input": 0.10,
-            "output": 3.00,
-        },
-        "gemini-3.1-flash-lite": {
-            "text_image_video_input": 0.25,
-            "cached_text_image_video_input": 0.025,
-            "audio_input": 0.50,
-            "cached_audio_input": 0.05,
-            "output": 1.50,
-        },
-        "gemini-3.5-flash": {
-            "text_image_video_input": 1.50,
-            "cached_text_image_video_input": 0.15,
-            "audio_input": 1.50,
-            "cached_audio_input": 0.15,
-            "output": 9.00,
-        },
-        "gemini-2.5-flash-lite": {
-            "text_image_video_input": 0.10,
-            "cached_text_image_video_input": 0.01,
+        "gemini-3.5-flash-lite": {
+            "text_image_video_input": 0.30,
+            "cached_text_image_video_input": 0.03,
             "audio_input": 0.30,
             "cached_audio_input": 0.03,
-            "output": 0.40,
+            "output": 2.50,
         },
     }
     if model_id not in model_cost_million_tokens:

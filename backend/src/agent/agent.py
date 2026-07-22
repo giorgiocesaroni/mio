@@ -8,7 +8,7 @@ from google.genai import Client
 client = Client()
 
 MAX_TURNS = 35
-MODEL_ID = "gemini-3-flash-preview"
+MODEL_ID = "gemini-3.5-flash-lite"
 
 
 async def _invoke_model(
