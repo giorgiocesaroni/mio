@@ -33,7 +33,7 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onSend?: (text: string) => void;
   disabled?: boolean;
   onRecordingStart?: () => void;
-  onRecordingStop?: (autoSend: boolean) => void;
+  onRecordingStop?: () => void;
   isRecording?: boolean;
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
@@ -57,8 +57,6 @@ export const ChatEditor = ({
   ...props
 }: ChatEditorProps) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const pressTimestampRef = useRef(0);
-  const startedRecordingRef = useRef(false);
   return (
     <Card
       className={twMerge(
@@ -137,27 +135,7 @@ export const ChatEditor = ({
           )}
           disabled={disabled}
           title={isRecording ? "Stop recording" : "Record voice memo"}
-          onPointerDown={() => {
-            pressTimestampRef.current = Date.now();
-            if (isRecording) {
-              onRecordingStop?.(false);
-            } else {
-              onRecordingStart?.();
-              startedRecordingRef.current = true;
-            }
-          }}
-          onPointerUp={() => {
-            if (startedRecordingRef.current) {
-              startedRecordingRef.current = false;
-              onRecordingStop?.(Date.now() - pressTimestampRef.current >= 500);
-            }
-          }}
-          onPointerCancel={() => {
-            if (startedRecordingRef.current) {
-              startedRecordingRef.current = false;
-              onRecordingStop?.(false);
-            }
-          }}
+          onClick={isRecording ? onRecordingStop : onRecordingStart}
         >
           <Mic className="size-4" />
         </Button>

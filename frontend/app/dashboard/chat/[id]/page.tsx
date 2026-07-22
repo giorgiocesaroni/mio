@@ -190,72 +190,19 @@ export default function Home() {
   }, [startRecording]);
 
   const handleRecordingStop = useCallback(
-    async (autoSend: boolean) => {
+    async () => {
       const attachment = await stopRecording();
       if (!attachment) return;
-      let id = conversationId;
-      if (autoSend) {
-        if (!id) {
-          id = v4();
-          window.history.pushState(null, "", `/dashboard/chat/${id}`);
-          setConversationId(id);
-        }
-
-        const text = input.trim();
-        const images = pendingAttachments;
-        const allAttachments = [
-          ...images,
-          {
-            data: attachment.data,
-            mime_type: attachment.mime_type,
-            name: "Voice memo",
-          },
-        ];
-
-        setInput("");
-        setPendingAttachments([]);
-
-        const parts: object[] = [];
-        if (text) parts.push({ text });
-        for (const att of allAttachments)
-          parts.push({ data: att.data, mime_type: att.mime_type });
-
-        if (text)
-          setSteps((prev) => [
-            ...prev,
-            { type: "user_message" as const, text },
-          ]);
-        for (const att of allAttachments)
-          setSteps((prev) => [
-            ...prev,
-            {
-              type: "user_message" as const,
-              text: att.name,
-              data: att.data,
-              mime_type: att.mime_type,
-            },
-          ]);
-
-        await sendMessage(id, { parts });
-      } else {
-        setPendingAttachments((prev) => [
-          ...prev,
-          {
-            data: attachment.data,
-            mime_type: attachment.mime_type,
-            name: "Voice memo",
-          },
-        ]);
-      }
+      setPendingAttachments((prev) => [
+        ...prev,
+        {
+          data: attachment.data,
+          mime_type: attachment.mime_type,
+          name: "Voice memo",
+        },
+      ]);
     },
-    [
-      stopRecording,
-      conversationId,
-      isNew,
-      input,
-      pendingAttachments,
-      sendMessage,
-    ],
+    [stopRecording],
   );
 
   return (
