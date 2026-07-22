@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react";
 import { readFileAsBase64 } from "../lib/utils";
-import { useAudioStream } from "./use-audio-stream";
 
 interface AudioAttachment {
   data: string;
@@ -10,15 +9,13 @@ interface AudioAttachment {
 }
 
 export function useAudioRecorder() {
-  const { permissionGranted } = useAudioStream();
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const startRecording = useCallback(async () => {
-    if (!permissionGranted || mediaRecorderRef.current?.state === "recording")
-      return;
+    if (mediaRecorderRef.current?.state === "recording") return;
     chunksRef.current = [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
@@ -31,7 +28,7 @@ export function useAudioRecorder() {
     mediaRecorderRef.current = mediaRecorder;
     mediaRecorder.start();
     setIsRecording(true);
-  }, [permissionGranted]);
+  }, []);
 
   const stopRecording = useCallback(() => {
     return new Promise<AudioAttachment | null>((resolve) => {
