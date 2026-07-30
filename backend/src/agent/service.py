@@ -15,6 +15,26 @@ def _convert_input(message: models.MessageType) -> dict:
     for part in message.parts:
         if part.text:
             parts.append({"type": "text", "text": part.text})
+        elif part.url:
+            mime = part.mime_type or "application/octet-stream"
+            if mime.startswith("audio/"):
+                parts.append(
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": part.url,
+                        },
+                    }
+                )
+            else:
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": part.url,
+                        },
+                    }
+                )
         elif part.data:
             mime = part.mime_type or "application/octet-stream"
             b64 = base64.b64encode(part.data).decode()
@@ -69,23 +89,29 @@ async def run_agent(
         user_id=input.user_id,
         system_prompt=system_prompt,
         contents=contents,
+        thinking=input.thinking,
     )
-    async for message in agent(agent_input):
-        repository.insert_conversation_message(
-            input.conversation_id, message, input.user_id
-        )
-        role = message.get("role")
-        if role == "assistant":
-            content = message.get("content")
-            if content:
-                yield models.MessageStep(type="message", text=content)
-            for tc in message.get("tool_calls") or []:
-                func = tc["function"]
-                yield models.ToolCallStep(
-                    type="tool_call",
-                    name=func["name"],
-                    args=json.loads(func["arguments"]),
-                )
+    async for chunk in agent(agent_input):
+        if isinstance(chunk, models.ContentTokenStep):
+            yield chunk
+        elif isinstance(chunk, models.ToolCallStartStep):
+            yield chunk
+        elif isinstance(chunk, dict):
+            repository.insert_conversation_message(
+                input.conversation_id, chunk, input.user_id
+            )
+            role = chunk.get("role")
+            if role == "assistant":
+                content = chunk.get("content")
+                if content:
+                    yield models.MessageStep(type="message", text=content)
+                for tc in chunk.get("tool_calls") or []:
+                    func = tc["function"]
+                    yield models.ToolCallStep(
+                        type="tool_call",
+                        name=func["name"],
+                        args=json.loads(func["arguments"]),
+                    )
 
 
 def get_total_usage() -> dict:
@@ -117,8 +143,9 @@ def get_conversation_history(
                         )
                     elif part.get("type") == "image_url":
                         url = part.get("image_url", {}).get("url", "")
+                        label = "Image"
                         if url.startswith("data:"):
-                            header, b64data = url.split(",", 1)
+                            header, _ = url.split(",", 1)
                             mime = header.split(":")[1].split(";")[0]
                             label = (
                                 "Image"
@@ -127,14 +154,30 @@ def get_conversation_history(
                                 if mime.startswith("audio/")
                                 else "File"
                             )
-                            steps.append(
-                                models.UserMessageStep(
-                                    type="user_message",
-                                    text=label,
-                                    data=b64data,
-                                    mime_type=mime,
-                                )
+                        steps.append(
+                            models.UserMessageStep(
+                                type="user_message",
+                                text=label,
+                                data=url,
+                                mime_type="url" if not url.startswith("data:") else None,
                             )
+                        )
+                    elif part.get("type") == "input_audio":
+                        url = part.get("input_audio", {}).get("data", "")
+                        label = "Audio"
+                        if url.startswith("data:"):
+                            header, _ = url.split(",", 1)
+                            mime = header.split(":")[1].split(";")[0]
+                        else:
+                            mime = "audio/ogg"
+                        steps.append(
+                            models.UserMessageStep(
+                                type="user_message",
+                                text=label,
+                                data=url,
+                                mime_type="url" if not url.startswith("data:") else mime,
+                            )
+                        )
         elif role == "assistant":
             content = msg.get("content")
             if content:

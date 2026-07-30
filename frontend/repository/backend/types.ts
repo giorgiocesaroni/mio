@@ -4,6 +4,16 @@ export type ToolCallStep = {
   args: Record<string, unknown>;
 };
 
+export type ToolCallStartStep = {
+  type: "tool_call_start";
+  name: string;
+};
+
+export type ContentTokenStep = {
+  type: "content_token";
+  token: string;
+};
+
 export type MessageStep = {
   type: "message";
   text: string;
@@ -16,4 +26,4 @@ export type UserMessageStep = {
   mime_type?: string;
 };
 
-export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep;
+export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep;

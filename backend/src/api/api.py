@@ -6,11 +6,12 @@ import base64
 import json
 import os
 from uuid import UUID
-from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, File, Request, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
+import src.api.media as media
 import supabase
 
 app = FastAPI()
@@ -62,6 +63,7 @@ def _parse_message(msg: dict) -> models.MessageType:
                     text=part.get("text"),
                     data=base64.b64decode(part["data"]) if part.get("data") else None,
                     mime_type=part.get("mime_type"),
+                    url=part.get("url"),
                 )
                 for part in msg["parts"]
             ],
@@ -110,6 +112,7 @@ async def chat_endpoint(
         conversation_id=body["conversation_id"],
         user_id=user_id,
         message=_parse_message(body["message"]),
+        thinking=body.get("thinking", True),
     )
 
     async def event_stream():
@@ -128,6 +131,23 @@ async def chat_endpoint(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 50MB)")
+    try:
+        url, mime_type = media.upload_media(user_id, data, file.content_type or "application/octet-stream")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
+    return {"url": url, "mime_type": mime_type}
 
 
 @app.get("/conversations/{conversation_id}/messages")

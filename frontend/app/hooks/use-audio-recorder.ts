@@ -3,10 +3,9 @@
 import { useCallback, useRef, useState } from "react";
 import { MediaRecorder as ExtMediaRecorder, register } from "extendable-media-recorder";
 import { connect } from "extendable-media-recorder-wav-encoder";
-import { readFileAsBase64 } from "../lib/utils";
 
 interface AudioAttachment {
-  data: string;
+  blob: Blob;
   mime_type: string;
 }
 
@@ -47,12 +46,9 @@ export function useAudioRecorder() {
       }
       mediaRecorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: "audio/wav" });
-        const base64 = await readFileAsBase64(
-          new File([blob], "voice", { type: "audio/wav" }),
-        );
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
-        resolve({ data: base64, mime_type: "audio/wav" });
+        resolve({ blob, mime_type: "audio/wav" });
       };
       mediaRecorder.stop();
       setIsRecording(false);

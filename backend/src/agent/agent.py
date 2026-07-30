@@ -4,10 +4,10 @@ import src.agent.repository as repository
 import src.agent.tools as tools
 from src.agent.utils import get_mimo_cost
 from typing import AsyncGenerator
-from openai import OpenAI
+from openai import AsyncOpenAI
 import os
 
-client = OpenAI(
+client = AsyncOpenAI(
     base_url="https://api.xiaomimimo.com/v1", api_key=os.getenv("MIMO_API_KEY")
 )
 
@@ -56,10 +56,11 @@ def _to_openai_tools(declarations: list) -> list[dict]:
 async def _invoke_model(
     model_id: str,
     messages: list[dict],
-) -> tuple[dict, dict]:
+) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
+    """Stream model response, yielding content tokens, tool call starts, and the final message dict."""
     for _ in range(3):
         try:
-            response = client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model=model_id,
                 messages=messages,
                 extra_body={"thinking": {"type": "disabled"}},
@@ -67,11 +68,55 @@ async def _invoke_model(
                 max_completion_tokens=1024,
                 temperature=1.0,
                 top_p=0.95,
+                stream=True,
             )
-            print(f"Model response:\n{response}")
-            message = response.choices[0].message
-            usage = response.usage.model_dump() if response.usage else {}
-            return message.model_dump(), usage
+            content_parts: list[str] = []
+            tool_calls_acc: dict[int, dict] = {}
+            tool_names_emitted: set[int] = set()
+            usage = {}
+
+            async for chunk in stream:
+                choice = chunk.choices[0] if chunk.choices else None
+                if choice:
+                    delta = choice.delta
+                    if delta.content:
+                        content_parts.append(delta.content)
+                        yield models.ContentTokenStep(token=delta.content)
+                    if delta.tool_calls:
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {
+                                    "id": tc_delta.id or "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            if tc_delta.id:
+                                tool_calls_acc[idx]["id"] = tc_delta.id
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    tool_calls_acc[idx]["function"][
+                                        "name"
+                                    ] = tc_delta.function.name
+                                    if idx not in tool_names_emitted:
+                                        tool_names_emitted.add(idx)
+                                        yield models.ToolCallStartStep(
+                                            name=tc_delta.function.name
+                                        )
+                                if tc_delta.function.arguments:
+                                    tool_calls_acc[idx]["function"][
+                                        "arguments"
+                                    ] += tc_delta.function.arguments
+                if chunk.usage:
+                    usage = chunk.usage.model_dump()
+
+            message_dict = {
+                "role": "assistant",
+                "content": "".join(content_parts) or None,
+                "tool_calls": list(tool_calls_acc.values()) if tool_calls_acc else None,
+            }
+            yield message_dict, usage
+            return
         except Exception as e:
             print(f"Model exception: {e}")
     raise Exception("Failed to invoke model after 3 attempts.")
@@ -203,29 +248,33 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
 
 async def agent(
     input: models.AgentInput,
-) -> AsyncGenerator[dict, None]:
+) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
     messages: list[dict] = [
         {"role": "system", "content": input.system_prompt},
         *_convert_history(input.contents),
     ]
     for _ in range(MAX_TURNS):
-        message_dict, usage = await _invoke_model(MODEL_ID, messages)
-        if usage:
-            cost = get_mimo_cost(model_id=MODEL_ID, usage=usage)
-            print(f"Invocation cost: ${cost}")
-            repository.insert_llm_invocation(
-                total_cost=cost,
-                raw_usage_metadata=usage,
-                user_id=input.user_id,
-                conversation_id=input.conversation_id,
-            )
-        messages.append(message_dict)
-        yield message_dict
-        tool_calls = message_dict.get("tool_calls") or []
-        if not tool_calls:
-            return
-        for tc in tool_calls:
-            tool_result = _get_tool_response(tc, input.user_id)
-            messages.append(tool_result)
-            yield tool_result
+        async for chunk in _invoke_model(MODEL_ID, messages):
+            if isinstance(chunk, tuple):
+                message_dict, usage = chunk
+                if usage:
+                    cost = get_mimo_cost(model_id=MODEL_ID, usage=usage)
+                    print(f"Invocation cost: ${cost}")
+                    repository.insert_llm_invocation(
+                        total_cost=cost,
+                        raw_usage_metadata=usage,
+                        user_id=input.user_id,
+                        conversation_id=input.conversation_id,
+                    )
+                messages.append(message_dict)
+                yield message_dict
+                tool_calls = message_dict.get("tool_calls") or []
+                if not tool_calls:
+                    return
+                for tc in tool_calls:
+                    tool_result = _get_tool_response(tc, input.user_id)
+                    messages.append(tool_result)
+                    yield tool_result
+            else:
+                yield chunk
     raise Exception("Maximum number of turns reached without reaching a conclusion.")

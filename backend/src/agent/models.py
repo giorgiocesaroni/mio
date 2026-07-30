@@ -9,6 +9,7 @@ class AgentInput(BaseModel):
     user_id: str
     system_prompt: str
     contents: list[dict]
+    thinking: bool = True
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
@@ -27,6 +28,16 @@ class ToolCallStep(BaseModel):
     args: dict
 
 
+class ToolCallStartStep(BaseModel):
+    type: Literal["tool_call_start"] = "tool_call_start"
+    name: str
+
+
+class ContentTokenStep(BaseModel):
+    type: Literal["content_token"] = "content_token"
+    token: str
+
+
 class UserMessageStep(BaseModel):
     type: Literal["user_message"] = "user_message"
     text: str
@@ -39,13 +50,14 @@ class MessageStep(BaseModel):
     text: str
 
 
-RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep]
+RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep, ContentTokenStep, ToolCallStartStep]
 
 
 class UserMessagePart(BaseModel):
     text: Optional[str] = None
     data: Optional[bytes] = None
     mime_type: Optional[str] = None
+    url: Optional[str] = None
 
 
 class RunAgentUserMessage(BaseModel):
@@ -61,6 +73,7 @@ class RunAgentInput(BaseModel):
     user_id: str
     message: MessageType
     channel_instructions: Optional[str] = None
+    thinking: bool = True
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:

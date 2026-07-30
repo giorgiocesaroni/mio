@@ -19,6 +19,7 @@ from telegram.ext.filters import COMMAND
 import src.agent.models as models
 import src.agent.service as service
 from src.agent.utils import summarize_large_numbers
+import src.api.media as media
 
 logger = logging.getLogger(__name__)
 
@@ -50,20 +51,36 @@ async def _answer_message(update: Update, _: ContextTypes.DEFAULT_TYPE):
         parts.append(models.UserMessagePart(text=user_text))
     if user_voice:
         voice = await user_voice.get_file()
-        parts.append(
-            models.UserMessagePart(
-                data=await voice.download_as_bytearray(),
-                mime_type="audio/ogg",
+        voice_bytes = await voice.download_as_bytearray()
+        try:
+            url, mime_type = media.upload_media(
+                str(chat_id), bytes(voice_bytes), "audio/ogg"
             )
-        )
+            parts.append(models.UserMessagePart(url=url, mime_type=mime_type))
+        except Exception as e:
+            logger.error(f"Failed to upload voice: {e}")
+            parts.append(
+                models.UserMessagePart(
+                    data=voice_bytes,
+                    mime_type="audio/ogg",
+                )
+            )
     if user_photo:
         photo = await user_photo[-1].get_file()
-        parts.append(
-            models.UserMessagePart(
-                data=await photo.download_as_bytearray(),
-                mime_type="image/jpeg",
+        photo_bytes = await photo.download_as_bytearray()
+        try:
+            url, mime_type = media.upload_media(
+                str(chat_id), bytes(photo_bytes), "image/jpeg"
             )
-        )
+            parts.append(models.UserMessagePart(url=url, mime_type=mime_type))
+        except Exception as e:
+            logger.error(f"Failed to upload photo: {e}")
+            parts.append(
+                models.UserMessagePart(
+                    data=photo_bytes,
+                    mime_type="image/jpeg",
+                )
+            )
     if update.message.caption:
         parts.append(models.UserMessagePart(text=update.message.caption))
 

@@ -7,14 +7,16 @@ import {
 } from "@/app/components/chat-editor";
 import { H1, P } from "@/app/components/typography";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
-import { readFileAsBase64 } from "@/app/lib/utils";
 import {
   type RunAgentStep,
+  type ContentTokenStep,
+  type ToolCallStartStep,
   getConversationMessages,
   streamChat,
+  uploadFile,
 } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
-import { Cog } from "lucide-react";
+import { Cog, Loader2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
@@ -34,17 +36,16 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       <Card className={`justify-self-end px-4 py-2`}>
         {step.data ? (
           <div className="space-y-2">
-            {/* <p className="text-sm text-green-700">{step.text}</p> */}
             {step.mime_type?.startsWith("image/") ? (
               <img
-                src={`data:${step.mime_type};base64,${step.data}`}
+                src={step.data}
                 alt="User image"
                 className="max-w-24 max-h-24 object-cover rounded-lg"
               />
-            ) : step.mime_type?.startsWith("audio/") ? (
+            ) : step.mime_type?.startsWith("audio/") || step.mime_type === "url" ? (
               <audio
                 controls
-                src={`data:${step.mime_type};base64,${step.data}`}
+                src={step.data}
                 className="min-w-32 max-w-full"
               />
             ) : null}
@@ -58,7 +59,21 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "tool_call") {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Cog className="size-4" /> <P className="font-serif">{step.name}...</P>
+        <Cog className="size-4" /> <P className="font-serif">{step.name}</P>
+      </div>
+    );
+  }
+  if (step.type === "tool_call_start") {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+        <Loader2 className="size-4 animate-spin" /> <P className="font-serif">{step.name}...</P>
+      </div>
+    );
+  }
+  if (step.type === "content_token") {
+    return (
+      <div className="pr-8">
+        <MessageContent text={step.token} />
       </div>
     );
   }
@@ -84,27 +99,65 @@ export default function Home() {
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
+  const [thinking, setThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const streamingContentRef = useRef<string>("");
+  const streamingTokenCountRef = useRef<number>(0);
 
   const sendMessage = useCallback(
     async (id: string, payload: object) => {
       setIsLoading(true);
       const controller = new AbortController();
       abortRef.current = controller;
+      streamingContentRef.current = "";
+      streamingTokenCountRef.current = 0;
 
       try {
-        await streamChat(id, payload, controller.signal, (step) =>
-          setSteps((prev) => [...prev, step]),
-        );
+        await streamChat(id, { ...payload, thinking }, controller.signal, (step) => {
+          if (step.type === "content_token") {
+            streamingContentRef.current += step.token;
+            streamingTokenCountRef.current++;
+            setSteps((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.type === "content_token") {
+                return [
+                  ...prev.slice(0, -1),
+                  { type: "content_token", token: streamingContentRef.current },
+                ];
+              }
+              return [...prev, { type: "content_token", token: streamingContentRef.current }];
+            });
+          } else if (step.type === "tool_call_start") {
+            streamingContentRef.current = "";
+            streamingTokenCountRef.current = 0;
+            setSteps((prev) => [...prev, step]);
+          } else if (step.type === "tool_call") {
+            setSteps((prev) => {
+              const filtered = prev.filter((s) => s.type !== "tool_call_start");
+              return [...filtered, step];
+            });
+          } else if (step.type === "message") {
+            setSteps((prev) => {
+              const filtered = prev.filter((s) => s.type !== "content_token");
+              return [...filtered, step];
+            });
+            streamingContentRef.current = "";
+            streamingTokenCountRef.current = 0;
+          } else {
+            setSteps((prev) => [...prev, step]);
+          }
+        });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Stream error:", err);
       } finally {
         setIsLoading(false);
         abortRef.current = null;
+        streamingContentRef.current = "";
+        streamingTokenCountRef.current = 0;
       }
     },
-    [setIsLoading],
+    [setIsLoading, thinking],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
@@ -127,7 +180,6 @@ export default function Home() {
   }, [steps]);
 
   const handleTextSubmit = async (str: string) => {
-    debugger;
     if (
       (!str.trim() && pendingAttachments.length === 0) ||
       isLoading ||
@@ -152,11 +204,9 @@ export default function Home() {
     const parts: object[] = [];
     if (text) parts.push({ text });
     for (const att of attachments)
-      parts.push({ data: att.data, mime_type: att.mime_type });
+      parts.push({ url: att.url, mime_type: att.mime_type });
 
-    // For the step display, show the first attachment if any (existing StepDisplay handles one)
     if (attachments.length > 0) {
-      // Emit one step per attachment, plus a text step if present
       if (text)
         setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
       for (const att of attachments)
@@ -165,7 +215,7 @@ export default function Home() {
           {
             type: "user_message" as const,
             text: att.name,
-            data: att.data,
+            data: att.url,
             mime_type: att.mime_type,
           },
         ]);
@@ -178,11 +228,15 @@ export default function Home() {
 
   const handleImageSelect = async (file: File) => {
     if (isLoading) return;
-    const base64 = await readFileAsBase64(file);
-    setPendingAttachments((prev) => [
-      ...prev,
-      { data: base64, mime_type: file.type, name: file.name },
-    ]);
+    try {
+      const { url, mime_type } = await uploadFile(file);
+      setPendingAttachments((prev) => [
+        ...prev,
+        { url, mime_type, name: file.name },
+      ]);
+    } catch (err) {
+      console.error("Upload failed:", err);
+    }
   };
 
   const handleRecordingStart = useCallback(() => {
@@ -193,14 +247,18 @@ export default function Home() {
     async () => {
       const attachment = await stopRecording();
       if (!attachment) return;
-      setPendingAttachments((prev) => [
-        ...prev,
-        {
-          data: attachment.data,
-          mime_type: attachment.mime_type,
-          name: "Voice memo",
-        },
-      ]);
+      try {
+        const file = new File([attachment.blob], "voice.wav", {
+          type: attachment.mime_type,
+        });
+        const { url, mime_type } = await uploadFile(file);
+        setPendingAttachments((prev) => [
+          ...prev,
+          { url, mime_type, name: "Voice memo" },
+        ]);
+      } catch (err) {
+        console.error("Upload failed:", err);
+      }
     },
     [stopRecording],
   );
@@ -244,6 +302,8 @@ export default function Home() {
           onRemoveAttachment={(i) =>
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
           }
+          thinking={thinking}
+          onThinkingToggle={() => setThinking((t) => !t)}
         ></ChatEditor>
       </div>
     </div>

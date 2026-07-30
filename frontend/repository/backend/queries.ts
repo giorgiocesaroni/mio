@@ -4,6 +4,8 @@ import { queryClient } from "@/app/providers";
 
 export type {
   ToolCallStep,
+  ToolCallStartStep,
+  ContentTokenStep,
   MessageStep,
   UserMessageStep,
   RunAgentStep,
@@ -30,6 +32,19 @@ function parseStep(data: unknown): RunAgentStep | null {
     return data as RunAgentStep;
   }
   return null;
+}
+
+export async function uploadFile(file: File): Promise<{ url: string; mime_type: string }> {
+  const headers = await getAuthHeaders();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/upload`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+  return res.json();
 }
 
 export async function getConversationMessages(

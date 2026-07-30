@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { twMerge } from "tailwind-merge";
 import { Card } from "./card";
 import { Button } from "./button";
-import { ArrowUp, Mic, Plus, X } from "lucide-react";
+import { ArrowUp, MessageCircleMore, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
@@ -21,7 +21,7 @@ export const ChatChip = ({
 );
 
 export interface PendingAttachment {
-  data: string;
+  url: string;
   mime_type: string;
   name: string;
 }
@@ -38,6 +38,8 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (index: number) => void;
+  thinking?: boolean;
+  onThinkingToggle?: () => void;
 }
 
 export const ChatEditor = ({
@@ -53,6 +55,8 @@ export const ChatEditor = ({
   onImageSelect,
   pendingAttachments = [],
   onRemoveAttachment,
+  thinking = false,
+  onThinkingToggle,
   children,
   ...props
 }: ChatEditorProps) => {
@@ -70,7 +74,7 @@ export const ChatEditor = ({
             <div key={i} className="relative size-16 shrink-0">
               {att.mime_type.startsWith("image/") ? (
                 <img
-                  src={`data:${att.mime_type};base64,${att.data}`}
+                  src={att.url}
                   alt={att.name}
                   className="size-16 object-cover rounded-xl border border-border"
                 />
@@ -106,7 +110,6 @@ export const ChatEditor = ({
       />
       <div className="flex items-center gap-2">
         {children}
-        <div className="flex-1"></div>
         <input
           ref={imageInputRef}
           type="file"
@@ -125,6 +128,20 @@ export const ChatEditor = ({
           title="Choose an image"
         >
           <Plus className="size-4" />
+        </Button>
+        <div className="flex-1"></div>
+        <Button
+          disabled={disabled}
+          className={twMerge(
+            "rounded-full aspect-square py-2 px-2",
+            thinking
+              ? "bg-blue-500 border-blue-500 text-white"
+              : "bg-muted-background border-muted-background",
+          )}
+          onClick={onThinkingToggle}
+          title={thinking ? "Thinking enabled" : "Thinking disabled"}
+        >
+          <MessageCircleMore className="size-4" />
         </Button>
         <Button
           className={twMerge(
