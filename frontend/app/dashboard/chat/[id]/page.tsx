@@ -95,7 +95,6 @@ export default function Home() {
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
-  const [thinking, setThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
   const streamingTokenCountRef = useRef<number>(0);
@@ -111,7 +110,7 @@ export default function Home() {
       try {
         await streamChat(
           id,
-          { ...payload, thinking },
+          payload,
           controller.signal,
           (step) => {
             if (step.type === "content_token") {
@@ -166,7 +165,7 @@ export default function Home() {
         streamingTokenCountRef.current = 0;
       }
     },
-    [setIsLoading, thinking],
+    [setIsLoading],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
@@ -313,8 +312,6 @@ export default function Home() {
           onRemoveAttachment={(i) =>
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
           }
-          thinking={thinking}
-          onThinkingToggle={() => setThinking((t) => !t)}
         ></ChatEditor>
       </div>
     </div>
