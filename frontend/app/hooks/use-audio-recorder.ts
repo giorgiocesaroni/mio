@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { MediaRecorder, register } from "extendable-media-recorder";
+import { MediaRecorder as ExtMediaRecorder, register } from "extendable-media-recorder";
 import { connect } from "extendable-media-recorder-wav-encoder";
 import { readFileAsBase64 } from "../lib/utils";
 
@@ -21,7 +21,7 @@ async function ensureWavEncoder() {
 
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
@@ -31,7 +31,7 @@ export function useAudioRecorder() {
     chunksRef.current = [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
-    const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/wav" });
+    const mediaRecorder = new ExtMediaRecorder(stream, { mimeType: "audio/wav" });
     mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     mediaRecorderRef.current = mediaRecorder;
     mediaRecorder.start();
