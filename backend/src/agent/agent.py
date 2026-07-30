@@ -14,6 +14,20 @@ client = AsyncOpenAI(
 MAX_TURNS = 35
 MODEL_ID = "mimo-v2.5"
 
+
+def _sanitize_tool_calls(messages: list[dict]) -> None:
+    """Validate and fix malformed tool call arguments in-place."""
+    for msg in messages:
+        if msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                args_str = tc.get("function", {}).get("arguments", "")
+                if args_str:
+                    try:
+                        json.loads(args_str)
+                    except json.JSONDecodeError:
+                        tc["function"]["arguments"] = "{}"
+
+
 TOOL_DECLARATIONS = [
     tools.search_declaration,
     tools.fetch_declaration,
@@ -151,6 +165,7 @@ def _convert_history(contents: list[dict]) -> list[dict]:
             continue
         if role == "tool":
             messages.append(msg)
+    _sanitize_tool_calls(messages)
     return messages
 
 
@@ -254,6 +269,7 @@ async def agent(
         *_convert_history(input.contents),
     ]
     for _ in range(MAX_TURNS):
+        _sanitize_tool_calls(messages)
         async for chunk in _invoke_model(MODEL_ID, messages):
             if isinstance(chunk, tuple):
                 message_dict, usage = chunk
