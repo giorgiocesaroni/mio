@@ -170,7 +170,10 @@ def _convert_history(contents: list[dict]) -> list[dict]:
 
 
 def _get_tool_response(tool_call: dict, user_id: str) -> dict:
-    args = json.loads(tool_call["function"]["arguments"])
+    try:
+        args = json.loads(tool_call["function"]["arguments"])
+    except json.JSONDecodeError:
+        args = {}
     name = tool_call["function"]["name"]
     response = None
     try:

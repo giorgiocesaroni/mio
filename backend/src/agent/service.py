@@ -153,10 +153,14 @@ async def run_agent(
                     yield models.MessageStep(type="message", text=content)
                 for tc in chunk.get("tool_calls") or []:
                     func = tc["function"]
+                    try:
+                        args = json.loads(func["arguments"])
+                    except json.JSONDecodeError:
+                        args = {}
                     yield models.ToolCallStep(
                         type="tool_call",
                         name=func["name"],
-                        args=json.loads(func["arguments"]),
+                        args=args,
                     )
 
 
@@ -230,11 +234,15 @@ def get_conversation_history(
                 steps.append(models.MessageStep(type="message", text=content))
             for tc in msg.get("tool_calls") or []:
                 func = tc["function"]
+                try:
+                    args = json.loads(func["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
                 steps.append(
                     models.ToolCallStep(
                         type="tool_call",
                         name=func["name"],
-                        args=json.loads(func["arguments"]),
+                        args=args,
                     )
                 )
     return steps
