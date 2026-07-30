@@ -18,7 +18,7 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `do
 | Directory   | Notes                           | Core Technologies |
 | ----------- | ------------------------------- | ----------------- |
 | `adapters/` | The platform-specific adapters. | Telegram          |
-| `agent/`    | The agent's core logic.         | Gemini API        |
+| `agent/`    | The agent's core logic.         | MiMo API (OpenAI-compatible) |
 | `api/`      | The API of the application.     | FastAPI           |
 
 ### Module Structure

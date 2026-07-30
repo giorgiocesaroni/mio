@@ -389,9 +389,9 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
         "logs": [log.model_dump() for log in logs],
         "daily_macros": daily_macros,
         "latest_measurement": (
-            latest_measurement.model_dump() if latest_measurement else None
+            latest_measurement.model_dump(mode="json") if latest_measurement else None
         ),
-        "current_goal": current_goal.model_dump() if current_goal else None,
+        "current_goal": current_goal.model_dump(mode="json") if current_goal else None,
     }
 
 
@@ -557,7 +557,7 @@ get_current_goal_declaration = models.FunctionDeclaration(
 
 def get_current_goal_tool(user_id: str) -> dict | None:
     goal = repository.get_current_goal(user_id)
-    return goal.model_dump() if goal else None
+    return goal.model_dump(mode="json") if goal else None
 
 
 insert_goal_declaration = models.FunctionDeclaration(
@@ -638,7 +638,7 @@ get_latest_measurements_declaration = models.FunctionDeclaration(
 
 def get_latest_measurements_tool(user_id: str) -> dict | None:
     measurement = repository.get_latest_measurement(user_id)
-    return measurement.model_dump() if measurement else None
+    return measurement.model_dump(mode="json") if measurement else None
 
 
 insert_measurement_declaration = models.FunctionDeclaration(

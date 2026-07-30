@@ -43,7 +43,7 @@ def _localize_to_utc(logged_at: str, timezone: str) -> datetime:
 def get_messages_by_conversation_id(
     conversation_id: UUID,
     user_id: str,
-) -> list[models.Content]:
+) -> list[dict]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -56,7 +56,7 @@ def get_messages_by_conversation_id(
                 (conversation_id, user_id),
             )
             rows = cur.fetchall()
-            return [models.Content.model_validate(row[0]) for row in rows]
+            return [row[0] for row in rows]
 
 
 def create_conversation_if_not_exists(conversation_id: UUID, user_id: str) -> None:
@@ -73,7 +73,7 @@ def create_conversation_if_not_exists(conversation_id: UUID, user_id: str) -> No
 
 
 def insert_conversation_message(
-    conversation_id: UUID, content: models.Content, user_id: str
+    conversation_id: UUID, content: dict, user_id: str
 ) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
@@ -82,7 +82,7 @@ def insert_conversation_message(
                 INSERT INTO messages (conversation_id, raw_content, user_id)
                 VALUES (%s, %s, %s)
                 """,
-                (conversation_id, content.model_dump_json(), user_id),
+                (conversation_id, json.dumps(content), user_id),
             )
 
 
@@ -116,9 +116,8 @@ def get_total_llm_usage() -> dict:
                 SELECT
                     COUNT(*)::int as total_invocations,
                     COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_token_count')::bigint, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'candidates_token_count')::bigint, 0)), 0) as total_candidates_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'cached_content_token_count')::bigint, 0)), 0) as total_cached_tokens
+                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_tokens')::bigint, 0)), 0) as total_prompt_tokens,
+                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'completion_tokens')::bigint, 0)), 0) as total_completion_tokens
                 FROM llm_invocations
                 """,
             )
@@ -129,8 +128,7 @@ def get_total_llm_usage() -> dict:
                 "total_invocations": row[0],
                 "total_cost": float(row[1]),
                 "prompt_tokens": row[2],
-                "candidates_tokens": row[3],
-                "cached_tokens": row[4],
+                "completion_tokens": row[3],
             }
 
 
@@ -142,9 +140,8 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                 SELECT
                     COUNT(*)::int as total_invocations,
                     COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_token_count')::bigint, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'candidates_token_count')::bigint, 0)), 0) as total_candidates_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'cached_content_token_count')::bigint, 0)), 0) as total_cached_tokens
+                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_tokens')::bigint, 0)), 0) as total_prompt_tokens,
+                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'completion_tokens')::bigint, 0)), 0) as total_completion_tokens
                 FROM llm_invocations
                 WHERE conversation_id = %s
                 """,
@@ -159,8 +156,7 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                 "total_invocations": row[0],
                 "total_cost": float(row[1]),
                 "prompt_tokens": row[2],
-                "candidates_tokens": row[3],
-                "cached_tokens": row[4],
+                "completion_tokens": row[3],
             }
 
 

@@ -2,38 +2,23 @@ from datetime import datetime
 from typing import Literal, Optional, Union
 from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
-import google.genai
-
-Content = google.genai.types.Content
-
-Part = google.genai.types.Part
-
-FunctionDeclaration = google.genai.types.FunctionDeclaration
-
-GenerateContentConfig = google.genai.types.GenerateContentConfig
-
-Tool = google.genai.types.Tool
-
-GenerateContentResponse = google.genai.types.GenerateContentResponse
-
-FunctionCall = google.genai.types.FunctionCall
-
-FunctionResponse = google.genai.types.FunctionResponse
-
-ThinkingConfig = google.genai.types.ThinkingConfig
-
-ThinkingLevel = google.genai.types.ThinkingLevel
 
 
 class AgentInput(BaseModel):
     conversation_id: UUID
     user_id: str
     system_prompt: str
-    contents: list[Content]
+    contents: list[dict]
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
         return str(conversation_id)
+
+
+class FunctionDeclaration(BaseModel):
+    name: str
+    description: str
+    parameters_json_schema: dict
 
 
 class ToolCallStep(BaseModel):

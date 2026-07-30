@@ -1,5 +1,6 @@
 import base64
 import datetime
+import json
 from typing import AsyncGenerator
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -9,19 +10,23 @@ from src.agent.agent import agent
 import src.agent.prompts as prompts
 
 
-def _convert_input(message: models.MessageType) -> models.Content:
+def _convert_input(message: models.MessageType) -> dict:
     parts = []
     for part in message.parts:
         if part.text:
-            parts.append(models.Part(text=part.text))
+            parts.append({"type": "text", "text": part.text})
         elif part.data:
             parts.append(
-                models.Part.from_bytes(
-                    data=part.data,
-                    mime_type=part.mime_type or "application/octet-stream",
-                )
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{part.mime_type or 'application/octet-stream'};base64,{base64.b64encode(part.data).decode()}",
+                    },
+                }
             )
-    return models.Content(role="user", parts=parts)
+    if len(parts) == 1 and parts[0].get("type") == "text":
+        return {"role": "user", "content": parts[0]["text"]}
+    return {"role": "user", "content": parts}
 
 
 async def run_agent(
@@ -41,7 +46,7 @@ async def run_agent(
     current_goal = repository.get_current_goal(input.user_id)
     system_prompt = prompts.get_system_prompt(
         daily_macros=daily_macros,
-        current_goal=current_goal.model_dump() if current_goal else None,
+        current_goal=current_goal.model_dump(mode="json") if current_goal else None,
         timezone=timezone,
     )
     if input.channel_instructions:
@@ -51,25 +56,24 @@ async def run_agent(
         conversation_id=input.conversation_id,
         user_id=input.user_id,
         system_prompt=system_prompt,
-        contents=[*contents, user_input],
+        contents=contents,
     )
-    async for content in agent(agent_input):
+    async for message in agent(agent_input):
         repository.insert_conversation_message(
-            input.conversation_id, content, input.user_id
+            input.conversation_id, message, input.user_id
         )
-        if content.role == "model" and content.parts:
-            for part in content.parts:
-                if part.function_call and part.function_call.name:
-                    yield models.ToolCallStep(
-                        type="tool_call",
-                        name=part.function_call.name,
-                        args=part.function_call.args or {},
-                    )
-                if part.text:
-                    yield models.MessageStep(
-                        type="message",
-                        text=part.text,
-                    )
+        role = message.get("role")
+        if role == "assistant":
+            content = message.get("content")
+            if content:
+                yield models.MessageStep(type="message", text=content)
+            for tc in message.get("tool_calls") or []:
+                func = tc["function"]
+                yield models.ToolCallStep(
+                    type="tool_call",
+                    name=func["name"],
+                    args=json.loads(func["arguments"]),
+                )
 
 
 def get_total_usage() -> dict:
@@ -83,45 +87,53 @@ def get_conversation_usage(conversation_id: UUID) -> dict:
 def get_conversation_history(
     conversation_id: UUID, user_id: str
 ) -> list[models.RunAgentStep]:
-    contents = repository.get_messages_by_conversation_id(conversation_id, user_id)
+    messages = repository.get_messages_by_conversation_id(conversation_id, user_id)
     steps: list[models.RunAgentStep] = []
-    for content in contents:
-        if content.role == "user" and content.parts:
-            for part in content.parts:
-                if part.text:
-                    steps.append(
-                        models.UserMessageStep(type="user_message", text=part.text)
-                    )
-                elif (
-                    part.inline_data
-                    and part.inline_data.data
-                    and part.inline_data.mime_type
-                ):
-                    data_b64 = base64.b64encode(part.inline_data.data).decode()
-                    mime = part.inline_data.mime_type
-                    label = (
-                        "Image"
-                        if mime.startswith("image/")
-                        else "Audio" if mime.startswith("audio/") else "File"
-                    )
-                    steps.append(
-                        models.UserMessageStep(
-                            type="user_message",
-                            text=label,
-                            data=data_b64,
-                            mime_type=mime,
+    for msg in messages:
+        role = msg.get("role")
+        if role == "user":
+            content = msg.get("content")
+            if isinstance(content, str):
+                steps.append(models.UserMessageStep(type="user_message", text=content))
+            elif isinstance(content, list):
+                for part in content:
+                    if part.get("type") == "text":
+                        steps.append(
+                            models.UserMessageStep(
+                                type="user_message", text=part["text"]
+                            )
                         )
+                    elif part.get("type") == "image_url":
+                        url = part.get("image_url", {}).get("url", "")
+                        if url.startswith("data:"):
+                            header, b64data = url.split(",", 1)
+                            mime = header.split(":")[1].split(";")[0]
+                            label = (
+                                "Image"
+                                if mime.startswith("image/")
+                                else "Audio"
+                                if mime.startswith("audio/")
+                                else "File"
+                            )
+                            steps.append(
+                                models.UserMessageStep(
+                                    type="user_message",
+                                    text=label,
+                                    data=b64data,
+                                    mime_type=mime,
+                                )
+                            )
+        elif role == "assistant":
+            content = msg.get("content")
+            if content:
+                steps.append(models.MessageStep(type="message", text=content))
+            for tc in msg.get("tool_calls", []):
+                func = tc["function"]
+                steps.append(
+                    models.ToolCallStep(
+                        type="tool_call",
+                        name=func["name"],
+                        args=json.loads(func["arguments"]),
                     )
-        elif content.role == "model" and content.parts:
-            for part in content.parts:
-                if part.text:
-                    steps.append(models.MessageStep(type="message", text=part.text))
-                if part.function_call and part.function_call.name:
-                    steps.append(
-                        models.ToolCallStep(
-                            type="tool_call",
-                            name=part.function_call.name,
-                            args=part.function_call.args or {},
-                        )
-                    )
+                )
     return steps

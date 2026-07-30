@@ -1,7 +1,3 @@
-from typing import Optional
-from google.genai import types
-
-
 def summarize_large_numbers(num: int) -> str:
     if num >= 1_000_000:
         return f"{num / 1_000_000:.1f}M"
@@ -16,80 +12,26 @@ def truncate_for_llm(text: str, max_length: int) -> str:
     return text
 
 
-def get_google_genai_cost(
-    *,
-    model_id: str,
-    usage_metadata: types.GenerateContentResponseUsageMetadata,
-) -> float:
+def get_mimo_cost(*, model_id: str, usage: dict) -> float:
     model_cost_million_tokens = {
-        "gemini-3.5-flash-lite": {
-            "text_image_video_input": 0.30,
-            "cached_text_image_video_input": 0.03,
-            "audio_input": 0.30,
-            "cached_audio_input": 0.03,
-            "output": 2.50,
+        "mimo-v2.5-pro": {
+            "input": 0.435,
+            "cached_input": 0.0036,
+            "output": 0.87,
+        },
+        "mimo-v2.5": {
+            "input": 0.14,
+            "cached_input": 0.0028,
+            "output": 0.28,
         },
     }
     if model_id not in model_cost_million_tokens:
         raise ValueError(f"Unknown model: {model_id}")
-    total_cost = 0.0
-
-    def _get_cached_tokens(
-        modalities: list[str], cache_tokens_details: Optional[list]
-    ) -> int:
-        if cache_tokens_details is None:
-            return 0
-        cached_tokens = 0
-        for detail in cache_tokens_details:
-            if detail.modality in modalities:
-                cached_tokens += detail.token_count or 0
-        return cached_tokens
-
-    # Add prompt tokens cost.
-    if usage_metadata.prompt_tokens_details is not None:
-        for detail in usage_metadata.prompt_tokens_details:
-            modality = detail.modality
-            token_count = detail.token_count or 0
-            match modality:
-                case "AUDIO":
-                    cached = _get_cached_tokens(
-                        ["AUDIO"], usage_metadata.cache_tokens_details
-                    )
-                    total_cost += (
-                        (token_count - cached)
-                        * model_cost_million_tokens[model_id]["audio_input"]
-                        / 1e6
-                    )
-                    total_cost += (
-                        cached
-                        * model_cost_million_tokens[model_id]["cached_audio_input"]
-                        / 1e6
-                    )
-                case "TEXT" | "IMAGE" | "VIDEO":
-                    cached = _get_cached_tokens(
-                        [modality], usage_metadata.cache_tokens_details
-                    )
-                    total_cost += (
-                        (token_count - cached)
-                        * model_cost_million_tokens[model_id]["text_image_video_input"]
-                        / 1e6
-                    )
-                    total_cost += (
-                        cached
-                        * model_cost_million_tokens[model_id][
-                            "cached_text_image_video_input"
-                        ]
-                        / 1e6
-                    )
-
-    # Add output (candidates + thoughts) tokens cost.
-    total_cost += (
-        (
-            (usage_metadata.candidates_token_count or 0)
-            + (usage_metadata.thoughts_token_count or 0)
-        )
-        * model_cost_million_tokens[model_id]["output"]
-        / 1e6
+    pricing = model_cost_million_tokens[model_id]
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_cost = (
+        prompt_tokens * pricing["input"] / 1e6
+        + completion_tokens * pricing["output"] / 1e6
     )
-
     return total_cost

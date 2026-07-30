@@ -22,7 +22,7 @@ export default function Home() {
         <P className="max-w-lg md:text-lg">
           With Mio, you can easily track your food intake with voice, text, and
           images. The agent handles searching, refining, and logging foods for
-          you. Powered by Gemini, open source, BYOK.
+          you. Powered by MiMo, open source, BYOK.
         </P>
         <ChatEditor
           className="max-w-lg shadow-xl"
@@ -36,7 +36,7 @@ export default function Home() {
         >
           <ChatChip className="hidden sm:flex">
             <Brain className="size-4 text-blue-500 shrink-0" />
-            <span className="truncate">3.5 Flash</span>
+            <span className="truncate">MiMo v2.5</span>
           </ChatChip>
           <ChatChip>
             <Globe className="size-4 text-blue-500 shrink-0" />
@@ -49,10 +49,10 @@ export default function Home() {
         <Card>
           <CardHeader>
             <Brain className="size-4 text-muted-foreground" />
-            <CardTitle>Powered by Gemini</CardTitle>
+            <CardTitle>Powered by MiMo</CardTitle>
           </CardHeader>
           <CardDescription>
-            The multimodality of Gemini allows for a variety of input types.
+            MiMo's intelligence handles the heavy lifting of nutrition tracking.
           </CardDescription>
         </Card>
         <Card>
@@ -70,7 +70,7 @@ export default function Home() {
             <CardTitle>BYOK</CardTitle>
           </CardHeader>
           <CardDescription>
-            Bring your own Gemini API key to start. Cheap and intelligent.
+            Bring your own MiMo API key to start. Cheap and intelligent.
           </CardDescription>
         </Card>
       </section>

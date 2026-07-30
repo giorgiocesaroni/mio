@@ -122,8 +122,7 @@ async def _show_usage(update: Update, _: ContextTypes.DEFAULT_TYPE):
         "⚙️ <b>Usage Report</b>\n\n"
         "<b>All conversations</b>\n"
         f"⬆️ <code>{summarize_large_numbers(total['prompt_tokens'])}</code> input tokens\n"
-        f"⬆️ <code>{summarize_large_numbers(total['cached_tokens'])}</code> cached tokens\n"
-        f"⬇️ <code>{summarize_large_numbers(total['candidates_tokens'])}</code> output tokens\n"
+        f"⬇️ <code>{summarize_large_numbers(total['completion_tokens'])}</code> output tokens\n"
         f"💰 <code>${total['total_cost']:.4f}</code> total cost"
     )
 
@@ -134,8 +133,7 @@ async def _show_usage(update: Update, _: ContextTypes.DEFAULT_TYPE):
         text += (
             "\n\n<b>This conversation</b>\n"
             f"⬆️ <code>{summarize_large_numbers(conv['prompt_tokens'])}</code> input tokens\n"
-            f"⬆️ <code>{summarize_large_numbers(conv['cached_tokens'])}</code> cached tokens\n"
-            f"⬇️ <code>{summarize_large_numbers(conv['candidates_tokens'])}</code> output tokens\n"
+            f"⬇️ <code>{summarize_large_numbers(conv['completion_tokens'])}</code> output tokens\n"
             f"💰 <code>${conv['total_cost']:.4f}</code> cost"
         )
 
