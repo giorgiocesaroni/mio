@@ -182,7 +182,7 @@ def get_conversation_history(
             content = msg.get("content")
             if content:
                 steps.append(models.MessageStep(type="message", text=content))
-            for tc in msg.get("tool_calls", []):
+            for tc in msg.get("tool_calls") or []:
                 func = tc["function"]
                 steps.append(
                     models.ToolCallStep(

@@ -9,8 +9,6 @@ import { H1, P } from "@/app/components/typography";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
   type RunAgentStep,
-  type ContentTokenStep,
-  type ToolCallStartStep,
   getConversationMessages,
   streamChat,
   uploadFile,
@@ -25,9 +23,9 @@ import { useChatLoading } from "../layout";
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return "What are you eating for breakfast?";
-  if (hour < 18) return "What are your plans for the day?";
-  return "Good evening. How was your day?";
+  if (hour < 12) return "What's for breakfast?";
+  if (hour < 18) return "Any foods for the day?";
+  return "What did you eat today?";
 }
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
@@ -42,12 +40,9 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
                 alt="User image"
                 className="max-w-24 max-h-24 object-cover rounded-lg"
               />
-            ) : step.mime_type?.startsWith("audio/") || step.mime_type === "url" ? (
-              <audio
-                controls
-                src={step.data}
-                className="min-w-32 max-w-full"
-              />
+            ) : step.mime_type?.startsWith("audio/") ||
+              step.mime_type === "url" ? (
+              <audio controls src={step.data} className="min-w-32 max-w-full" />
             ) : null}
           </div>
         ) : (
@@ -66,7 +61,8 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "tool_call_start") {
     return (
       <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-        <Loader2 className="size-4 animate-spin" /> <P className="font-serif">{step.name}...</P>
+        <Loader2 className="size-4 animate-spin" />{" "}
+        <P className="font-serif">{step.name}...</P>
       </div>
     );
   }
@@ -113,40 +109,53 @@ export default function Home() {
       streamingTokenCountRef.current = 0;
 
       try {
-        await streamChat(id, { ...payload, thinking }, controller.signal, (step) => {
-          if (step.type === "content_token") {
-            streamingContentRef.current += step.token;
-            streamingTokenCountRef.current++;
-            setSteps((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.type === "content_token") {
+        await streamChat(
+          id,
+          { ...payload, thinking },
+          controller.signal,
+          (step) => {
+            if (step.type === "content_token") {
+              streamingContentRef.current += step.token;
+              streamingTokenCountRef.current++;
+              setSteps((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.type === "content_token") {
+                  return [
+                    ...prev.slice(0, -1),
+                    {
+                      type: "content_token",
+                      token: streamingContentRef.current,
+                    },
+                  ];
+                }
                 return [
-                  ...prev.slice(0, -1),
+                  ...prev,
                   { type: "content_token", token: streamingContentRef.current },
                 ];
-              }
-              return [...prev, { type: "content_token", token: streamingContentRef.current }];
-            });
-          } else if (step.type === "tool_call_start") {
-            streamingContentRef.current = "";
-            streamingTokenCountRef.current = 0;
-            setSteps((prev) => [...prev, step]);
-          } else if (step.type === "tool_call") {
-            setSteps((prev) => {
-              const filtered = prev.filter((s) => s.type !== "tool_call_start");
-              return [...filtered, step];
-            });
-          } else if (step.type === "message") {
-            setSteps((prev) => {
-              const filtered = prev.filter((s) => s.type !== "content_token");
-              return [...filtered, step];
-            });
-            streamingContentRef.current = "";
-            streamingTokenCountRef.current = 0;
-          } else {
-            setSteps((prev) => [...prev, step]);
-          }
-        });
+              });
+            } else if (step.type === "tool_call_start") {
+              streamingContentRef.current = "";
+              streamingTokenCountRef.current = 0;
+              setSteps((prev) => [...prev, step]);
+            } else if (step.type === "tool_call") {
+              setSteps((prev) => {
+                const filtered = prev.filter(
+                  (s) => s.type !== "tool_call_start",
+                );
+                return [...filtered, step];
+              });
+            } else if (step.type === "message") {
+              setSteps((prev) => {
+                const filtered = prev.filter((s) => s.type !== "content_token");
+                return [...filtered, step];
+              });
+              streamingContentRef.current = "";
+              streamingTokenCountRef.current = 0;
+            } else {
+              setSteps((prev) => [...prev, step]);
+            }
+          },
+        );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("Stream error:", err);
@@ -243,38 +252,38 @@ export default function Home() {
     startRecording();
   }, [startRecording]);
 
-  const handleRecordingStop = useCallback(
-    async () => {
-      const attachment = await stopRecording();
-      if (!attachment) return;
-      try {
-        const file = new File([attachment.blob], "voice.wav", {
-          type: attachment.mime_type,
-        });
-        const { url, mime_type } = await uploadFile(file);
-        setPendingAttachments((prev) => [
-          ...prev,
-          { url, mime_type, name: "Voice memo" },
-        ]);
-      } catch (err) {
-        console.error("Upload failed:", err);
-      }
-    },
-    [stopRecording],
-  );
+  const handleRecordingStop = useCallback(async () => {
+    const attachment = await stopRecording();
+    if (!attachment) return;
+    try {
+      const file = new File([attachment.blob], "voice.wav", {
+        type: attachment.mime_type,
+      });
+      const { url, mime_type } = await uploadFile(file);
+      setPendingAttachments((prev) => [
+        ...prev,
+        { url, mime_type, name: "Voice memo" },
+      ]);
+    } catch (err) {
+      console.error("Upload failed:", err);
+    }
+  }, [stopRecording]);
 
   return (
     <div className="flex flex-col flex-1">
       <div
         className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid gap-4 p-4 content-start"}`}
       >
-        {steps.length === 0 ? (
+        {steps.length === 0 && (
           <H1 className="md:text-2xl text-2xl text-muted-foreground">
-            {getGreeting()}
+            {isFetchingHistory
+              ? "Loading..."
+              : historyData
+                ? null
+                : getGreeting()}
           </H1>
-        ) : (
-          steps.map((step, i) => <StepDisplay key={i} step={step} />)
         )}
+        {steps.map((step, i) => <StepDisplay key={i} step={step} />)}
         {steps.length > 0 && (
           <div
             ref={bottomRef}
