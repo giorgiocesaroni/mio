@@ -8,6 +8,49 @@ import src.agent.models as models
 import src.agent.repository as repository
 from src.agent.agent import agent
 import src.agent.prompts as prompts
+from src.api.transcribe import transcribe_audio
+
+
+async def _fetch_audio_from_url(url: str) -> tuple[bytes, str]:
+    """Fetch audio data from a URL. Returns (audio_bytes, mime_type)."""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        mime_type = response.headers.get("content-type", "audio/ogg")
+        return response.content, mime_type
+
+
+async def _preprocess_message(
+    message: models.MessageType,
+    user_id: str,
+    conversation_id: UUID,
+) -> models.MessageType:
+    """Preprocess message by transcribing audio parts to text."""
+    new_parts = []
+    for part in message.parts:
+        if part.url and part.mime_type and part.mime_type.startswith("audio/"):
+            audio_data, _ = await _fetch_audio_from_url(part.url)
+            result = await transcribe_audio(audio_data, part.mime_type)
+            repository.insert_llm_invocation(
+                total_cost=result.cost,
+                raw_usage_metadata=result.usage,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            new_parts.append(models.UserMessagePart(text=result.text))
+        elif part.data and part.mime_type and part.mime_type.startswith("audio/"):
+            result = await transcribe_audio(part.data, part.mime_type)
+            repository.insert_llm_invocation(
+                total_cost=result.cost,
+                raw_usage_metadata=result.usage,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            new_parts.append(models.UserMessagePart(text=result.text))
+        else:
+            new_parts.append(part)
+    return type(message)(parts=new_parts)
 
 
 def _convert_input(message: models.MessageType) -> dict:
@@ -64,8 +107,11 @@ def _convert_input(message: models.MessageType) -> dict:
 async def run_agent(
     input: models.RunAgentInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
-    user_input = _convert_input(input.message)
     repository.create_conversation_if_not_exists(input.conversation_id, input.user_id)
+    preprocessed_message = await _preprocess_message(
+        input.message, input.user_id, input.conversation_id
+    )
+    user_input = _convert_input(preprocessed_message)
     repository.insert_conversation_message(
         input.conversation_id, user_input, input.user_id
     )
