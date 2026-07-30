@@ -16,14 +16,26 @@ def _convert_input(message: models.MessageType) -> dict:
         if part.text:
             parts.append({"type": "text", "text": part.text})
         elif part.data:
-            parts.append(
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{part.mime_type or 'application/octet-stream'};base64,{base64.b64encode(part.data).decode()}",
-                    },
-                }
-            )
+            mime = part.mime_type or "application/octet-stream"
+            b64 = base64.b64encode(part.data).decode()
+            if mime.startswith("audio/"):
+                parts.append(
+                    {
+                        "type": "input_audio",
+                        "input_audio": {
+                            "data": f"data:{mime};base64,{b64}",
+                        },
+                    }
+                )
+            else:
+                parts.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime};base64,{b64}",
+                        },
+                    }
+                )
     if len(parts) == 1 and parts[0].get("type") == "text":
         return {"role": "user", "content": parts[0]["text"]}
     return {"role": "user", "content": parts}

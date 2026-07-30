@@ -212,6 +212,7 @@ async def agent(
         message_dict, usage = await _invoke_model(MODEL_ID, messages)
         if usage:
             cost = get_mimo_cost(model_id=MODEL_ID, usage=usage)
+            print(f"Invocation cost: ${cost}")
             repository.insert_llm_invocation(
                 total_cost=cost,
                 raw_usage_metadata=usage,

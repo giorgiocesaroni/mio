@@ -14,7 +14,7 @@ def truncate_for_llm(text: str, max_length: int) -> str:
 
 def get_mimo_cost(*, model_id: str, usage: dict) -> float:
     model_cost_million_tokens = {
-        "mimo-v2.5-pro": {
+        "mimo-v2.5": {
             "input": 0.112,
             "cached_input": 0.0028,
             "output": 0.224,
