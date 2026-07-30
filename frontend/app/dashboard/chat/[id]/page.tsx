@@ -31,7 +31,7 @@ function getGreeting() {
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
     return (
-      <Card className={`justify-self-end px-4 py-2`}>
+      <Card className={`ml-8 justify-self-end px-4 py-2`}>
         {step.data ? (
           <div className="space-y-2">
             {step.mime_type?.startsWith("image/") ? (
@@ -68,13 +68,13 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
   }
   if (step.type === "content_token") {
     return (
-      <div className="pr-8">
+      <div className="overflow-auto">
         <MessageContent text={step.token} />
       </div>
     );
   }
   return (
-    <div className="pr-8">
+    <div className="overflow-auto">
       <MessageContent text={step.text} />
     </div>
   );
@@ -283,7 +283,9 @@ export default function Home() {
                 : getGreeting()}
           </H1>
         )}
-        {steps.map((step, i) => <StepDisplay key={i} step={step} />)}
+        {steps.map((step, i) => (
+          <StepDisplay key={i} step={step} />
+        ))}
         {steps.length > 0 && (
           <div
             ref={bottomRef}

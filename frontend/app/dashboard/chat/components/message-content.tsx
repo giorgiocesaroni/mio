@@ -1,6 +1,5 @@
 "use client";
 
-import { Card } from "@/app/components/card";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -29,7 +28,14 @@ export function MessageContent({ text }: { text: string }) {
         ol: ({ children }) => <ol className="font-serif">{children}</ol>,
         hr: () => <hr className="opacity-25 my-3" />,
         code: ({ className, children, ...props }) => {
-          return <code {...props}>{children}</code>;
+          return (
+            <code
+              className="text-sm bg-muted-background border border-border rounded-md px-1 text-red-700"
+              {...props}
+            >
+              {children}
+            </code>
+          );
         },
         pre: ({ children, ...props }) => (
           <pre className="" {...props}>
@@ -37,12 +43,16 @@ export function MessageContent({ text }: { text: string }) {
           </pre>
         ),
         table: ({ children }) => (
-          <Card className="my-4 border border-border rounded-xl w-fit overflow-auto p-2">
-            <table className="">{children}</table>
-          </Card>
+          <div className="overflow-auto my-4">
+            <table>{children}</table>
+          </div>
         ),
         th: ({ children }) => (
           <th className="px-2 py-1 font-semibold text-left">{children}</th>
+        ),
+
+        tr: ({ children }) => (
+          <tr className="border-y border-border">{children}</tr>
         ),
         td: ({ children }) => <td className="px-2 py-1">{children}</td>,
       }}
