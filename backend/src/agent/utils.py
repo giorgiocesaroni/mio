@@ -15,14 +15,9 @@ def truncate_for_llm(text: str, max_length: int) -> str:
 def get_mimo_cost(*, model_id: str, usage: dict) -> float:
     model_cost_million_tokens = {
         "mimo-v2.5-pro": {
-            "input": 0.435,
-            "cached_input": 0.0036,
-            "output": 0.87,
-        },
-        "mimo-v2.5": {
-            "input": 0.14,
+            "input": 0.112,
             "cached_input": 0.0028,
-            "output": 0.28,
+            "output": 0.224,
         },
     }
     if model_id not in model_cost_million_tokens:
@@ -30,8 +25,14 @@ def get_mimo_cost(*, model_id: str, usage: dict) -> float:
     pricing = model_cost_million_tokens[model_id]
     prompt_tokens = usage.get("prompt_tokens", 0)
     completion_tokens = usage.get("completion_tokens", 0)
+    cached_tokens = 0
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached_tokens = details.get("cached_tokens", 0) or 0
+    uncached_prompt_tokens = prompt_tokens - cached_tokens
     total_cost = (
-        prompt_tokens * pricing["input"] / 1e6
+        uncached_prompt_tokens * pricing["input"] / 1e6
+        + cached_tokens * pricing["cached_input"] / 1e6
         + completion_tokens * pricing["output"] / 1e6
     )
     return total_cost
