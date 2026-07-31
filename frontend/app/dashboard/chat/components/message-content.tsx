@@ -52,7 +52,7 @@ export function MessageContent({ text }: { text: string }) {
         ),
 
         tr: ({ children }) => (
-          <tr className="border-y border-border">{children}</tr>
+          <tr className="border-t border-border">{children}</tr>
         ),
         td: ({ children }) => <td className="px-2 py-1">{children}</td>,
       }}
