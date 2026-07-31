@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
+import src.agent.providers as providers
 import src.api.media as media
 import supabase
 
@@ -100,6 +101,14 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/models")
+async def list_models():
+    return {
+        "models": providers.AVAILABLE_MODELS,
+        "default": providers.DEFAULT_MODEL_ID,
+    }
+
+
 @app.post("/chat")
 async def chat_endpoint(
     request: Request,
@@ -113,6 +122,7 @@ async def chat_endpoint(
         user_id=user_id,
         message=_parse_message(body["message"]),
         thinking=body.get("thinking", True),
+        model=body.get("model"),
     )
 
     async def event_stream():

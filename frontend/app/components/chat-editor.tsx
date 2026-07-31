@@ -38,6 +38,7 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (index: number) => void;
+  modelSelector?: React.ReactNode;
 }
 
 export const ChatEditor = ({
@@ -53,6 +54,7 @@ export const ChatEditor = ({
   onImageSelect,
   pendingAttachments = [],
   onRemoveAttachment,
+  modelSelector,
   children,
   ...props
 }: ChatEditorProps) => {
@@ -126,6 +128,7 @@ export const ChatEditor = ({
           <Plus className="size-4" />
         </Button>
         <div className="flex-1"></div>
+        {modelSelector}
         <Button
           className={twMerge(
             "rounded-full aspect-square py-2 px-2 select-none",

@@ -10,6 +10,7 @@ class AgentInput(BaseModel):
     system_prompt: str
     contents: list[dict]
     thinking: bool = True
+    model: Optional[str] = None
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
@@ -74,6 +75,7 @@ class RunAgentInput(BaseModel):
     message: MessageType
     channel_instructions: Optional[str] = None
     thinking: bool = True
+    model: Optional[str] = None
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:

@@ -1,5 +1,5 @@
 import { supabase } from "@/repository/supabase/queries";
-import type { RunAgentStep } from "./types";
+import type { ModelsResponse, RunAgentStep } from "./types";
 import { queryClient } from "@/app/providers";
 
 export type {
@@ -9,6 +9,8 @@ export type {
   MessageStep,
   UserMessageStep,
   RunAgentStep,
+  Model,
+  ModelsResponse,
 } from "./types";
 
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -59,9 +61,19 @@ export async function getConversationMessages(
   return res.json();
 }
 
+export async function getModels(): Promise<ModelsResponse> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/models`, {
+    headers,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function streamChat(
   conversationId: string,
   payload: object,
+  model: string | undefined,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
@@ -69,7 +81,11 @@ export async function streamChat(
   const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
-    body: JSON.stringify({ conversation_id: conversationId, message: payload }),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      message: payload,
+      ...(model ? { model } : {}),
+    }),
     signal,
   });
 

@@ -1,9 +1,14 @@
 import base64
 import collections
+import time
 from typing import Optional
 
 import httpx
 from google.genai import types
+
+_OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+_OPENROUTER_MODELS_CACHE_TTL_SECONDS = 300
+_OPENROUTER_MODELS_CACHE: tuple[float, dict[str, dict]] = (0.0, {})
 
 _IMAGE_CACHE: collections.OrderedDict[str, tuple[bytes, str]] = collections.OrderedDict()
 _IMAGE_CACHE_MAX_ENTRIES = 64
@@ -150,4 +155,74 @@ def get_google_genai_cost(
         / 1e6
     )
 
+    return total_cost
+
+
+async def _fetch_openrouter_models() -> dict[str, dict]:
+    """Fetch OpenRouter model pricing, cached briefly. Returns {model_id: pricing}."""
+    global _OPENROUTER_MODELS_CACHE
+    cached_at, cached = _OPENROUTER_MODELS_CACHE
+    if cached and time.time() - cached_at < _OPENROUTER_MODELS_CACHE_TTL_SECONDS:
+        return cached
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(_OPENROUTER_MODELS_URL)
+        response.raise_for_status()
+    data = response.json().get("data", [])
+    models = {m["id"]: m for m in data if "pricing" in m}
+    _OPENROUTER_MODELS_CACHE = (time.time(), models)
+    return models
+
+
+def _apply_overrides(pricing: dict, prompt_tokens: int) -> dict:
+    """Apply OpenRouter volume-discount overrides whose threshold is met."""
+    best_override = None
+    for override in pricing.get("overrides", []):
+        min_prompt_tokens = override.get("min_prompt_tokens", 0)
+        if prompt_tokens >= min_prompt_tokens and (
+            best_override is None
+            or min_prompt_tokens > best_override.get("min_prompt_tokens", 0)
+        ):
+            best_override = override
+    if best_override is None:
+        return pricing
+    merged = dict(pricing)
+    merged.update({k: v for k, v in best_override.items() if k != "min_prompt_tokens"})
+    return merged
+
+
+async def get_openrouter_cost(*, model_id: str, usage: dict) -> float:
+    """Compute the USD cost of an OpenRouter invocation.
+
+    Prefers the cost returned directly by OpenRouter in the usage object (most
+    accurate), falling back to the model's published pricing fetched from the
+    /models endpoint.
+    """
+    reported_cost = usage.get("cost")
+    if isinstance(reported_cost, (int, float)) and reported_cost > 0:
+        return float(reported_cost)
+
+    prompt_tokens = usage.get("prompt_tokens", 0) or 0
+    completion_tokens = usage.get("completion_tokens", 0) or 0
+    cached_tokens = 0
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached_tokens = details.get("cached_tokens", 0) or 0
+
+    models = await _fetch_openrouter_models()
+    model = models.get(model_id)
+    if model is None:
+        return 0.0
+    pricing = _apply_overrides(model["pricing"], prompt_tokens)
+
+    def _price(key: str) -> float:
+        return float(pricing.get(key, 0) or 0)
+
+    uncached_prompt_tokens = max(prompt_tokens - cached_tokens, 0)
+    cached_price = _price("input_cache_read") or _price("prompt")
+    total_cost = (
+        uncached_prompt_tokens * _price("prompt")
+        + cached_tokens * cached_price
+        + completion_tokens * _price("completion")
+        + _price("request")
+    )
     return total_cost

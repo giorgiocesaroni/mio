@@ -27,3 +27,14 @@ export type UserMessageStep = {
 };
 
 export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep;
+
+export type Model = {
+  id: string;
+  provider: string;
+  name: string;
+};
+
+export type ModelsResponse = {
+  models: Model[];
+  default: string;
+};

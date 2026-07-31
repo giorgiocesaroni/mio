@@ -1,18 +1,12 @@
 import json
 import src.agent.models as models
+import src.agent.providers as providers
 import src.agent.repository as repository
 import src.agent.tools as tools
-from src.agent.utils import get_mimo_cost, inline_image_url
+from src.agent.utils import get_mimo_cost, get_openrouter_cost, inline_image_url
 from typing import AsyncGenerator
-from openai import AsyncOpenAI
-import os
-
-client = AsyncOpenAI(
-    base_url="https://api.xiaomimimo.com/v1", api_key=os.getenv("MIMO_API_KEY")
-)
 
 MAX_TURNS = 35
-MODEL_ID = "mimo-v2.5"
 
 
 def _sanitize_tool_calls(messages: list[dict]) -> None:
@@ -72,18 +66,22 @@ async def _invoke_model(
     messages: list[dict],
 ) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
     """Stream model response, yielding content tokens, tool call starts, and the final message dict."""
+    provider = providers.get_provider(model_id)
+    client = providers.get_client(provider)
+    create_kwargs: dict = dict(
+        model=model_id,
+        messages=messages,
+        tools=_to_openai_tools(TOOL_DECLARATIONS),
+        max_completion_tokens=1024,
+        temperature=1.0,
+        top_p=0.95,
+        stream=True,
+    )
+    if providers.PROVIDERS[provider]["supports_thinking_extension"]:
+        create_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     for _ in range(3):
         try:
-            stream = await client.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                extra_body={"thinking": {"type": "disabled"}},
-                tools=_to_openai_tools(TOOL_DECLARATIONS),
-                max_completion_tokens=1024,
-                temperature=1.0,
-                top_p=0.95,
-                stream=True,
-            )
+            stream = await client.chat.completions.create(**create_kwargs)
             content_parts: list[str] = []
             tool_calls_acc: dict[int, dict] = {}
             tool_names_emitted: set[int] = set()
@@ -288,13 +286,18 @@ async def agent(
         {"role": "system", "content": input.system_prompt},
         *await _convert_history(input.contents),
     ]
+    model_id = input.model or providers.DEFAULT_MODEL_ID
+    provider = providers.get_provider(model_id)
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)
-        async for chunk in _invoke_model(MODEL_ID, messages):
+        async for chunk in _invoke_model(model_id, messages):
             if isinstance(chunk, tuple):
                 message_dict, usage = chunk
                 if usage:
-                    cost = get_mimo_cost(model_id=MODEL_ID, usage=usage)
+                    if provider == "mimo":
+                        cost = get_mimo_cost(model_id=model_id, usage=usage)
+                    else:
+                        cost = await get_openrouter_cost(model_id=model_id, usage=usage)
                     print(f"Invocation cost: ${cost}")
                     repository.insert_llm_invocation(
                         total_cost=cost,

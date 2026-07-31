@@ -136,6 +136,7 @@ async def run_agent(
         system_prompt=system_prompt,
         contents=contents,
         thinking=input.thinking,
+        model=input.model,
     )
     async for chunk in agent(agent_input):
         if isinstance(chunk, models.ContentTokenStep):

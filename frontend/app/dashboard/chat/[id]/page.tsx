@@ -10,6 +10,7 @@ import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
   type RunAgentStep,
   getConversationMessages,
+  getModels,
   streamChat,
   uploadFile,
 } from "@/repository/backend/queries";
@@ -98,6 +99,26 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
   const streamingTokenCountRef = useRef<number>(0);
+  const [model, setModel] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("model");
+  });
+
+  const { data: modelsData } = useQuery({
+    queryKey: ["models"],
+    queryFn: getModels,
+    staleTime: Infinity,
+  });
+
+  const resolvedModel =
+    model && modelsData?.models.some((m) => m.id === model)
+      ? model
+      : (modelsData?.default ?? undefined);
+
+  const handleModelChange = (value: string) => {
+    setModel(value);
+    window.localStorage.setItem("model", value);
+  };
 
   const sendMessage = useCallback(
     async (id: string, payload: object) => {
@@ -111,6 +132,7 @@ export default function Home() {
         await streamChat(
           id,
           payload,
+          resolvedModel,
           controller.signal,
           (step) => {
             if (step.type === "content_token") {
@@ -165,7 +187,7 @@ export default function Home() {
         streamingTokenCountRef.current = 0;
       }
     },
-    [setIsLoading],
+    [setIsLoading, resolvedModel],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
@@ -311,6 +333,28 @@ export default function Home() {
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
+          }
+          modelSelector={
+            modelsData ? (
+              <span className="relative inline-block mx-2">
+                <span className="invisible text-sm whitespace-nowrap">
+                  {modelsData.models.find((m) => m.id === resolvedModel)
+                    ?.name ?? ""}
+                </span>
+                <select
+                  aria-label="Model"
+                  value={resolvedModel ?? ""}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="absolute inset-0 appearance-none bg-transparent text-sm text-muted-foreground outline-none cursor-pointer"
+                >
+                  {modelsData.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            ) : null
           }
         ></ChatEditor>
       </div>
