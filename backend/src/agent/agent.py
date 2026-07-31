@@ -2,7 +2,7 @@ import json
 import src.agent.models as models
 import src.agent.repository as repository
 import src.agent.tools as tools
-from src.agent.utils import get_mimo_cost
+from src.agent.utils import get_mimo_cost, inline_image_url
 from typing import AsyncGenerator
 from openai import AsyncOpenAI
 import os
@@ -136,12 +136,29 @@ async def _invoke_model(
     raise Exception("Failed to invoke model after 3 attempts.")
 
 
-def _convert_history(contents: list[dict]) -> list[dict]:
+async def _inline_content_images(parts: list[dict]) -> list[dict]:
+    """Replace remote image URLs with cached base64 data URLs."""
+    inlined: list[dict] = []
+    for part in parts:
+        if part.get("type") == "image_url":
+            url = part.get("image_url", {}).get("url", "")
+            if url and not url.startswith("data:"):
+                try:
+                    part = {"type": "image_url", "image_url": {"url": await inline_image_url(url)}}
+                except Exception as e:
+                    print(f"Failed to inline image {url}: {e}")
+        inlined.append(part)
+    return inlined
+
+
+async def _convert_history(contents: list[dict]) -> list[dict]:
     messages: list[dict] = []
     for msg in contents:
         role = msg.get("role")
         if role in ("user", "model"):
             content = msg.get("content")
+            if isinstance(content, list):
+                content = await _inline_content_images(content)
             if isinstance(content, (str, list)):
                 messages.append(
                     {
@@ -269,7 +286,7 @@ async def agent(
 ) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
     messages: list[dict] = [
         {"role": "system", "content": input.system_prompt},
-        *_convert_history(input.contents),
+        *await _convert_history(input.contents),
     ]
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)

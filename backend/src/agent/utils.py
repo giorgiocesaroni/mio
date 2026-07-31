@@ -1,5 +1,39 @@
+import base64
+import collections
 from typing import Optional
+
+import httpx
 from google.genai import types
+
+_IMAGE_CACHE: collections.OrderedDict[str, tuple[bytes, str]] = collections.OrderedDict()
+_IMAGE_CACHE_MAX_ENTRIES = 64
+
+
+async def fetch_image(url: str) -> tuple[bytes, str]:
+    """Fetch image bytes from a URL with an in-memory LRU cache.
+
+    Returns (image_bytes, mime_type).
+    """
+    cached = _IMAGE_CACHE.get(url)
+    if cached is not None:
+        _IMAGE_CACHE.move_to_end(url)
+        return cached
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    data = response.content
+    mime = response.headers.get("content-type", "image/jpeg")
+    _IMAGE_CACHE[url] = (data, mime)
+    _IMAGE_CACHE.move_to_end(url)
+    while len(_IMAGE_CACHE) > _IMAGE_CACHE_MAX_ENTRIES:
+        _IMAGE_CACHE.popitem(last=False)
+    return data, mime
+
+
+async def inline_image_url(url: str) -> str:
+    """Return the image at URL as a base64 data URL, cached."""
+    data, mime = await fetch_image(url)
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
 def summarize_large_numbers(num: int) -> str:

@@ -1,3 +1,4 @@
+import io
 import os
 import subprocess
 import tempfile
@@ -5,6 +6,7 @@ import uuid
 from pathlib import Path
 
 import supabase
+from PIL import Image, UnidentifiedImageError
 
 _supabase_client: supabase.Client | None = None
 
@@ -27,6 +29,42 @@ MIMETYPE_TO_EXT = {
 
 # MiMo accepts these audio formats natively
 MIMO_AUDIO_TYPES = {"audio/mpeg", "audio/wav", "audio/flac", "audio/x-m4a", "audio/m4a", "audio/ogg"}
+
+IMAGE_MAX_DIMENSION = 1600
+IMAGE_JPEG_QUALITY = 82
+
+
+def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Re-encode an image to a compressed JPEG capped at IMAGE_MAX_DIMENSION px.
+
+    Returns (compressed_bytes, stored_mime_type). Returns the input unchanged
+    when the image can't be processed or compression wouldn't help.
+    """
+    if not mime_type.startswith("image/") or mime_type == "image/gif":
+        return data, mime_type
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+            if img.mode in ("RGBA", "LA", "P", "CMYK"):
+                rgba = img.convert("RGBA")
+                background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                background.alpha_composite(rgba)
+                img = background.convert("RGB")
+            else:
+                img = img.convert("RGB")
+            if max(img.size) > IMAGE_MAX_DIMENSION:
+                img.thumbnail(
+                    (IMAGE_MAX_DIMENSION, IMAGE_MAX_DIMENSION),
+                    Image.Resampling.LANCZOS,
+                )
+            output = io.BytesIO()
+            img.save(output, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
+            compressed = output.getvalue()
+            if len(compressed) < len(data):
+                return compressed, "image/jpeg"
+    except (UnidentifiedImageError, OSError, ValueError):
+        pass
+    return data, mime_type
 
 
 def _get_client() -> supabase.Client:
@@ -75,6 +113,9 @@ def upload_media(user_id: str, data: bytes, mime_type: str) -> tuple[str, str]:
     is_audio = mime_type.startswith("audio/")
     stored_mime = mime_type
 
+    if mime_type.startswith("image/"):
+        data, stored_mime = _compress_image(data, mime_type)
+
     if is_audio and _needs_conversion(mime_type):
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
             tmp.write(data)
@@ -83,13 +124,12 @@ def upload_media(user_id: str, data: bytes, mime_type: str) -> tuple[str, str]:
             converted_path = _convert_audio_to_ogg(tmp_path)
             data = Path(converted_path).read_bytes()
             stored_mime = "audio/ogg"
-            ext = ".ogg"
         finally:
             os.unlink(tmp_path)
             if os.path.exists(converted_path):
                 os.unlink(converted_path)
 
-    storage_path = f"{path_prefix}{ext}"
+    storage_path = f"{path_prefix}{MIMETYPE_TO_EXT.get(stored_mime, ext)}"
     client.storage.from_(BUCKET).upload(
         storage_path,
         data,
