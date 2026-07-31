@@ -3,7 +3,7 @@ import src.agent.models as models
 import src.agent.providers as providers
 import src.agent.repository as repository
 import src.agent.tools as tools
-from src.agent.utils import get_mimo_cost, get_openrouter_cost, inline_image_url
+from src.agent.utils import extract_tokens, get_mimo_cost, get_openrouter_cost, inline_image_url
 from typing import AsyncGenerator
 
 MAX_TURNS = 35
@@ -294,6 +294,7 @@ async def agent(
             if isinstance(chunk, tuple):
                 message_dict, usage = chunk
                 if usage:
+                    uncached_input, cached_input, output = extract_tokens(usage)
                     if provider == "mimo":
                         cost = get_mimo_cost(model_id=model_id, usage=usage)
                     else:
@@ -302,6 +303,10 @@ async def agent(
                     repository.insert_llm_invocation(
                         total_cost=cost,
                         raw_usage_metadata=usage,
+                        model_id=model_id,
+                        uncached_input_tokens=uncached_input,
+                        cached_input_tokens=cached_input,
+                        output_tokens=output,
                         user_id=input.user_id,
                         conversation_id=input.conversation_id,
                     )

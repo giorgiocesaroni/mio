@@ -89,6 +89,10 @@ def insert_conversation_message(
 def insert_llm_invocation(
     total_cost: float,
     raw_usage_metadata: dict,
+    model_id: str,
+    uncached_input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
     user_id: str,
     conversation_id: Optional[UUID] = None,
 ) -> None:
@@ -96,12 +100,20 @@ def insert_llm_invocation(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO llm_invocations (total_cost, raw_usage_metadata, conversation_id, user_id)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO llm_invocations (
+                    total_cost, raw_usage_metadata, model_id,
+                    uncached_input_tokens, cached_input_tokens, output_tokens,
+                    conversation_id, user_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     total_cost,
                     json.dumps(raw_usage_metadata),
+                    model_id,
+                    uncached_input_tokens,
+                    cached_input_tokens,
+                    output_tokens,
                     str(conversation_id) if conversation_id else None,
                     user_id,
                 ),
@@ -116,8 +128,8 @@ def get_total_llm_usage() -> dict:
                 SELECT
                     COUNT(*)::int as total_invocations,
                     COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_tokens')::bigint, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'completion_tokens')::bigint, 0)), 0) as total_completion_tokens
+                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0) + COALESCE(cached_input_tokens, 0)), 0) as total_prompt_tokens,
+                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) as total_completion_tokens
                 FROM llm_invocations
                 """,
             )
@@ -140,8 +152,8 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                 SELECT
                     COUNT(*)::int as total_invocations,
                     COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'prompt_tokens')::bigint, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE((raw_usage_metadata->>'completion_tokens')::bigint, 0)), 0) as total_completion_tokens
+                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0) + COALESCE(cached_input_tokens, 0)), 0) as total_prompt_tokens,
+                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) as total_completion_tokens
                 FROM llm_invocations
                 WHERE conversation_id = %s
                 """,
@@ -158,6 +170,37 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                 "prompt_tokens": row[2],
                 "completion_tokens": row[3],
             }
+
+
+def get_llm_usage_by_model() -> list[dict]:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(model_id, 'unknown') AS model_id,
+                    COUNT(*)::int AS invocations,
+                    COALESCE(SUM(total_cost), 0) AS total_cost,
+                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0)), 0) AS uncached_input_tokens,
+                    COALESCE(SUM(COALESCE(cached_input_tokens, 0)), 0) AS cached_input_tokens,
+                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS output_tokens
+                FROM llm_invocations
+                GROUP BY model_id
+                ORDER BY total_cost DESC
+                """,
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    "model_id": row[0],
+                    "invocations": row[1],
+                    "total_cost": float(row[2]),
+                    "uncached_input_tokens": row[3],
+                    "cached_input_tokens": row[4],
+                    "output_tokens": row[5],
+                }
+                for row in rows
+            ]
 
 
 def _embedding_to_str(embedding: list[float]) -> str:

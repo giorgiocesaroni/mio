@@ -38,3 +38,23 @@ export type ModelsResponse = {
   models: Model[];
   default: string;
 };
+
+export type UsageModel = {
+  model_id: string;
+  invocations: number;
+  total_cost: number;
+  uncached_input_tokens: number;
+  cached_input_tokens: number;
+  output_tokens: number;
+  cost_per_message: number;
+};
+
+export type UsageOverview = {
+  total: {
+    total_invocations: number;
+    total_cost: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+  };
+  models: UsageModel[];
+};

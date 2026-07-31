@@ -8,7 +8,8 @@ import src.agent.models as models
 import src.agent.repository as repository
 from src.agent.agent import agent
 import src.agent.prompts as prompts
-from src.api.transcribe import transcribe_audio
+from src.agent.utils import extract_tokens
+from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
 
 
 async def _fetch_audio_from_url(url: str) -> tuple[bytes, str]:
@@ -32,18 +33,28 @@ async def _preprocess_message(
         if part.url and part.mime_type and part.mime_type.startswith("audio/"):
             audio_data, _ = await _fetch_audio_from_url(part.url)
             result = await transcribe_audio(audio_data, part.mime_type)
+            uncached_input, cached_input, output = extract_tokens(result.usage)
             repository.insert_llm_invocation(
                 total_cost=result.cost,
                 raw_usage_metadata=result.usage,
+                model_id=TRANSCRIBE_MODEL_ID,
+                uncached_input_tokens=uncached_input,
+                cached_input_tokens=cached_input,
+                output_tokens=output,
                 user_id=user_id,
                 conversation_id=conversation_id,
             )
             new_parts.append(models.UserMessagePart(text=result.text))
         elif part.data and part.mime_type and part.mime_type.startswith("audio/"):
             result = await transcribe_audio(part.data, part.mime_type)
+            uncached_input, cached_input, output = extract_tokens(result.usage)
             repository.insert_llm_invocation(
                 total_cost=result.cost,
                 raw_usage_metadata=result.usage,
+                model_id=TRANSCRIBE_MODEL_ID,
+                uncached_input_tokens=uncached_input,
+                cached_input_tokens=cached_input,
+                output_tokens=output,
                 user_id=user_id,
                 conversation_id=conversation_id,
             )
@@ -167,6 +178,21 @@ async def run_agent(
 
 def get_total_usage() -> dict:
     return repository.get_total_llm_usage()
+
+
+def get_usage_overview() -> dict:
+    total = repository.get_total_llm_usage()
+    by_model = repository.get_llm_usage_by_model()
+    models = [
+        {
+            **m,
+            "cost_per_message": (
+                m["total_cost"] / m["invocations"] if m["invocations"] else 0
+            ),
+        }
+        for m in by_model
+    ]
+    return {"total": total, "models": models}
 
 
 def get_conversation_usage(conversation_id: UUID) -> dict:

@@ -18,11 +18,16 @@ PROVIDERS = {
 # Curated models, each mapped to the provider that serves it.
 AVAILABLE_MODELS = [
     {"id": "mimo-v2.5", "provider": "mimo", "name": "MiMo v2.5"},
-    {"id": "qwen/qwen3.7-flash", "provider": "openrouter", "name": "Qwen3.7 Flash"},
+    {"id": "qwen/qwen3.7-plus", "provider": "openrouter", "name": "Qwen3.7 Plus"},
     {
         "id": "openai/gpt-5.6-luna",
         "provider": "openrouter",
         "name": "GPT-5.6 Luna",
+    },
+    {
+        "id": "minimax/minimax-m3",
+        "provider": "openrouter",
+        "name": "MiniMax M3",
     },
 ]
 

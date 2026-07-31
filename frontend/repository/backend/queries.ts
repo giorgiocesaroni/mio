@@ -1,5 +1,5 @@
 import { supabase } from "@/repository/supabase/queries";
-import type { ModelsResponse, RunAgentStep } from "./types";
+import type { ModelsResponse, RunAgentStep, UsageOverview } from "./types";
 import { queryClient } from "@/app/providers";
 
 export type {
@@ -11,6 +11,7 @@ export type {
   RunAgentStep,
   Model,
   ModelsResponse,
+  UsageOverview,
 } from "./types";
 
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -64,6 +65,15 @@ export async function getConversationMessages(
 export async function getModels(): Promise<ModelsResponse> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/models`, {
+    headers,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function getUsage(): Promise<UsageOverview> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/usage`, {
     headers,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

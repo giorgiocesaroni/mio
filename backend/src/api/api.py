@@ -109,6 +109,13 @@ async def list_models():
     }
 
 
+@app.get("/usage")
+async def usage_endpoint(
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    return service.get_usage_overview()
+
+
 @app.post("/chat")
 async def chat_endpoint(
     request: Request,

@@ -20,12 +20,22 @@ import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 function TotalCost() {
+  const router = useRouter();
   const { data } = useQuery({
     queryKey: ["getTotalLlmCost"],
     queryFn: getTotalLlmCost,
   });
 
-  return <P className="text-sm">${(data?.total_cost ?? 0).toFixed(2)}</P>;
+  return (
+    <button
+      type="button"
+      onClick={() => router.push("/dashboard/usage")}
+      className="cursor-pointer hover:opacity-80 transition-opacity"
+      title="View usage"
+    >
+      <P className="text-sm">${(data?.total_cost ?? 0).toFixed(2)}</P>
+    </button>
+  );
 }
 
 function MacroCard({

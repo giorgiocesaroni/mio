@@ -55,6 +55,17 @@ def truncate_for_llm(text: str, max_length: int) -> str:
     return text
 
 
+def extract_tokens(usage: dict) -> tuple[int, int, int]:
+    """Return (uncached_input_tokens, cached_input_tokens, output_tokens)."""
+    prompt_tokens = usage.get("prompt_tokens", 0) or 0
+    completion_tokens = usage.get("completion_tokens", 0) or 0
+    cached_tokens = 0
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        cached_tokens = details.get("cached_tokens", 0) or 0
+    return max(prompt_tokens - cached_tokens, 0), cached_tokens, completion_tokens
+
+
 def get_mimo_cost(*, model_id: str, usage: dict) -> float:
     model_cost_million_tokens = {
         "mimo-v2.5": {
