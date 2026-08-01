@@ -135,6 +135,14 @@ insert_food_declaration = models.FunctionDeclaration(
                 "type": "integer",
                 "description": "Caloric value in kcal.",
             },
+            "brand": {
+                "type": "string",
+                "description": "Brand or manufacturer of the food (e.g. 'Barilla', 'Galbani').",
+            },
+            "source_url": {
+                "type": "string",
+                "description": "URL of the nutritional source used to obtain the food data.",
+            },
             "serving_sizes": {
                 "type": "array",
                 "description": "Optional list of serving sizes for this food.",
@@ -166,6 +174,8 @@ def insert_food_tool(
     carbs_g: int,
     fat_g: int,
     calories_kcal: int,
+    brand: str | None = None,
+    source_url: str | None = None,
     serving_sizes: list[dict] | None = None,
 ) -> dict:
     food = repository.insert_food(
@@ -175,6 +185,8 @@ def insert_food_tool(
             carbs_g=carbs_g,
             fat_g=fat_g,
             calories_kcal=calories_kcal,
+            brand=brand,
+            source_url=source_url,
             serving_sizes=[
                 models.InsertServingSizeInput(**ss) for ss in (serving_sizes or [])
             ],
@@ -203,6 +215,14 @@ update_food_declaration = models.FunctionDeclaration(
                 "type": "integer",
                 "description": "New calories in kcal.",
             },
+            "source_url": {
+                "type": "string",
+                "description": "New URL of the nutritional source.",
+            },
+            "brand": {
+                "type": "string",
+                "description": "New brand or manufacturer.",
+            },
         },
         "required": ["id"],
     },
@@ -217,6 +237,8 @@ def update_food_tool(
     carbs_g: int | None = None,
     fat_g: int | None = None,
     calories_kcal: int | None = None,
+    source_url: str | None = None,
+    brand: str | None = None,
 ) -> None:
     repository.update_food(
         models.UpdateFoodInput(
@@ -226,6 +248,8 @@ def update_food_tool(
             carbs_g=carbs_g,
             fat_g=fat_g,
             calories_kcal=calories_kcal,
+            source_url=source_url,
+            brand=brand,
         ),
         user_id,
     )
@@ -291,22 +315,26 @@ insert_serving_size_declaration = models.FunctionDeclaration(
                 "type": "string",
                 "description": "Human-readable label (e.g. '1 cup', '1 slice').",
             },
+            "label_plural": {
+                "type": "string",
+                "description": "Plural form of the label (e.g. '2 cups', '3 slices').",
+            },
             "grams": {
                 "type": "number",
                 "description": "Weight of this serving in grams.",
             },
         },
-        "required": ["food_id", "label", "grams"],
+        "required": ["food_id", "label", "label_plural", "grams"],
     },
 )
 
 
 def insert_serving_size_tool(
-    user_id: str, food_id: UUID, label: str, grams: float
+    user_id: str, food_id: UUID, label: str, label_plural: str, grams: float
 ) -> dict:
     size = repository.insert_serving_size(
         food_id,
-        models.InsertServingSizeInput(label=label, grams=grams),
+        models.InsertServingSizeInput(label=label, label_plural=label_plural, grams=grams),
         user_id,
     )
     return size.model_dump()
@@ -324,6 +352,7 @@ update_serving_size_declaration = models.FunctionDeclaration(
                 "description": "UUID of the serving size to update.",
             },
             "label": {"type": "string", "description": "New label."},
+            "label_plural": {"type": "string", "description": "New plural label."},
             "grams": {"type": "number", "description": "New weight in grams."},
         },
         "required": ["id"],
@@ -332,10 +361,10 @@ update_serving_size_declaration = models.FunctionDeclaration(
 
 
 def update_serving_size_tool(
-    user_id: str, id: UUID, label: str | None = None, grams: float | None = None
+    user_id: str, id: UUID, label: str | None = None, label_plural: str | None = None, grams: float | None = None
 ) -> dict:
     size = repository.update_serving_size(
-        models.UpdateServingSizeInput(id=id, label=label, grams=grams),
+        models.UpdateServingSizeInput(id=id, label=label, label_plural=label_plural, grams=grams),
         user_id,
     )
     return size.model_dump()

@@ -161,10 +161,20 @@ async def upload_file(
     if len(data) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 50MB)")
     try:
-        url, mime_type = media.upload_media(user_id, data, file.content_type or "application/octet-stream")
+        url, mime_type = media.upload_media(
+            user_id, data, file.content_type or "application/octet-stream"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
     return {"url": url, "mime_type": mime_type}
+
+
+@app.get("/conversations")
+async def list_conversations(
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    conversations = service.get_conversations(user_id)
+    return [c.model_dump() for c in conversations]
 
 
 @app.get("/conversations/{conversation_id}/messages")
@@ -181,4 +191,10 @@ async def get_conversation_messages(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
+    debug = os.getenv("DEBUG", "false").lower() == "true"
+    uvicorn.run(
+        "src.api.api:app" if debug else app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8080")),
+        reload=debug,
+    )

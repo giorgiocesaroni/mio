@@ -18,16 +18,19 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          title: string | null
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          title?: string | null
           user_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          title?: string | null
           user_id?: string
         }
         Relationships: []
@@ -87,6 +90,8 @@ export type Database = {
           id: string
           name: string
           protein_g: number
+          brand: string | null
+          source_url: string | null
           user_id: string | null
         }
         Insert: {
@@ -98,6 +103,8 @@ export type Database = {
           id?: string
           name: string
           protein_g: number
+          brand?: string | null
+          source_url?: string | null
           user_id?: string | null
         }
         Update: {
@@ -109,6 +116,8 @@ export type Database = {
           id?: string
           name?: string
           protein_g?: number
+          brand?: string | null
+          source_url?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -265,6 +274,7 @@ export type Database = {
           grams: number
           id: string
           label: string
+          label_plural: string
           user_id: string | null
         }
         Insert: {
@@ -273,6 +283,7 @@ export type Database = {
           grams: number
           id?: string
           label: string
+          label_plural: string
           user_id?: string | null
         }
         Update: {
@@ -281,6 +292,7 @@ export type Database = {
           grams?: number
           id?: string
           label?: string
+          label_plural?: string
           user_id?: string | null
         }
         Relationships: [
@@ -306,7 +318,12 @@ export type Database = {
           log_created_at: string | null
           log_food_id: string | null
           log_id: string | null
+          log_quantity: number | null
           log_quantity_g: number | null
+          log_serving_size_id: string | null
+          log_serving_size_label: string | null
+          log_serving_size_label_plural: string | null
+          log_serving_size_grams: number | null
         }
         Relationships: [
           {

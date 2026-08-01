@@ -85,6 +85,7 @@ class RunAgentInput(BaseModel):
 class ServingSize(BaseModel):
     id: UUID
     label: str
+    label_plural: str
     grams: float
 
     @field_serializer("id")
@@ -94,12 +95,14 @@ class ServingSize(BaseModel):
 
 class InsertServingSizeInput(BaseModel):
     label: str
+    label_plural: str
     grams: float
 
 
 class UpdateServingSizeInput(BaseModel):
     id: UUID
     label: Optional[str] = None
+    label_plural: Optional[str] = None
     grams: Optional[float] = None
 
     @field_serializer("id")
@@ -113,6 +116,8 @@ class InsertFoodInput(BaseModel):
     carbs_g: int
     fat_g: int
     calories_kcal: int
+    brand: str | None = None
+    source_url: str | None = None
     serving_sizes: list[InsertServingSizeInput] = Field(default_factory=list)
 
 
@@ -123,6 +128,8 @@ class UpdateFoodInput(BaseModel):
     carbs_g: Optional[int]
     fat_g: Optional[int]
     calories_kcal: Optional[int]
+    brand: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 class Food(BaseModel):
@@ -132,6 +139,8 @@ class Food(BaseModel):
     carbs_g: int
     fat_g: int
     calories_kcal: int
+    brand: str | None = None
+    source_url: str | None = None
     serving_sizes: list[ServingSize] = Field(default_factory=list)
 
     @field_serializer("id")
@@ -248,6 +257,16 @@ class InsertGoalInput(BaseModel):
     carbs_g: int
     fat_g: int
     goal: Literal["lose_weight", "maintain_weight", "gain_weight"]
+
+
+class Conversation(BaseModel):
+    id: UUID
+    title: Optional[str] = None
+    created_at: datetime
+
+    @field_serializer("id")
+    def serialize_id(self, id: UUID) -> str:
+        return str(id)
 
 
 class InsertMeasurementInput(BaseModel):

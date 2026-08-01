@@ -115,10 +115,22 @@ def _convert_input(message: models.MessageType) -> dict:
     return {"role": "user", "content": parts}
 
 
+def _extract_title(message: models.MessageType) -> str | None:
+    """Extract a title from the user message (first text part, truncated)."""
+    for part in message.parts:
+        if part.text:
+            title = part.text.strip()
+            return title[:100] if len(title) > 100 else title
+    return None
+
+
 async def run_agent(
     input: models.RunAgentInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
-    repository.create_conversation_if_not_exists(input.conversation_id, input.user_id)
+    title = _extract_title(input.message)
+    repository.create_conversation_if_not_exists(
+        input.conversation_id, input.user_id, title
+    )
     preprocessed_message = await _preprocess_message(
         input.message, input.user_id, input.conversation_id
     )
@@ -197,6 +209,10 @@ def get_usage_overview() -> dict:
 
 def get_conversation_usage(conversation_id: UUID) -> dict:
     return repository.get_conversation_llm_usage(conversation_id)
+
+
+def get_conversations(user_id: str) -> list[models.Conversation]:
+    return repository.get_conversations(user_id)
 
 
 def get_conversation_history(

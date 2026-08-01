@@ -79,6 +79,27 @@ function MacroCard({
   );
 }
 
+function MacroBadge({
+  letter,
+  color,
+  value,
+}: {
+  letter: string;
+  color: string;
+  value: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 text-sm">
+      <span
+        className={`${color} text-white text-xs font-bold px-1.5 py-0.5 rounded`}
+      >
+        {letter}
+      </span>
+      {value} g
+    </span>
+  );
+}
+
 function DailyMacros() {
   const [showDifference, setShowDifference] = useState(false);
 
@@ -151,8 +172,12 @@ function DailyFoodLogsWithFoods() {
               })}
             </P>
           </div>
-          <div className="flex gap-4 items-center text-sm">
-            <P>{log.log_quantity_g} g</P>
+          <div className="whitespace-nowrap grid md:grid-cols-5 grid-cols-4 gap-4 items-center text-sm text-muted-foreground">
+            <P className="md:block hidden">
+              {log.log_serving_size_id
+                ? `${log.log_quantity}× ${log.log_quantity! > 1 ? log.log_serving_size_label_plural : log.log_serving_size_label}`
+                : `${log.log_quantity_g} g`}
+            </P>
             <P>
               {(
                 (log.log_quantity_g ?? 0) *
@@ -160,30 +185,30 @@ function DailyFoodLogsWithFoods() {
               ).toFixed()}{" "}
               Kcal
             </P>
-            <P className="">
-              P{" "}
-              {(
+            <MacroBadge
+              letter="P"
+              color="bg-red-500"
+              value={(
                 (log.log_quantity_g ?? 0) *
                 ((log.food_protein_g ?? 0) / 100)
-              ).toFixed()}{" "}
-              g
-            </P>
-            <P className="">
-              C{" "}
-              {(
+              ).toFixed()}
+            />
+            <MacroBadge
+              letter="C"
+              color="bg-yellow-500"
+              value={(
                 (log.log_quantity_g ?? 0) *
                 ((log.food_carbs_g ?? 0) / 100)
-              ).toFixed()}{" "}
-              g
-            </P>
-            <P className="">
-              F{" "}
-              {(
+              ).toFixed()}
+            />
+            <MacroBadge
+              letter="F"
+              color="bg-blue-500"
+              value={(
                 (log.log_quantity_g ?? 0) *
                 ((log.food_fat_g ?? 0) / 100)
-              ).toFixed()}{" "}
-              g
-            </P>
+              ).toFixed()}
+            />
           </div>
         </Card>
       ))}

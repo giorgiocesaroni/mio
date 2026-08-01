@@ -37,7 +37,7 @@ export default function ConversationsPage() {
             onClick={() => router.push(`/dashboard/chat/${conv.id}`)}
             className="flex items-center justify-between gap-4 cursor-pointer hover:bg-muted transition-colors overflow-auto"
           >
-            <P className="truncate">{conv.id}</P>
+            <P className="truncate">{conv.title || "New conversation"}</P>
             <P className="text-sm text-muted-foreground whitespace-nowrap">
               {new Date(conv.created_at).toLocaleDateString(undefined, {
                 month: "short",

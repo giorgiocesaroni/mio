@@ -59,17 +59,34 @@ def get_messages_by_conversation_id(
             return [row[0] for row in rows]
 
 
-def create_conversation_if_not_exists(conversation_id: UUID, user_id: str) -> None:
+def create_conversation_if_not_exists(
+    conversation_id: UUID, user_id: str, title: Optional[str] = None
+) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO conversations (id, user_id)
-                VALUES (%s, %s)
+                INSERT INTO conversations (id, user_id, title)
+                VALUES (%s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
-                (conversation_id, user_id),
+                (conversation_id, user_id, title),
             )
+
+
+def get_conversations(user_id: str) -> list[models.Conversation]:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=class_row(models.Conversation)) as cur:
+            cur.execute(
+                """
+                SELECT id, title, created_at
+                FROM conversations
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            )
+            return cur.fetchall()
 
 
 def insert_conversation_message(
@@ -217,7 +234,7 @@ def get_serving_sizes_by_food_id(
         with conn.cursor(row_factory=class_row(models.ServingSize)) as cur:
             cur.execute(
                 """
-                SELECT id, label, grams
+                SELECT id, label, label_plural, grams
                 FROM serving_sizes
                 WHERE food_id = %s AND user_id = %s
                 ORDER BY label ASC
@@ -234,11 +251,11 @@ def insert_serving_size(
         with conn.cursor(row_factory=class_row(models.ServingSize)) as cur:
             cur.execute(
                 """
-                INSERT INTO serving_sizes (food_id, label, grams, user_id)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id, label, grams
+                INSERT INTO serving_sizes (food_id, label, label_plural, grams, user_id)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, label, label_plural, grams
                 """,
-                (str(food_id), input.label, input.grams, user_id),
+                (str(food_id), input.label, input.label_plural, input.grams, user_id),
             )
             row = cur.fetchone()
             if row is None:
@@ -255,11 +272,12 @@ def update_serving_size(
                 """
                 UPDATE serving_sizes
                 SET label = COALESCE(%s, label),
+                    label_plural = COALESCE(%s, label_plural),
                     grams = COALESCE(%s, grams)
                 WHERE id = %s AND user_id = %s
-                RETURNING id, label, grams
+                RETURNING id, label, label_plural, grams
                 """,
-                (input.label, input.grams, str(input.id), user_id),
+                (input.label, input.label_plural, input.grams, str(input.id), user_id),
             )
             row = cur.fetchone()
             if row is None:
@@ -283,7 +301,7 @@ def delete_serving_size(serving_size_id: UUID, user_id: str) -> None:
 
 _SERVING_SIZES_AGG = """
     COALESCE(
-        json_agg(json_build_object('id', ss.id, 'label', ss.label, 'grams', ss.grams))
+        json_agg(json_build_object('id', ss.id, 'label', ss.label, 'label_plural', ss.label_plural, 'grams', ss.grams))
         FILTER (WHERE ss.id IS NOT NULL),
         '[]'
     ) AS serving_sizes
@@ -296,7 +314,7 @@ def search_foods(query: str, limit: int = 10, user_id: str = "") -> list[models.
         with conn.cursor(row_factory=class_row(models.Food)) as cur:
             cur.execute(
                 f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal,
+                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
                     {_SERVING_SIZES_AGG}
                 FROM foods f
                 LEFT JOIN serving_sizes ss ON ss.food_id = f.id
@@ -315,7 +333,7 @@ def get_all_foods(user_id: str) -> list[models.Food]:
         with conn.cursor(row_factory=class_row(models.Food)) as cur:
             cur.execute(
                 f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal,
+                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
                     {_SERVING_SIZES_AGG}
                 FROM foods f
                 LEFT JOIN serving_sizes ss ON ss.food_id = f.id
@@ -333,7 +351,7 @@ def get_food_by_id(food_id: UUID, user_id: str) -> Optional[models.Food]:
         with conn.cursor(row_factory=class_row(models.Food)) as cur:
             cur.execute(
                 f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal,
+                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
                     {_SERVING_SIZES_AGG}
                 FROM foods f
                 LEFT JOIN serving_sizes ss ON ss.food_id = f.id
@@ -351,8 +369,8 @@ def insert_food(food: models.InsertFoodInput, user_id: str) -> models.Food:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, embedding, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s::vector, %s)
+                INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, brand, source_url, embedding, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
                 RETURNING id
                 """,
                 (
@@ -361,6 +379,8 @@ def insert_food(food: models.InsertFoodInput, user_id: str) -> models.Food:
                     food.carbs_g,
                     food.fat_g,
                     food.calories_kcal,
+                    food.brand,
+                    food.source_url,
                     _embedding_to_str(embedding),
                     user_id,
                 ),
@@ -393,7 +413,9 @@ def update_food(food: models.UpdateFoodInput, user_id: str) -> None:
                     protein_g = COALESCE(%s, protein_g),
                     carbs_g = COALESCE(%s, carbs_g),
                     fat_g = COALESCE(%s, fat_g),
-                    calories_kcal = COALESCE(%s, calories_kcal)
+                    calories_kcal = COALESCE(%s, calories_kcal),
+                    brand = COALESCE(%s, brand),
+                    source_url = COALESCE(%s, source_url)
                 WHERE id = %s AND user_id = %s
                 """,
                 (
@@ -402,6 +424,8 @@ def update_food(food: models.UpdateFoodInput, user_id: str) -> None:
                     food.carbs_g,
                     food.fat_g,
                     food.calories_kcal,
+                    food.brand,
+                    food.source_url,
                     food.id,
                     user_id,
                 ),
@@ -439,7 +463,7 @@ def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]
                 f"""
                 SELECT
                     fl.id, fl.food_id, fl.quantity_g, fl.serving_size_id, fl.quantity,
-                    f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal,
+                    f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
                     {_SERVING_SIZES_AGG}
                 FROM food_logs fl
                 JOIN foods f ON f.id = fl.food_id
@@ -464,7 +488,9 @@ def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]
                         carbs_g=row[8],
                         fat_g=row[9],
                         calories_kcal=row[10],
-                        serving_sizes=[models.ServingSize(**ss) for ss in row[11]],
+                        brand=row[11],
+                        source_url=row[12],
+                        serving_sizes=[models.ServingSize(**ss) for ss in row[13]],
                     ),
                 )
                 for row in cur.fetchall()
