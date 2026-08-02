@@ -31,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-[390px]`}
+        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-97.5`}
       >
         <Providers>{children}</Providers>
       </body>
