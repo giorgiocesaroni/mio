@@ -6,6 +6,7 @@ select
   date_trunc('day'::text, coalesce(l.log_for, l.created_at)) as day,
   coalesce(l.log_for, l.created_at) as log_created_at,
   l.food_id as log_food_id,
+  l.recipe_id as log_recipe_id,
   coalesce(ss.grams * l.quantity, l.quantity_g) as log_quantity_g,
   l.serving_size_id as log_serving_size_id,
   l.quantity as log_quantity,
@@ -16,11 +17,12 @@ select
   i.protein_g as food_protein_g,
   i.carbs_g as food_carbs_g,
   i.fat_g as food_fat_g,
-  i.calories_kcal as food_calories_kcal
+  i.calories_kcal as food_calories_kcal,
+  r.name as recipe_name
 from
   logs l
   join ingredients i on i.id = l.food_id
   left join serving_sizes ss on ss.id = l.serving_size_id
+  left join recipes r on r.id = l.recipe_id
 where
-  l.food_id is not null
-  and date_trunc('day'::text, coalesce(l.log_for, l.created_at)) = date_trunc('day'::text, now());
+  date_trunc('day'::text, coalesce(l.log_for, l.created_at)) = date_trunc('day'::text, now());

@@ -212,7 +212,6 @@ class InsertRecipeItemInput(BaseModel):
 class Recipe(BaseModel):
     id: UUID
     name: str
-    is_template: bool
     image_url: str | None = None
     items: list[RecipeItem] = Field(default_factory=list)
 
@@ -223,7 +222,6 @@ class Recipe(BaseModel):
 
 class InsertRecipeInput(BaseModel):
     name: str
-    is_template: bool = False
     image_url: str | None = None
     items: list[InsertRecipeItemInput] = Field(default_factory=list)
 
@@ -231,7 +229,6 @@ class InsertRecipeInput(BaseModel):
 class UpdateRecipeInput(BaseModel):
     id: UUID
     name: str | None = None
-    is_template: bool | None = None
     image_url: str | None = None
 
     @field_serializer("id")
@@ -261,7 +258,6 @@ class InsertLogByServingSizeInput(BaseModel):
     food_id: UUID | None = None
     serving_size_id: UUID
     quantity: float
-    recipe_id: UUID | None = None
     meal_type: MealType
     log_for: str  # YYYY-MM-DD HH:MM — the actual time of the meal
 
@@ -273,15 +269,11 @@ class InsertLogByServingSizeInput(BaseModel):
     def serialize_serving_size_id(self, v: UUID) -> str:
         return str(v)
 
-    @field_serializer("recipe_id")
-    def serialize_recipe_id(self, v: UUID | None) -> str | None:
-        return str(v) if v is not None else None
-
 
 class UpdateLogInput(BaseModel):
     id: UUID
     food_id: Optional[UUID] = None
-    quantity_g: Optional[int] = None
+    quantity_g: Optional[float] = None
     recipe_id: Optional[UUID] = None
     meal_type: Optional[MealType] = None
     log_for: str | None = None
@@ -331,7 +323,7 @@ class Log(BaseModel):
 
 
 class LogWithEntry(BaseModel):
-    """A log entry — either an ingredient or a recipe, never both."""
+    """A log entry — always references an ingredient; recipe_id is optional provenance for dispatched recipe logs."""
     id: UUID
     food_id: UUID | None = None
     quantity_g: Optional[float] = None

@@ -24,7 +24,8 @@ def _sanitize_tool_calls(messages: list[dict]) -> None:
 
 TOOL_DECLARATIONS = [
     tools.search_declaration,
-    tools.fetch_declaration,
+    tools.web_search_declaration,
+    tools.web_fetch_declaration,
     tools.get_ingredient_by_id_declaration,
     tools.insert_ingredient_declaration,
     tools.update_ingredient_declaration,
@@ -197,8 +198,10 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
         match name:
             case "search":
                 response = tools.search_tool(user_id=user_id, **args)
-            case "fetch":
-                response = {"results": tools.fetch_tool(**args)}
+            case "web_search":
+                response = tools.web_search_tool(**args)
+            case "web_fetch":
+                response = {"results": tools.web_fetch_tool(**args)}
             # Ingredients
             case "get_ingredient_by_id":
                 response = {

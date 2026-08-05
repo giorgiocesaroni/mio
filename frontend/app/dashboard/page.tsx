@@ -6,6 +6,7 @@ import {
   getDailyMacrosView,
   getTotalLlmCost,
 } from "@/repository/supabase/queries";
+import { Database } from "@/repository/supabase/types";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { H1, P } from "../components/typography";
@@ -151,67 +152,168 @@ function DailyMacros() {
   );
 }
 
+type FoodLog =
+  Database["public"]["Views"]["v_daily_food_logs_with_foods"]["Row"];
+
+type Macros = { calories: number; protein: number; carbs: number; fat: number };
+
+function macrosOf(log: FoodLog): Macros {
+  const q = log.log_quantity_g ?? 0;
+  return {
+    calories: q * ((log.food_calories_kcal ?? 0) / 100),
+    protein: q * ((log.food_protein_g ?? 0) / 100),
+    carbs: q * ((log.food_carbs_g ?? 0) / 100),
+    fat: q * ((log.food_fat_g ?? 0) / 100),
+  };
+}
+
+function amountOf(log: FoodLog): string {
+  if (log.log_serving_size_id) {
+    return `${log.log_quantity}× ${
+      (log.log_quantity ?? 0) > 1 ? log.log_serving_size_label_plural : log.log_serving_size_label
+    }`;
+  }
+  return `${log.log_quantity_g} g`;
+}
+
+function FoodBadges({ macros }: { macros: Macros }) {
+  return (
+    <div className="whitespace-nowrap grid grid-cols-4 gap-4 items-center text-sm text-muted-foreground">
+      <P>{macros.calories.toFixed()} Kcal</P>
+      <MacroBadge letter="P" color="bg-red-500" value={macros.protein.toFixed()} />
+      <MacroBadge letter="C" color="bg-yellow-500" value={macros.carbs.toFixed()} />
+      <MacroBadge letter="F" color="bg-blue-500" value={macros.fat.toFixed()} />
+    </div>
+  );
+}
+
+type FoodBlock =
+  | { kind: "food"; log: FoodLog }
+  | { kind: "recipe"; recipeId: string; recipeName: string; logs: FoodLog[] };
+
+function buildBlocks(logs: FoodLog[]) {
+  const groups = new Map<string, FoodLog[]>();
+  const standalone: FoodLog[] = [];
+  for (const log of logs) {
+    if (log.log_recipe_id) {
+      const list = groups.get(log.log_recipe_id) ?? [];
+      list.push(log);
+      groups.set(log.log_recipe_id, list);
+    } else {
+      standalone.push(log);
+    }
+  }
+
+  const blocks: FoodBlock[] = standalone.map((log) => ({ kind: "food", log }));
+  for (const [recipeId, recipeLogs] of groups) {
+    blocks.push({
+      kind: "recipe",
+      recipeId,
+      recipeName: recipeLogs[0].recipe_name ?? "Recipe",
+      logs: recipeLogs,
+    });
+  }
+
+  // Keep chronological order (descending) using each block's representative timestamp.
+  const ts = (b: FoodBlock) =>
+    b.kind === "food" ? b.log.log_created_at! : b.logs[0].log_created_at!;
+  blocks.sort((a, b) => new Date(ts(b)).getTime() - new Date(ts(a)).getTime());
+  return blocks;
+}
+
+function sumMacros(logs: FoodLog[]): Macros {
+  return logs.reduce<Macros>(
+    (acc, log) => {
+      const m = macrosOf(log);
+      return {
+        calories: acc.calories + m.calories,
+        protein: acc.protein + m.protein,
+        carbs: acc.carbs + m.carbs,
+        fat: acc.fat + m.fat,
+      };
+    },
+    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+  );
+}
+
+function RecipeBlockCard({
+  block,
+}: {
+  block: Extract<FoodBlock, { kind: "recipe" }>;
+}) {
+  const timestamp = block.logs[0].log_created_at!;
+  return (
+    <Card className="grid gap-3">
+      <div className="overflow-auto flex justify-between items-center gap-4">
+        <P className="truncate text-foreground font-medium">
+          {block.recipeName}
+        </P>
+        <P className="whitespace-nowrap text-sm">
+          {new Date(timestamp).toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </P>
+      </div>
+      <FoodBadges macros={sumMacros(block.logs)} />
+      <div className="grid gap-2 border-t pt-2">
+        {block.logs.map((log) => {
+          const m = macrosOf(log);
+          return (
+            <div
+              key={log.log_id}
+              className="flex justify-between items-center gap-4 text-sm"
+            >
+              <span className="truncate text-muted-foreground">
+                {log.food_name}{" "}
+                <span className="text-muted-foreground/70">({amountOf(log)})</span>
+              </span>
+              <span className="whitespace-nowrap text-muted-foreground">
+                {m.calories.toFixed()} Kcal
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function DailyFoodLogsWithFoods() {
   const { data: dailyFoodLogsView } = useQuery({
     queryKey: ["getDailyFoodLogsWithFoodsView"],
     queryFn: getDailyFoodLogsWithFoodsView,
   });
 
+  const blocks = buildBlocks(dailyFoodLogsView ?? []);
+
   return (
     <div className="grid gap-4">
-      {dailyFoodLogsView?.map((log) => (
-        <Card key={log.log_id} className="grid gap-2">
-          <div className="overflow-auto flex justify-between items-center gap-4">
-            <P className="truncate text-foreground font-medium">
-              {log.food_name}
-            </P>
-            <P className="whitespace-nowrap text-sm">
-              {new Date(log.log_created_at!).toLocaleTimeString(undefined, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </P>
-          </div>
-          <div className="whitespace-nowrap grid md:grid-cols-5 grid-cols-4 gap-4 items-center text-sm text-muted-foreground">
-            <P className="md:block hidden">
-              {log.log_serving_size_id
-                ? `${log.log_quantity}× ${log.log_quantity! > 1 ? log.log_serving_size_label_plural : log.log_serving_size_label}`
-                : `${log.log_quantity_g} g`}
-            </P>
-            <P>
-              {(
-                (log.log_quantity_g ?? 0) *
-                ((log.food_calories_kcal ?? 0) / 100)
-              ).toFixed()}{" "}
-              Kcal
-            </P>
-            <MacroBadge
-              letter="P"
-              color="bg-red-500"
-              value={(
-                (log.log_quantity_g ?? 0) *
-                ((log.food_protein_g ?? 0) / 100)
-              ).toFixed()}
-            />
-            <MacroBadge
-              letter="C"
-              color="bg-yellow-500"
-              value={(
-                (log.log_quantity_g ?? 0) *
-                ((log.food_carbs_g ?? 0) / 100)
-              ).toFixed()}
-            />
-            <MacroBadge
-              letter="F"
-              color="bg-blue-500"
-              value={(
-                (log.log_quantity_g ?? 0) *
-                ((log.food_fat_g ?? 0) / 100)
-              ).toFixed()}
-            />
+      {blocks.map((block, index) =>
+        block.kind === "food" ? (
+          <Card key={block.log.log_id} className="grid gap-2">
+            <div className="overflow-auto flex justify-between items-center gap-4">
+              <P className="truncate text-foreground font-medium">
+                {block.log.food_name}
+              </P>
+              <P className="whitespace-nowrap text-sm">
+                {new Date(block.log.log_created_at!).toLocaleTimeString(undefined, {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </P>
+            </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="hidden md:inline whitespace-nowrap">
+              {amountOf(block.log)}
+            </span>
+            <FoodBadges macros={macrosOf(block.log)} />
           </div>
         </Card>
-      ))}
+        ) : (
+          <RecipeBlockCard key={`recipe-${block.recipeId}-${index}`} block={block} />
+        )
+      )}
     </div>
   );
 }

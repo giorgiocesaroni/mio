@@ -375,10 +375,10 @@ def insert_ingredient(ingredient: models.InsertIngredientInput, user_id: str) ->
             for ss in ingredient.serving_sizes:
                 cur.execute(
                     """
-                    INSERT INTO serving_sizes (food_id, label, grams, user_id)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO serving_sizes (food_id, label, label_plural, grams, user_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (str(ingredient_id), ss.label, ss.grams, user_id),
+                    (str(ingredient_id), ss.label, ss.label_plural, ss.grams, user_id),
                 )
     result = get_ingredient_by_id(ingredient_id, user_id)
     if result is None:
@@ -460,10 +460,10 @@ def search_recipes(query: str, limit: int = 10, user_id: str = "") -> list[model
         with conn.cursor(row_factory=class_row(models.Recipe)) as cur:
             cur.execute(
                 f"""
-                SELECT r.id, r.name, r.is_template, r.image_url,
+                SELECT r.id, r.name, r.image_url,
                     {_RECIPE_ITEMS_AGG}
                 FROM recipes r
-                LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+                LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
                 WHERE r.user_id = %s
                 GROUP BY r.id
                 ORDER BY r.name ASC
@@ -479,10 +479,10 @@ def get_recipe_by_id(recipe_id: UUID, user_id: str) -> Optional[models.Recipe]:
         with conn.cursor(row_factory=class_row(models.Recipe)) as cur:
             cur.execute(
                 f"""
-                SELECT r.id, r.name, r.is_template, r.image_url,
+                SELECT r.id, r.name, r.image_url,
                     {_RECIPE_ITEMS_AGG}
                 FROM recipes r
-                LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+                LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
                 WHERE r.id = %s AND r.user_id = %s
                 GROUP BY r.id
                 """,
@@ -496,11 +496,11 @@ def insert_recipe(recipe: models.InsertRecipeInput, user_id: str) -> models.Reci
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO recipes (name, is_template, image_url, user_id)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO recipes (name, image_url, user_id)
+                VALUES (%s, %s, %s)
                 RETURNING id
                 """,
-                (recipe.name, recipe.is_template, recipe.image_url, user_id),
+                (recipe.name, recipe.image_url, user_id),
             )
             row = cur.fetchone()
             if row is None:
@@ -509,7 +509,7 @@ def insert_recipe(recipe: models.InsertRecipeInput, user_id: str) -> models.Reci
             for item in recipe.items:
                 cur.execute(
                     """
-                    INSERT INTO recipe_items (recipe_id, food_id, quantity_g, quantity, serving_size_id, user_id)
+                    INSERT INTO recipe_ingredients (recipe_id, food_id, quantity_g, quantity, serving_size_id, user_id)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     (
@@ -534,11 +534,10 @@ def update_recipe(recipe: models.UpdateRecipeInput, user_id: str) -> None:
                 """
                 UPDATE recipes
                 SET name = COALESCE(%s, name),
-                    is_template = COALESCE(%s, is_template),
                     image_url = COALESCE(%s, image_url)
                 WHERE id = %s AND user_id = %s
                 """,
-                (recipe.name, recipe.is_template, recipe.image_url, recipe.id, user_id),
+                (recipe.name, recipe.image_url, recipe.id, user_id),
             )
 
 
@@ -558,7 +557,7 @@ def delete_recipe(recipe_id: UUID, user_id: str) -> None:
 
 
 def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
-    """Return log entries for a given day. Each log has either an ingredient or a recipe, never both."""
+    """Return log entries for a given day. Each log references an ingredient; recipe_id is optional provenance for dispatched recipe logs."""
     tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
@@ -576,8 +575,8 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     -- ingredient fields (NULL when log is a recipe)
                     i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
                     iss_agg.serving_sizes,
-                    -- recipe fields (NULL when log is an ingredient)
-                    r.id, r.name, r.is_template, r.image_url
+                    -- recipe fields (NULL when the log is a plain ingredient log)
+                    r.id, r.name, r.image_url
                 FROM logs l
                 LEFT JOIN ingredients i ON i.id = l.food_id
                 LEFT JOIN (
@@ -625,8 +624,7 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     entry.recipe = models.Recipe(
                         id=row[18],
                         name=row[19],
-                        is_template=row[20],
-                        image_url=row[21],
+                        image_url=row[20],
                     )
                 results.append(entry)
             return results
@@ -635,36 +633,76 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
 def insert_log_by_grams(
     input: models.InsertLogByGramsInput, user_id: str
 ) -> None:
-    food_id = str(input.food_id) if input.food_id else None
-    recipe_id = str(input.recipe_id) if input.recipe_id else None
     tz = get_user_timezone(user_id)
     log_for_dt = _localize_to_utc(input.log_for, tz)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO logs (food_id, quantity_g, recipe_id, meal_type, log_for, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (food_id, input.quantity_g, recipe_id, input.meal_type, log_for_dt, user_id),
-            )
+            if input.recipe_id is not None:
+                _dispatch_recipe_logs(
+                    cur, input.recipe_id, input.quantity_g, input.meal_type, log_for_dt, user_id
+                )
+            elif input.food_id is not None:
+                cur.execute(
+                    """
+                    INSERT INTO logs (food_id, quantity_g, meal_type, log_for, user_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (str(input.food_id), input.quantity_g, input.meal_type, log_for_dt, user_id),
+                )
+            else:
+                raise ValueError("insert_log_by_grams requires either food_id or recipe_id.")
+
+
+def _dispatch_recipe_logs(
+    cur, recipe_id: UUID, quantity_g: float, meal_type, log_for_dt, user_id: str
+) -> None:
+    """Expand a recipe log into per-ingredient logs, scaled to the logged weight.
+
+    `quantity_g` is the amount of the whole recipe consumed (e.g. 200g of a
+    400g recipe). Each `recipe_ingredients` item is scaled proportionally, so
+    the dispatched logs sum to the logged weight. Every dispatched row keeps
+    `recipe_id` for provenance but is otherwise a detached ingredient log.
+    """
+    cur.execute(
+        """
+        SELECT ri.food_id,
+               COALESCE(ss.grams * ri.quantity, ri.quantity_g)::numeric AS item_grams
+        FROM recipe_ingredients ri
+        LEFT JOIN serving_sizes ss ON ss.id = ri.serving_size_id
+        WHERE ri.recipe_id = %s
+        """,
+        (str(recipe_id),),
+    )
+    items = cur.fetchall()
+    if not items:
+        raise Exception("Recipe has no ingredients; cannot log it.")
+    total_g = sum(float(item[1]) for item in items)
+    if total_g <= 0:
+        raise Exception("Recipe has zero total weight; cannot log it.")
+    scale = quantity_g / total_g
+    for food_id, item_grams in items:
+        cur.execute(
+            """
+            INSERT INTO logs (food_id, quantity_g, recipe_id, meal_type, log_for, user_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (str(food_id), float(item_grams) * scale, str(recipe_id), meal_type, log_for_dt, user_id),
+        )
 
 
 def insert_log_by_serving_size(
     input: models.InsertLogByServingSizeInput, user_id: str
 ) -> None:
-    food_id = str(input.food_id) if input.food_id else None
-    recipe_id = str(input.recipe_id) if input.recipe_id else None
     tz = get_user_timezone(user_id)
     log_for_dt = _localize_to_utc(input.log_for, tz)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO logs (food_id, serving_size_id, quantity, recipe_id, meal_type, log_for, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO logs (food_id, serving_size_id, quantity, meal_type, log_for, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (food_id, str(input.serving_size_id), input.quantity, recipe_id, input.meal_type, log_for_dt, user_id),
+                (str(input.food_id), str(input.serving_size_id), input.quantity, input.meal_type, log_for_dt, user_id),
             )
 
 
@@ -710,52 +748,24 @@ def delete_log(log_id: UUID, user_id: str) -> None:
 
 
 def get_daily_macros(day: str, user_id: str) -> dict:
-    """Compute daily macros from ingredient logs only (recipe logs are resolved via their items)."""
+    """Compute daily macros from ingredient logs. Recipes are dispatched into per-ingredient logs at log time, so only the ingredient path is needed."""
     tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
-            # Ingredient logs: nutrition comes directly from the ingredient
-            # Recipe logs: nutrition is computed by summing the recipe items' ingredients
             cur.execute(
                 """
-                WITH
-                -- Macros from direct ingredient logs
-                ingredient_macros AS (
-                    SELECT
-                        COALESCE(SUM((i.protein_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS protein_g,
-                        COALESCE(SUM((i.carbs_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS carbs_g,
-                        COALESCE(SUM((i.fat_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS fat_g,
-                        COALESCE(SUM((i.calories_kcal * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS calories_kcal
-                    FROM logs l
-                    JOIN ingredients i ON i.id = l.food_id
-                    LEFT JOIN serving_sizes ss ON ss.id = l.serving_size_id
-                    WHERE l.food_id IS NOT NULL
-                      AND DATE(l.log_for AT TIME ZONE %s) = %s
-                      AND l.user_id = %s
-                ),
-                -- Macros from recipe logs: sum each recipe item's ingredient nutrition
-                recipe_macros AS (
-                    SELECT
-                        COALESCE(SUM((i.protein_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS protein_g,
-                        COALESCE(SUM((i.carbs_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS carbs_g,
-                        COALESCE(SUM((i.fat_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS fat_g,
-                        COALESCE(SUM((i.calories_kcal * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS calories_kcal
-                    FROM logs l
-                    JOIN recipe_items ri ON ri.recipe_id = l.recipe_id
-                    JOIN ingredients i ON i.id = ri.food_id
-                    LEFT JOIN serving_sizes ss ON ss.id = ri.serving_size_id
-                    WHERE l.recipe_id IS NOT NULL
-                      AND DATE(l.log_for AT TIME ZONE %s) = %s
-                      AND l.user_id = %s
-                )
                 SELECT
-                    im.protein_g + rm.protein_g AS total_protein_g,
-                    im.carbs_g + rm.carbs_g AS total_carbs_g,
-                    im.fat_g + rm.fat_g AS total_fat_g,
-                    im.calories_kcal + rm.calories_kcal AS total_calories_kcal
-                FROM ingredient_macros im, recipe_macros rm
+                    COALESCE(SUM((i.protein_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS protein_g,
+                    COALESCE(SUM((i.carbs_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS carbs_g,
+                    COALESCE(SUM((i.fat_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS fat_g,
+                    COALESCE(SUM((i.calories_kcal * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS calories_kcal
+                FROM logs l
+                JOIN ingredients i ON i.id = l.food_id
+                LEFT JOIN serving_sizes ss ON ss.id = l.serving_size_id
+                WHERE DATE(l.log_for AT TIME ZONE %s) = %s
+                  AND l.user_id = %s
                 """,
-                (tz, day, user_id, tz, day, user_id),
+                (tz, day, user_id),
             )
             row = cur.fetchone()
             if row is None:
