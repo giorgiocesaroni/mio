@@ -1,6 +1,6 @@
 # Mio
 
-The monorepo of Mio, the AI nutritionist. Additional details can be found at `docs/README.md`.
+The monorepo of Mio, the AI nutritionist. Additional details can be found at `README.md`.
 
 ## Repository Structure
 
@@ -8,18 +8,17 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `do
 | ----------- | --------------------------------------- | ------------------ |
 | `frontend/` | The frontend of the application.        | Next.js            |
 | `backend/`  | The backend of the application.         | Python             |
-| `docs/`     | The documentation of the project.       |                    |
 | `database/` | Database schema, views, and migrations. | Postgres, Supabase |
 
 ## `backend/`
 
 ### Folder Structure
 
-| Directory   | Notes                           | Core Technologies |
-| ----------- | ------------------------------- | ----------------- |
-| `adapters/` | The platform-specific adapters. | Telegram          |
+| Directory   | Notes                           | Core Technologies            |
+| ----------- | ------------------------------- | ---------------------------- |
+| `adapters/` | The platform-specific adapters. | Telegram                     |
 | `agent/`    | The agent's core logic.         | MiMo API (OpenAI-compatible) |
-| `api/`      | The API of the application.     | FastAPI           |
+| `api/`      | The API of the application.     | FastAPI                      |
 
 ### Module Structure
 

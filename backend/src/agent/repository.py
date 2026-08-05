@@ -19,7 +19,7 @@ db_connection_params = {
     # "connect_timeout": 5,
 }
 
-# Conversations and Messages
+# ── Conversations and Messages ────────────────────────────────────────────────
 
 
 def get_user_timezone(user_id: str) -> str:
@@ -33,9 +33,9 @@ def get_user_timezone(user_id: str) -> str:
             return row[0] if row and row[0] else "UTC"
 
 
-def _localize_to_utc(logged_at: str, timezone: str) -> datetime:
+def _localize_to_utc(log_for: str, timezone: str) -> datetime:
     """Parse a naive 'YYYY-MM-DD HH:MM' string as local time and return a UTC-aware datetime."""
-    naive = datetime.strptime(logged_at, "%Y-%m-%d %H:%M")
+    naive = datetime.strptime(log_for, "%Y-%m-%d %H:%M")
     local = naive.replace(tzinfo=ZoneInfo(timezone))
     return local.astimezone(ZoneInfo("UTC"))
 
@@ -154,10 +154,10 @@ def get_total_llm_usage() -> dict:
             if not row:
                 raise ValueError("Failed to retrieve LLM usage data.")
             return {
-                "total_invocations": row[0],
-                "total_cost": float(row[1]),
-                "prompt_tokens": row[2],
-                "completion_tokens": row[3],
+                "totalInvocations": row[0],
+                "totalCost": float(row[1]),
+                "promptTokens": row[2],
+                "completionTokens": row[3],
             }
 
 
@@ -182,10 +182,10 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                     "No LLM invocations found for the given conversation ID."
                 )
             return {
-                "total_invocations": row[0],
-                "total_cost": float(row[1]),
-                "prompt_tokens": row[2],
-                "completion_tokens": row[3],
+                "totalInvocations": row[0],
+                "totalCost": float(row[1]),
+                "promptTokens": row[2],
+                "completionTokens": row[3],
             }
 
 
@@ -224,11 +224,11 @@ def _embedding_to_str(embedding: list[float]) -> str:
     return "[" + ",".join(str(v) for v in embedding) + "]"
 
 
-# Serving Sizes
+# ── Serving Sizes ─────────────────────────────────────────────────────────────
 
 
-def get_serving_sizes_by_food_id(
-    food_id: UUID, user_id: str
+def get_serving_sizes_by_ingredient_id(
+    ingredient_id: UUID, user_id: str
 ) -> list[models.ServingSize]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=class_row(models.ServingSize)) as cur:
@@ -239,13 +239,13 @@ def get_serving_sizes_by_food_id(
                 WHERE food_id = %s AND user_id = %s
                 ORDER BY label ASC
                 """,
-                (food_id, user_id),
+                (ingredient_id, user_id),
             )
             return cur.fetchall()
 
 
 def insert_serving_size(
-    food_id: UUID, input: models.InsertServingSizeInput, user_id: str
+    ingredient_id: UUID, input: models.InsertServingSizeInput, user_id: str
 ) -> models.ServingSize:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=class_row(models.ServingSize)) as cur:
@@ -255,7 +255,7 @@ def insert_serving_size(
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING id, label, label_plural, grams
                 """,
-                (str(food_id), input.label, input.label_plural, input.grams, user_id),
+                (str(ingredient_id), input.label, input.label_plural, input.grams, user_id),
             )
             row = cur.fetchone()
             if row is None:
@@ -297,7 +297,7 @@ def delete_serving_size(serving_size_id: UUID, user_id: str) -> None:
             )
 
 
-# Foods
+# ── Ingredients ───────────────────────────────────────────────────────────────
 
 _SERVING_SIZES_AGG = """
     COALESCE(
@@ -308,19 +308,19 @@ _SERVING_SIZES_AGG = """
 """
 
 
-def search_foods(query: str, limit: int = 10, user_id: str = "") -> list[models.Food]:
+def search_ingredients(query: str, limit: int = 10, user_id: str = "") -> list[models.Ingredient]:
     embedding = embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Food)) as cur:
+        with conn.cursor(row_factory=class_row(models.Ingredient)) as cur:
             cur.execute(
                 f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
+                SELECT i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
                     {_SERVING_SIZES_AGG}
-                FROM foods f
-                LEFT JOIN serving_sizes ss ON ss.food_id = f.id
-                WHERE f.embedding IS NOT NULL AND f.user_id = %s
-                GROUP BY f.id
-                ORDER BY f.embedding <=> %s::vector
+                FROM ingredients i
+                LEFT JOIN serving_sizes ss ON ss.food_id = i.id
+                WHERE i.embedding IS NOT NULL AND i.user_id = %s
+                GROUP BY i.id
+                ORDER BY i.embedding <=> %s::vector
                 LIMIT %s
                 """,
                 (user_id, _embedding_to_str(embedding), limit),
@@ -328,303 +328,447 @@ def search_foods(query: str, limit: int = 10, user_id: str = "") -> list[models.
             return cur.fetchall()
 
 
-def get_all_foods(user_id: str) -> list[models.Food]:
+def get_ingredient_by_id(ingredient_id: UUID, user_id: str) -> Optional[models.Ingredient]:
     with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Food)) as cur:
+        with conn.cursor(row_factory=class_row(models.Ingredient)) as cur:
             cur.execute(
                 f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
+                SELECT i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
                     {_SERVING_SIZES_AGG}
-                FROM foods f
-                LEFT JOIN serving_sizes ss ON ss.food_id = f.id
-                WHERE f.user_id = %s
-                GROUP BY f.id
-                ORDER BY f.name ASC
+                FROM ingredients i
+                LEFT JOIN serving_sizes ss ON ss.food_id = i.id
+                WHERE i.id = %s AND i.user_id = %s
+                GROUP BY i.id
                 """,
-                (user_id,),
-            )
-            return cur.fetchall()
-
-
-def get_food_by_id(food_id: UUID, user_id: str) -> Optional[models.Food]:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Food)) as cur:
-            cur.execute(
-                f"""
-                SELECT f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
-                    {_SERVING_SIZES_AGG}
-                FROM foods f
-                LEFT JOIN serving_sizes ss ON ss.food_id = f.id
-                WHERE f.id = %s AND f.user_id = %s
-                GROUP BY f.id
-                """,
-                (food_id, user_id),
+                (ingredient_id, user_id),
             )
             return cur.fetchone()
 
 
-def insert_food(food: models.InsertFoodInput, user_id: str) -> models.Food:
-    embedding = embeddings.generate_embedding(food.name)
+def insert_ingredient(ingredient: models.InsertIngredientInput, user_id: str) -> models.Ingredient:
+    embedding = embeddings.generate_embedding(ingredient.name)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO foods (name, protein_g, carbs_g, fat_g, calories_kcal, brand, source_url, embedding, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
+                INSERT INTO ingredients (name, protein_g, carbs_g, fat_g, calories_kcal, brand, source_url, state, embedding, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
                 RETURNING id
                 """,
                 (
-                    food.name,
-                    food.protein_g,
-                    food.carbs_g,
-                    food.fat_g,
-                    food.calories_kcal,
-                    food.brand,
-                    food.source_url,
+                    ingredient.name,
+                    ingredient.protein_g,
+                    ingredient.carbs_g,
+                    ingredient.fat_g,
+                    ingredient.calories_kcal,
+                    ingredient.brand,
+                    ingredient.source_url,
+                    ingredient.state,
                     _embedding_to_str(embedding),
                     user_id,
                 ),
             )
             row = cur.fetchone()
             if row is None:
-                raise Exception("Failed to insert food: no ID returned.")
-            food_id = row[0]
-            for ss in food.serving_sizes:
+                raise Exception("Failed to insert ingredient: no ID returned.")
+            ingredient_id = row[0]
+            for ss in ingredient.serving_sizes:
                 cur.execute(
                     """
                     INSERT INTO serving_sizes (food_id, label, grams, user_id)
                     VALUES (%s, %s, %s, %s)
                     """,
-                    (str(food_id), ss.label, ss.grams, user_id),
+                    (str(ingredient_id), ss.label, ss.grams, user_id),
                 )
-    result = get_food_by_id(food_id, user_id)
+    result = get_ingredient_by_id(ingredient_id, user_id)
     if result is None:
-        raise Exception("Failed to retrieve food after insert.")
+        raise Exception("Failed to retrieve ingredient after insert.")
     return result
 
 
-def update_food(food: models.UpdateFoodInput, user_id: str) -> None:
+def update_ingredient(ingredient: models.UpdateIngredientInput, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE foods
+                UPDATE ingredients
                 SET name = COALESCE(%s, name),
                     protein_g = COALESCE(%s, protein_g),
                     carbs_g = COALESCE(%s, carbs_g),
                     fat_g = COALESCE(%s, fat_g),
                     calories_kcal = COALESCE(%s, calories_kcal),
                     brand = COALESCE(%s, brand),
-                    source_url = COALESCE(%s, source_url)
+                    source_url = COALESCE(%s, source_url),
+                    state = COALESCE(%s, state)
                 WHERE id = %s AND user_id = %s
                 """,
                 (
-                    food.name,
-                    food.protein_g,
-                    food.carbs_g,
-                    food.fat_g,
-                    food.calories_kcal,
-                    food.brand,
-                    food.source_url,
-                    food.id,
+                    ingredient.name,
+                    ingredient.protein_g,
+                    ingredient.carbs_g,
+                    ingredient.fat_g,
+                    ingredient.calories_kcal,
+                    ingredient.brand,
+                    ingredient.source_url,
+                    ingredient.state,
+                    ingredient.id,
                     user_id,
                 ),
             )
-    if food.name is not None:
-        new_embedding = embeddings.generate_embedding(food.name)
+    if ingredient.name is not None:
+        new_embedding = embeddings.generate_embedding(ingredient.name)
         with psycopg.connect(**db_connection_params) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE foods SET embedding = %s::vector WHERE id = %s AND user_id = %s",
-                    (_embedding_to_str(new_embedding), food.id, user_id),
+                    "UPDATE ingredients SET embedding = %s::vector WHERE id = %s AND user_id = %s",
+                    (_embedding_to_str(new_embedding), ingredient.id, user_id),
                 )
 
 
-def delete_food(food_id: UUID, user_id: str) -> None:
+def delete_ingredient(ingredient_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM foods
+                DELETE FROM ingredients
                 WHERE id = %s AND user_id = %s
                 """,
-                (food_id, user_id),
+                (ingredient_id, user_id),
             )
 
 
-# Food Logs
+# ── Recipes ───────────────────────────────────────────────────────────────────
+
+_RECIPE_ITEMS_AGG = """
+    COALESCE(
+        json_agg(json_build_object(
+            'id', ri.id,
+            'ingredient_id', ri.food_id,
+            'quantity_g', ri.quantity_g,
+            'quantity', ri.quantity,
+            'serving_size_id', ri.serving_size_id
+        ))
+        FILTER (WHERE ri.id IS NOT NULL),
+        '[]'
+    ) AS items
+"""
 
 
-def get_food_logs_by_day(day: str, user_id: str) -> list[models.FoodLogWithFood]:
+def search_recipes(query: str, limit: int = 10, user_id: str = "") -> list[models.Recipe]:
+    embedding = embeddings.generate_embedding(query)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=class_row(models.Recipe)) as cur:
+            cur.execute(
+                f"""
+                SELECT r.id, r.name, r.is_template, r.image_url,
+                    {_RECIPE_ITEMS_AGG}
+                FROM recipes r
+                LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+                WHERE r.user_id = %s
+                GROUP BY r.id
+                ORDER BY r.name ASC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
+            return cur.fetchall()
+
+
+def get_recipe_by_id(recipe_id: UUID, user_id: str) -> Optional[models.Recipe]:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=class_row(models.Recipe)) as cur:
+            cur.execute(
+                f"""
+                SELECT r.id, r.name, r.is_template, r.image_url,
+                    {_RECIPE_ITEMS_AGG}
+                FROM recipes r
+                LEFT JOIN recipe_items ri ON ri.recipe_id = r.id
+                WHERE r.id = %s AND r.user_id = %s
+                GROUP BY r.id
+                """,
+                (recipe_id, user_id),
+            )
+            return cur.fetchone()
+
+
+def insert_recipe(recipe: models.InsertRecipeInput, user_id: str) -> models.Recipe:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO recipes (name, is_template, image_url, user_id)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+                """,
+                (recipe.name, recipe.is_template, recipe.image_url, user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise Exception("Failed to insert recipe: no ID returned.")
+            recipe_id = row[0]
+            for item in recipe.items:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_items (recipe_id, food_id, quantity_g, quantity, serving_size_id, user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(recipe_id),
+                        str(item.ingredient_id),
+                        item.quantity_g,
+                        item.quantity,
+                        str(item.serving_size_id) if item.serving_size_id else None,
+                        user_id,
+                    ),
+                )
+    result = get_recipe_by_id(recipe_id, user_id)
+    if result is None:
+        raise Exception("Failed to retrieve recipe after insert.")
+    return result
+
+
+def update_recipe(recipe: models.UpdateRecipeInput, user_id: str) -> None:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE recipes
+                SET name = COALESCE(%s, name),
+                    is_template = COALESCE(%s, is_template),
+                    image_url = COALESCE(%s, image_url)
+                WHERE id = %s AND user_id = %s
+                """,
+                (recipe.name, recipe.is_template, recipe.image_url, recipe.id, user_id),
+            )
+
+
+def delete_recipe(recipe_id: UUID, user_id: str) -> None:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM recipes
+                WHERE id = %s AND user_id = %s
+                """,
+                (recipe_id, user_id),
+            )
+
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+
+
+def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
+    """Return log entries for a given day. Each log has either an ingredient or a recipe, never both."""
     tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 SELECT
-                    fl.id, fl.food_id, fl.quantity_g, fl.serving_size_id, fl.quantity,
-                    f.id, f.name, f.protein_g, f.carbs_g, f.fat_g, f.calories_kcal, f.brand, f.source_url,
-                    {_SERVING_SIZES_AGG}
-                FROM food_logs fl
-                JOIN foods f ON f.id = fl.food_id
-                LEFT JOIN serving_sizes ss ON ss.food_id = f.id
-                WHERE DATE(fl.created_at AT TIME ZONE %s) = %s AND fl.user_id = %s
-                GROUP BY fl.id, f.id
-                ORDER BY fl.created_at ASC
+                    l.id,
+                    l.food_id,
+                    l.quantity_g,
+                    l.serving_size_id,
+                    l.quantity,
+                    l.recipe_id,
+                    l.meal_type,
+                    l.log_for,
+                    -- ingredient fields (NULL when log is a recipe)
+                    i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
+                    iss_agg.serving_sizes,
+                    -- recipe fields (NULL when log is an ingredient)
+                    r.id, r.name, r.is_template, r.image_url
+                FROM logs l
+                LEFT JOIN ingredients i ON i.id = l.food_id
+                LEFT JOIN (
+                    SELECT ss.food_id,
+                        json_agg(json_build_object('id', ss.id, 'label', ss.label, 'label_plural', ss.label_plural, 'grams', ss.grams)) AS serving_sizes
+                    FROM serving_sizes ss
+                    WHERE ss.user_id = %s
+                    GROUP BY ss.food_id
+                ) iss_agg ON iss_agg.food_id = i.id
+                LEFT JOIN recipes r ON r.id = l.recipe_id
+                WHERE DATE(l.log_for AT TIME ZONE %s) = %s AND l.user_id = %s
+                ORDER BY l.log_for ASC
                 """,
-                (tz, day, user_id),
+                (user_id, tz, day, user_id),
             )
-            return [
-                models.FoodLogWithFood(
+            results: list[models.LogWithEntry] = []
+            for row in cur.fetchall():
+                entry = models.LogWithEntry(
                     id=row[0],
                     food_id=row[1],
                     quantity_g=row[2],
                     serving_size_id=row[3],
                     quantity=row[4],
-                    food=models.Food(
-                        id=row[5],
-                        name=row[6],
-                        protein_g=row[7],
-                        carbs_g=row[8],
-                        fat_g=row[9],
-                        calories_kcal=row[10],
-                        brand=row[11],
-                        source_url=row[12],
-                        serving_sizes=[models.ServingSize(**ss) for ss in row[13]],
-                    ),
+                    recipe_id=row[5],
+                    meal_type=row[6],
+                    log_for=row[7],
                 )
-                for row in cur.fetchall()
-            ]
+                # ingredient (row[8] = ingredient id)
+                if row[8] is not None:
+                    serving_sizes_raw = row[17] or []
+                    entry.ingredient = models.Ingredient(
+                        id=row[8],
+                        name=row[9],
+                        protein_g=row[10],
+                        carbs_g=row[11],
+                        fat_g=row[12],
+                        calories_kcal=row[13],
+                        brand=row[14],
+                        source_url=row[15],
+                        state=row[16],
+                        serving_sizes=[models.ServingSize(**ss) for ss in serving_sizes_raw],
+                    )
+                # recipe (row[18] = recipe id)
+                if row[18] is not None:
+                    entry.recipe = models.Recipe(
+                        id=row[18],
+                        name=row[19],
+                        is_template=row[20],
+                        image_url=row[21],
+                    )
+                results.append(entry)
+            return results
 
 
-def insert_food_log_by_grams(
-    input: models.InsertFoodLogByGramsInput, user_id: str
+def insert_log_by_grams(
+    input: models.InsertLogByGramsInput, user_id: str
 ) -> None:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            if input.logged_at is not None:
-                tz = get_user_timezone(user_id)
-                utc_dt = _localize_to_utc(input.logged_at, tz)
-                cur.execute(
-                    """
-                    INSERT INTO food_logs (food_id, quantity_g, user_id, created_at)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (str(input.food_id), input.quantity_g, user_id, utc_dt),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO food_logs (food_id, quantity_g, user_id)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (str(input.food_id), input.quantity_g, user_id),
-                )
-
-
-def insert_food_log_by_serving_size(
-    input: models.InsertFoodLogByServingSizeInput, user_id: str
-) -> None:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            if input.logged_at is not None:
-                tz = get_user_timezone(user_id)
-                utc_dt = _localize_to_utc(input.logged_at, tz)
-                cur.execute(
-                    """
-                    INSERT INTO food_logs (food_id, serving_size_id, quantity, user_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (
-                        str(input.food_id),
-                        str(input.serving_size_id),
-                        input.quantity,
-                        user_id,
-                        utc_dt,
-                    ),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO food_logs (food_id, serving_size_id, quantity, user_id)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (
-                        str(input.food_id),
-                        str(input.serving_size_id),
-                        input.quantity,
-                        user_id,
-                    ),
-                )
-
-
-def update_food_log(input: models.UpdateFoodLogInput, user_id: str) -> None:
+    food_id = str(input.food_id) if input.food_id else None
+    recipe_id = str(input.recipe_id) if input.recipe_id else None
+    tz = get_user_timezone(user_id)
+    log_for_dt = _localize_to_utc(input.log_for, tz)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE food_logs
+                INSERT INTO logs (food_id, quantity_g, recipe_id, meal_type, log_for, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (food_id, input.quantity_g, recipe_id, input.meal_type, log_for_dt, user_id),
+            )
+
+
+def insert_log_by_serving_size(
+    input: models.InsertLogByServingSizeInput, user_id: str
+) -> None:
+    food_id = str(input.food_id) if input.food_id else None
+    recipe_id = str(input.recipe_id) if input.recipe_id else None
+    tz = get_user_timezone(user_id)
+    log_for_dt = _localize_to_utc(input.log_for, tz)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO logs (food_id, serving_size_id, quantity, recipe_id, meal_type, log_for, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (food_id, str(input.serving_size_id), input.quantity, recipe_id, input.meal_type, log_for_dt, user_id),
+            )
+
+
+def update_log(input: models.UpdateLogInput, user_id: str) -> None:
+    log_for_dt = None
+    if input.log_for is not None:
+        tz = get_user_timezone(user_id)
+        log_for_dt = _localize_to_utc(input.log_for, tz)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE logs
                 SET food_id = COALESCE(%s, food_id),
                     quantity_g = COALESCE(%s, quantity_g),
-                    created_at = COALESCE(%s, created_at)
+                    recipe_id = COALESCE(%s, recipe_id),
+                    meal_type = COALESCE(%s, meal_type),
+                    log_for = COALESCE(%s, log_for)
                 WHERE id = %s AND user_id = %s
                 """,
                 (
                     str(input.food_id) if input.food_id is not None else None,
                     input.quantity_g,
-                    (
-                        _localize_to_utc(input.logged_at, get_user_timezone(user_id))
-                        if input.logged_at is not None
-                        else None
-                    ),
+                    str(input.recipe_id) if input.recipe_id is not None else None,
+                    input.meal_type,
+                    log_for_dt,
                     input.id,
                     user_id,
                 ),
             )
 
 
-def delete_food_log(food_log_id: UUID, user_id: str) -> None:
+def delete_log(log_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM food_logs
+                DELETE FROM logs
                 WHERE id = %s AND user_id = %s
                 """,
-                (str(food_log_id), user_id),
+                (str(log_id), user_id),
             )
 
 
 def get_daily_macros(day: str, user_id: str) -> dict:
+    """Compute daily macros from ingredient logs only (recipe logs are resolved via their items)."""
     tz = get_user_timezone(user_id)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
+            # Ingredient logs: nutrition comes directly from the ingredient
+            # Recipe logs: nutrition is computed by summing the recipe items' ingredients
             cur.execute(
                 """
+                WITH
+                -- Macros from direct ingredient logs
+                ingredient_macros AS (
+                    SELECT
+                        COALESCE(SUM((i.protein_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS protein_g,
+                        COALESCE(SUM((i.carbs_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS carbs_g,
+                        COALESCE(SUM((i.fat_g * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS fat_g,
+                        COALESCE(SUM((i.calories_kcal * COALESCE(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) AS calories_kcal
+                    FROM logs l
+                    JOIN ingredients i ON i.id = l.food_id
+                    LEFT JOIN serving_sizes ss ON ss.id = l.serving_size_id
+                    WHERE l.food_id IS NOT NULL
+                      AND DATE(l.log_for AT TIME ZONE %s) = %s
+                      AND l.user_id = %s
+                ),
+                -- Macros from recipe logs: sum each recipe item's ingredient nutrition
+                recipe_macros AS (
+                    SELECT
+                        COALESCE(SUM((i.protein_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS protein_g,
+                        COALESCE(SUM((i.carbs_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS carbs_g,
+                        COALESCE(SUM((i.fat_g * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS fat_g,
+                        COALESCE(SUM((i.calories_kcal * COALESCE(ss.grams * ri.quantity, ri.quantity_g))::numeric / 100.0), 0) AS calories_kcal
+                    FROM logs l
+                    JOIN recipe_items ri ON ri.recipe_id = l.recipe_id
+                    JOIN ingredients i ON i.id = ri.food_id
+                    LEFT JOIN serving_sizes ss ON ss.id = ri.serving_size_id
+                    WHERE l.recipe_id IS NOT NULL
+                      AND DATE(l.log_for AT TIME ZONE %s) = %s
+                      AND l.user_id = %s
+                )
                 SELECT
-                    COALESCE(SUM((f.protein_g * COALESCE(ss.grams * fl.quantity, fl.quantity_g))::numeric / 100.0), 0) as total_protein_g,
-                    COALESCE(SUM((f.carbs_g * COALESCE(ss.grams * fl.quantity, fl.quantity_g))::numeric / 100.0), 0) as total_carbs_g,
-                    COALESCE(SUM((f.fat_g * COALESCE(ss.grams * fl.quantity, fl.quantity_g))::numeric / 100.0), 0) as total_fat_g,
-                    COALESCE(SUM((f.calories_kcal * COALESCE(ss.grams * fl.quantity, fl.quantity_g))::numeric / 100.0), 0) as total_calories_kcal
-                FROM food_logs fl
-                JOIN foods f ON f.id = fl.food_id
-                LEFT JOIN serving_sizes ss ON ss.id = fl.serving_size_id
-                WHERE DATE(fl.created_at AT TIME ZONE %s) = %s AND fl.user_id = %s
+                    im.protein_g + rm.protein_g AS total_protein_g,
+                    im.carbs_g + rm.carbs_g AS total_carbs_g,
+                    im.fat_g + rm.fat_g AS total_fat_g,
+                    im.calories_kcal + rm.calories_kcal AS total_calories_kcal
+                FROM ingredient_macros im, recipe_macros rm
                 """,
-                (tz, day, user_id),
+                (tz, day, user_id, tz, day, user_id),
             )
             row = cur.fetchone()
             if row is None:
                 raise ValueError("Failed to retrieve daily macros.")
             return {
-                "total_protein_g": float(row[0]),
-                "total_carbs_g": float(row[1]),
-                "total_fat_g": float(row[2]),
-                "total_calories_kcal": float(row[3]),
+                "totalProteinG": float(row[0]),
+                "totalCarbsG": float(row[1]),
+                "totalFatG": float(row[2]),
+                "totalCaloriesKcal": float(row[3]),
             }
 
 
-# Goals
+# ── Goals ─────────────────────────────────────────────────────────────────────
 
 
 def get_current_goal(user_id: str) -> Optional[models.Goal]:
@@ -663,7 +807,7 @@ def insert_goal(goal: models.InsertGoalInput, user_id: str) -> None:
             )
 
 
-# Measurements
+# ── Measurements ──────────────────────────────────────────────────────────────
 
 
 def get_latest_measurement(user_id: str) -> Optional[models.Measurement]:

@@ -6,6 +6,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+export type IngredientState = "raw" | "cooked"
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack"
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -35,52 +38,7 @@ export type Database = {
         }
         Relationships: []
       }
-      food_logs: {
-        Row: {
-          created_at: string
-          food_id: string
-          id: string
-          quantity: number | null
-          quantity_g: number | null
-          serving_size_id: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          food_id: string
-          id?: string
-          quantity?: number | null
-          quantity_g?: number | null
-          serving_size_id?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          food_id?: string
-          id?: string
-          quantity?: number | null
-          quantity_g?: number | null
-          serving_size_id?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "food_logs_food_id_fkey"
-            columns: ["food_id"]
-            isOneToOne: false
-            referencedRelation: "foods"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "food_logs_serving_size_id_fkey"
-            columns: ["serving_size_id"]
-            isOneToOne: false
-            referencedRelation: "serving_sizes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      foods: {
+      ingredients: {
         Row: {
           calories_kcal: number
           carbs_g: number
@@ -92,6 +50,7 @@ export type Database = {
           protein_g: number
           brand: string | null
           source_url: string | null
+          state: IngredientState
           user_id: string | null
         }
         Insert: {
@@ -105,6 +64,7 @@ export type Database = {
           protein_g: number
           brand?: string | null
           source_url?: string | null
+          state: IngredientState
           user_id?: string | null
         }
         Update: {
@@ -118,9 +78,71 @@ export type Database = {
           protein_g?: number
           brand?: string | null
           source_url?: string | null
+          state?: IngredientState
           user_id?: string | null
         }
         Relationships: []
+      }
+      logs: {
+        Row: {
+          created_at: string
+          food_id: string | null
+          id: string
+          log_for: string
+          meal_type: MealType
+          quantity: number | null
+          quantity_g: number | null
+          recipe_id: string | null
+          serving_size_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          food_id?: string | null
+          id?: string
+          log_for: string
+          meal_type: MealType
+          quantity?: number | null
+          quantity_g?: number | null
+          recipe_id?: string | null
+          serving_size_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          food_id?: string | null
+          id?: string
+          log_for?: string
+          meal_type?: MealType
+          quantity?: number | null
+          quantity_g?: number | null
+          recipe_id?: string | null
+          serving_size_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_logs_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "ingredients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "food_logs_serving_size_id_fkey"
+            columns: ["serving_size_id"]
+            isOneToOne: false
+            referencedRelation: "serving_sizes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "logs_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       goals: {
         Row: {
@@ -160,27 +182,39 @@ export type Database = {
       }
       llm_invocations: {
         Row: {
+          cached_input_tokens: number | null
           conversation_id: string | null
           created_at: string
           id: string
+          model_id: string | null
+          output_tokens: number | null
           raw_usage_metadata: Json
           total_cost: number
+          uncached_input_tokens: number | null
           user_id: string
         }
         Insert: {
+          cached_input_tokens?: number | null
           conversation_id?: string | null
           created_at?: string
           id?: string
+          model_id?: string | null
+          output_tokens?: number | null
           raw_usage_metadata: Json
           total_cost: number
+          uncached_input_tokens?: number | null
           user_id: string
         }
         Update: {
+          cached_input_tokens?: number | null
           conversation_id?: string | null
           created_at?: string
           id?: string
+          model_id?: string | null
+          output_tokens?: number | null
           raw_usage_metadata?: Json
           total_cost?: number
+          uncached_input_tokens?: number | null
           user_id?: string
         }
         Relationships: [
@@ -267,6 +301,88 @@ export type Database = {
         }
         Relationships: []
       }
+      recipe_items: {
+        Row: {
+          created_at: string
+          food_id: string
+          id: string
+          quantity: number | null
+          quantity_g: number | null
+          recipe_id: string
+          serving_size_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          food_id: string
+          id?: string
+          quantity?: number | null
+          quantity_g?: number | null
+          recipe_id: string
+          serving_size_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          food_id?: string
+          id?: string
+          quantity?: number | null
+          quantity_g?: number | null
+          recipe_id?: string
+          serving_size_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recipe_items_food_id_fkey"
+            columns: ["food_id"]
+            isOneToOne: false
+            referencedRelation: "ingredients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recipe_items_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recipe_items_serving_size_id_fkey"
+            columns: ["serving_size_id"]
+            isOneToOne: false
+            referencedRelation: "serving_sizes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recipes: {
+        Row: {
+          created_at: string
+          id: string
+          image_url: string | null
+          is_template: boolean
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          is_template: boolean
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          is_template?: boolean
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       serving_sizes: {
         Row: {
           created_at: string
@@ -300,7 +416,7 @@ export type Database = {
             foreignKeyName: "serving_sizes_food_id_fkey"
             columns: ["food_id"]
             isOneToOne: false
-            referencedRelation: "foods"
+            referencedRelation: "ingredients"
             referencedColumns: ["id"]
           },
         ]
@@ -330,7 +446,7 @@ export type Database = {
             foreignKeyName: "food_logs_food_id_fkey"
             columns: ["log_food_id"]
             isOneToOne: false
-            referencedRelation: "foods"
+            referencedRelation: "ingredients"
             referencedColumns: ["id"]
           },
         ]
@@ -356,7 +472,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      ingredient_state: IngredientState
+      meal_type: MealType
     }
     CompositeTypes: {
       [_ in never]: never
@@ -483,6 +600,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ingredient_state: ["raw", "cooked"],
+      meal_type: ["breakfast", "lunch", "dinner", "snack"],
+    },
   },
 } as const

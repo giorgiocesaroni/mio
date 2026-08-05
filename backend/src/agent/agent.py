@@ -25,21 +25,23 @@ def _sanitize_tool_calls(messages: list[dict]) -> None:
 TOOL_DECLARATIONS = [
     tools.search_declaration,
     tools.fetch_declaration,
-    tools.search_foods_declaration,
-    tools.get_all_foods_declaration,
-    tools.get_food_by_id_declaration,
-    tools.insert_food_declaration,
-    tools.update_food_declaration,
-    tools.delete_food_declaration,
-    tools.get_serving_sizes_by_food_id_declaration,
+    tools.get_ingredient_by_id_declaration,
+    tools.insert_ingredient_declaration,
+    tools.update_ingredient_declaration,
+    tools.delete_ingredient_declaration,
+    tools.get_serving_sizes_by_ingredient_id_declaration,
     tools.insert_serving_size_declaration,
     tools.update_serving_size_declaration,
     tools.delete_serving_size_declaration,
+    tools.get_recipe_by_id_declaration,
+    tools.insert_recipe_declaration,
+    tools.update_recipe_declaration,
+    tools.delete_recipe_declaration,
     tools.get_daily_summary_declaration,
-    tools.insert_food_log_by_grams_declaration,
-    tools.insert_food_log_by_serving_size_declaration,
-    tools.update_food_log_declaration,
-    tools.delete_food_log_declaration,
+    tools.insert_log_by_grams_declaration,
+    tools.insert_log_by_serving_size_declaration,
+    tools.update_log_declaration,
+    tools.delete_log_declaration,
     tools.get_current_goal_declaration,
     tools.insert_goal_declaration,
     tools.get_latest_measurements_declaration,
@@ -194,31 +196,29 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
     try:
         match name:
             case "search":
-                response = {"results": tools.search_tool(**args)}
+                response = tools.search_tool(user_id=user_id, **args)
             case "fetch":
                 response = {"results": tools.fetch_tool(**args)}
-            case "search_foods":
-                response = {"foods": tools.search_foods_tool(user_id=user_id, **args)}
-            case "get_all_foods":
-                response = {"foods": tools.get_all_foods_tool(user_id=user_id)}
-            case "get_food_by_id":
+            # Ingredients
+            case "get_ingredient_by_id":
                 response = {
-                    "food": tools.get_food_by_id_tool(
-                        user_id=user_id, food_id=args["food_id"]
+                    "ingredient": tools.get_ingredient_by_id_tool(
+                        user_id=user_id, ingredient_id=args["ingredient_id"]
                     )
                 }
-            case "insert_food":
-                response = {"food": tools.insert_food_tool(user_id=user_id, **args)}
-            case "update_food":
-                tools.update_food_tool(user_id=user_id, **args)
+            case "insert_ingredient":
+                response = {"ingredient": tools.insert_ingredient_tool(user_id=user_id, **args)}
+            case "update_ingredient":
+                tools.update_ingredient_tool(user_id=user_id, **args)
                 response = {"success": True}
-            case "delete_food":
-                tools.delete_food_tool(user_id=user_id, food_id=args["food_id"])
+            case "delete_ingredient":
+                tools.delete_ingredient_tool(user_id=user_id, ingredient_id=args["ingredient_id"])
                 response = {"success": True}
-            case "get_serving_sizes_by_food_id":
+            # Serving Sizes
+            case "get_serving_sizes_by_ingredient_id":
                 response = {
-                    "serving_sizes": tools.get_serving_sizes_by_food_id_tool(
-                        user_id=user_id, food_id=args["food_id"]
+                    "serving_sizes": tools.get_serving_sizes_by_ingredient_id_tool(
+                        user_id=user_id, ingredient_id=args["ingredient_id"]
                     )
                 }
             case "insert_serving_size":
@@ -238,29 +238,47 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                     user_id=user_id, serving_size_id=args["serving_size_id"]
                 )
                 response = {"success": True}
+            # Recipes
+            case "get_recipe_by_id":
+                response = {
+                    "recipe": tools.get_recipe_by_id_tool(
+                        user_id=user_id, recipe_id=args["recipe_id"]
+                    )
+                }
+            case "insert_recipe":
+                response = {"recipe": tools.insert_recipe_tool(user_id=user_id, **args)}
+            case "update_recipe":
+                tools.update_recipe_tool(user_id=user_id, **args)
+                response = {"success": True}
+            case "delete_recipe":
+                tools.delete_recipe_tool(user_id=user_id, recipe_id=args["recipe_id"])
+                response = {"success": True}
+            # Logs
             case "get_daily_summary":
                 response = tools.get_daily_summary_tool(
                     user_id=user_id, day=args["day"]
                 )
-            case "insert_food_log_by_grams":
-                tools.insert_food_log_by_grams_tool(user_id=user_id, **args)
+            case "insert_log_by_grams":
+                tools.insert_log_by_grams_tool(user_id=user_id, **args)
                 response = {"success": True}
-            case "insert_food_log_by_serving_size":
-                tools.insert_food_log_by_serving_size_tool(user_id=user_id, **args)
+            case "insert_log_by_serving_size":
+                tools.insert_log_by_serving_size_tool(user_id=user_id, **args)
                 response = {"success": True}
-            case "update_food_log":
-                tools.update_food_log_tool(user_id=user_id, **args)
+            case "update_log":
+                tools.update_log_tool(user_id=user_id, **args)
                 response = {"success": True}
-            case "delete_food_log":
-                tools.delete_food_log_tool(
-                    user_id=user_id, food_log_id=args["food_log_id"]
+            case "delete_log":
+                tools.delete_log_tool(
+                    user_id=user_id, log_id=args["log_id"]
                 )
                 response = {"success": True}
+            # Goals
             case "get_current_goal":
                 response = {"goal": tools.get_current_goal_tool(user_id=user_id)}
             case "insert_goal":
                 tools.insert_goal_tool(user_id=user_id, **args)
                 response = {"success": True}
+            # Measurements
             case "get_latest_measurements":
                 response = {
                     "latest_measurement": tools.get_latest_measurements_tool(
