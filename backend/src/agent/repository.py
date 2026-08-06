@@ -154,10 +154,10 @@ def get_total_llm_usage() -> dict:
             if not row:
                 raise ValueError("Failed to retrieve LLM usage data.")
             return {
-                "totalInvocations": row[0],
-                "totalCost": float(row[1]),
-                "promptTokens": row[2],
-                "completionTokens": row[3],
+                "total_invocations": row[0],
+                "total_cost": float(row[1]),
+                "prompt_tokens": row[2],
+                "completion_tokens": row[3],
             }
 
 
@@ -182,10 +182,10 @@ def get_conversation_llm_usage(conversation_id: UUID) -> dict:
                     "No LLM invocations found for the given conversation ID."
                 )
             return {
-                "totalInvocations": row[0],
-                "totalCost": float(row[1]),
-                "promptTokens": row[2],
-                "completionTokens": row[3],
+                "total_invocations": row[0],
+                "total_cost": float(row[1]),
+                "prompt_tokens": row[2],
+                "completion_tokens": row[3],
             }
 
 
