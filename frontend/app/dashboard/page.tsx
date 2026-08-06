@@ -19,6 +19,7 @@ import {
 import { Button } from "../components/button";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { getElapsedTime } from "../utils";
 
 function TotalCost() {
   const router = useRouter();
@@ -65,8 +66,13 @@ function MacroCard({
   }
 
   return (
-    <button type="button" onClick={onClick} className="block text-left">
-      <Card className="cursor-pointer">
+    <button
+      type="button"
+      onClick={onClick}
+      className="block text-left"
+      disabled={target === undefined}
+    >
+      <Card className={target === undefined ? "" : "cursor-pointer"}>
         <CardDescription>
           {label} {suffix && ` ${suffix}`}
         </CardDescription>
@@ -90,10 +96,8 @@ function MacroBadge({
   value: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 text-sm">
-      <span
-        className={`${color} text-white text-xs font-bold px-1.5 py-0.5 rounded`}
-      >
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <span className={`${color} text-white text-xs font-bold px-1 rounded`}>
         {letter}
       </span>
       {value} g
@@ -170,18 +174,31 @@ function macrosOf(log: FoodLog): Macros {
 function amountOf(log: FoodLog): string {
   if (log.log_serving_size_id) {
     return `${log.log_quantity}× ${
-      (log.log_quantity ?? 0) > 1 ? log.log_serving_size_label_plural : log.log_serving_size_label
+      (log.log_quantity ?? 0) > 1
+        ? log.log_serving_size_label_plural
+        : log.log_serving_size_label
     }`;
   }
   return `${log.log_quantity_g} g`;
 }
 
-function FoodBadges({ macros }: { macros: Macros }) {
+function FoodBadges({ amount, macros }: { amount?: string; macros: Macros }) {
   return (
-    <div className="whitespace-nowrap grid grid-cols-4 gap-4 items-center text-sm text-muted-foreground">
+    <div className="whitespace-nowrap grid grid-cols-4 md:grid-cols-5 gap-4 items-center text-sm text-muted-foreground">
+      {amount !== undefined && (
+        <span className="hidden md:inline whitespace-nowrap">{amount}</span>
+      )}
       <P>{macros.calories.toFixed()} Kcal</P>
-      <MacroBadge letter="P" color="bg-red-500" value={macros.protein.toFixed()} />
-      <MacroBadge letter="C" color="bg-yellow-500" value={macros.carbs.toFixed()} />
+      <MacroBadge
+        letter="P"
+        color="bg-red-500"
+        value={macros.protein.toFixed()}
+      />
+      <MacroBadge
+        letter="C"
+        color="bg-yellow-500"
+        value={macros.carbs.toFixed()}
+      />
       <MacroBadge letter="F" color="bg-blue-500" value={macros.fat.toFixed()} />
     </div>
   );
@@ -232,50 +249,77 @@ function sumMacros(logs: FoodLog[]): Macros {
         fat: acc.fat + m.fat,
       };
     },
-    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    { calories: 0, protein: 0, carbs: 0, fat: 0 },
   );
 }
 
-function RecipeBlockCard({
+function IngredientLogCard({ log }: { log: FoodLog }) {
+  const timestamp = log.log_created_at!;
+  return (
+    <Card className="grid gap-2">
+      <div className="overflow-auto flex justify-between items-center gap-4">
+        <P className="truncate text-foreground font-medium">{log.food_name}</P>
+        <P className="whitespace-nowrap text-sm">{getElapsedTime(timestamp)}</P>
+      </div>
+      <FoodBadges amount={amountOf(log)} macros={macrosOf(log)} />
+    </Card>
+  );
+}
+
+function RecipeLogCard({
   block,
 }: {
   block: Extract<FoodBlock, { kind: "recipe" }>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const timestamp = block.logs[0].log_created_at!;
+  const totalGrams = block.logs.reduce(
+    (sum, log) => sum + (log.log_quantity_g ?? 0),
+    0,
+  );
   return (
-    <Card className="grid gap-3">
-      <div className="overflow-auto flex justify-between items-center gap-4">
-        <P className="truncate text-foreground font-medium">
-          {block.recipeName}
-        </P>
-        <P className="whitespace-nowrap text-sm">
-          {new Date(timestamp).toLocaleTimeString(undefined, {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </P>
-      </div>
-      <FoodBadges macros={sumMacros(block.logs)} />
-      <div className="grid gap-2 border-t pt-2">
-        {block.logs.map((log) => {
-          const m = macrosOf(log);
-          return (
-            <div
-              key={log.log_id}
-              className="flex justify-between items-center gap-4 text-sm"
-            >
-              <span className="truncate text-muted-foreground">
-                {log.food_name}{" "}
-                <span className="text-muted-foreground/70">({amountOf(log)})</span>
-              </span>
-              <span className="whitespace-nowrap text-muted-foreground">
-                {m.calories.toFixed()} Kcal
-              </span>
+    <button
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      className="text-left"
+    >
+      <Card className="grid gap-2">
+        <div className="overflow-auto flex justify-between items-center gap-4">
+          <P className="truncate text-foreground font-medium">
+            {block.recipeName}
+            <span className="text-muted-foreground font-normal"> (recipe)</span>
+          </P>
+          <P className="whitespace-nowrap text-sm">
+            {getElapsedTime(timestamp)}
+          </P>
+        </div>
+        <FoodBadges amount={`${totalGrams} g`} macros={sumMacros(block.logs)} />
+        {expanded && (
+          <>
+            <hr className="border-border my-2" />
+            <div className="grid gap-1">
+              {block.logs.map((log) => {
+                const m = macrosOf(log);
+                return (
+                  <div
+                    key={log.log_id}
+                    className="flex justify-between items-center gap-4 text-sm px-1"
+                  >
+                    <span className="truncate text-muted-foreground">
+                      {log.food_name}{" "}
+                      <span className="">({amountOf(log)})</span>
+                    </span>
+                    <span className="whitespace-nowrap text-muted-foreground">
+                      {m.calories.toFixed()} Kcal
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
-    </Card>
+          </>
+        )}
+      </Card>
+    </button>
   );
 }
 
@@ -291,28 +335,13 @@ function DailyFoodLogsWithFoods() {
     <div className="grid gap-4">
       {blocks.map((block, index) =>
         block.kind === "food" ? (
-          <Card key={block.log.log_id} className="grid gap-2">
-            <div className="overflow-auto flex justify-between items-center gap-4">
-              <P className="truncate text-foreground font-medium">
-                {block.log.food_name}
-              </P>
-              <P className="whitespace-nowrap text-sm">
-                {new Date(block.log.log_created_at!).toLocaleTimeString(undefined, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </P>
-            </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="hidden md:inline whitespace-nowrap">
-              {amountOf(block.log)}
-            </span>
-            <FoodBadges macros={macrosOf(block.log)} />
-          </div>
-        </Card>
+          <IngredientLogCard key={block.log.log_id} log={block.log} />
         ) : (
-          <RecipeBlockCard key={`recipe-${block.recipeId}-${index}`} block={block} />
-        )
+          <RecipeLogCard
+            key={`recipe-${block.recipeId}-${index}`}
+            block={block}
+          />
+        ),
       )}
     </div>
   );

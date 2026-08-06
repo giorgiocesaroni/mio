@@ -6,6 +6,7 @@ import { getConversations } from "@/repository/supabase/queries";
 import { Button } from "@/app/components/button";
 import { Card } from "@/app/components/card";
 import { H1, P } from "@/app/components/typography";
+import { getElapsedTime } from "@/app/utils";
 import { Plus } from "lucide-react";
 
 export default function ConversationsPage() {
@@ -39,12 +40,7 @@ export default function ConversationsPage() {
           >
             <P className="truncate">{conv.title || "New conversation"}</P>
             <P className="text-sm text-muted-foreground whitespace-nowrap">
-              {new Date(conv.created_at).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "numeric",
-              })}
+              {getElapsedTime(conv.created_at)}
             </P>
           </Card>
         ))}

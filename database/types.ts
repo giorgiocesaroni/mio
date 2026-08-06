@@ -427,6 +427,7 @@ export type Database = {
           food_protein_g: number | null
           log_created_at: string | null
           log_food_id: string | null
+          log_for: string | null
           log_id: string | null
           log_quantity: number | null
           log_quantity_g: number | null

@@ -1,9 +1,16 @@
 drop view if exists public.v_daily_food_logs_with_foods;
 
 create view public.v_daily_food_logs_with_foods with (security_invoker=on) as
+with profile as (
+  select p.timezone
+  from profiles p
+  where p.user_id = auth.uid()
+  limit 1
+)
 select
   l.id as log_id,
-  date_trunc('day'::text, coalesce(l.log_for, l.created_at)) as day,
+  l.log_for,
+  date_trunc('day'::text, coalesce(l.log_for, l.created_at) at time zone coalesce((select timezone from profile), 'UTC')) as day,
   coalesce(l.log_for, l.created_at) as log_created_at,
   l.food_id as log_food_id,
   l.recipe_id as log_recipe_id,
@@ -25,4 +32,4 @@ from
   left join serving_sizes ss on ss.id = l.serving_size_id
   left join recipes r on r.id = l.recipe_id
 where
-  date_trunc('day'::text, coalesce(l.log_for, l.created_at)) = date_trunc('day'::text, now());
+  date_trunc('day'::text, coalesce(l.log_for, l.created_at) at time zone coalesce((select timezone from profile), 'UTC')) = date_trunc('day'::text, now() at time zone coalesce((select timezone from profile), 'UTC'));
