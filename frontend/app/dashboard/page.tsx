@@ -96,7 +96,7 @@ function MacroBadge({
   value: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
+    <span className="inline-flex items-center gap-1.5 text-sm leading-none">
       <span className={`${color} text-white text-xs font-bold px-1 rounded`}>
         {letter}
       </span>
