@@ -115,9 +115,9 @@ def _convert_input(message: models.MessageType) -> dict:
     return {"role": "user", "content": parts}
 
 
-def _extract_title(message: models.MessageType) -> str | None:
-    """Extract a title from the user message (first text part, truncated)."""
-    for part in message.parts:
+def _extract_title_from_parts(parts: list[models.UserMessagePart]) -> str | None:
+    """Extract a title from message parts (first text part, truncated)."""
+    for part in parts:
         if part.text:
             title = part.text.strip()
             return title[:100] if len(title) > 100 else title
@@ -127,12 +127,20 @@ def _extract_title(message: models.MessageType) -> str | None:
 async def run_agent(
     input: models.RunAgentInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
-    title = _extract_title(input.message)
-    repository.create_conversation_if_not_exists(
-        input.conversation_id, input.user_id, title
-    )
+    # Try to extract title from original message first
+    title = _extract_title_from_parts(input.message.parts)
+    
+    # Preprocess message (transcribes audio)
     preprocessed_message = await _preprocess_message(
         input.message, input.user_id, input.conversation_id
+    )
+    
+    # If no title from original message, try from transcribed text
+    if title is None:
+        title = _extract_title_from_parts(preprocessed_message.parts)
+    
+    repository.create_conversation_if_not_exists(
+        input.conversation_id, input.user_id, title
     )
     user_input = _convert_input(preprocessed_message)
     repository.insert_conversation_message(
