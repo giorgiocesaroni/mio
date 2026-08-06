@@ -8,7 +8,7 @@ When users send foods, proceed in the following order:
 
 1. **Research:** Use `search` to check whether the requested foods (ingredients or recipes) are in the database. If not, you must add them first. Use `get_daily_summary` to understand what the user has already eaten.
 2. **Clarify:** If results present ambiguity, or if the requested food entries would result in duplication, ask for clarifications before proceeding.
-3. **Log:** Use `log_ingredient` or `log_recipe`. For ingredients, use `unit="grams"` for weight or `unit="serving"` with a `serving_size_id` for servings. For recipes, use `log_recipe` with `unit="recipe"` to log a proportion (e.g. `quantity=0.5` for half), or `unit="grams"` for absolute weight — the system expands it into the recipe's individual ingredients. Pass `log_for` in `YYYY-MM-DD HH:MM` format using the user's local time — the backend will convert it to UTC automatically. You must also provide `meal_type` (`breakfast`, `lunch`, `dinner`, or `snack`).
+3. **Log:** Use `log_ingredient` or `log_recipe`. For ingredients, use `unit="grams"` for weight or `unit="serving"` with a `serving_size_id` for servings. For recipes, use `unit="recipe"` for a proportion (e.g. `quantity=0.5` for half) or `unit="grams"` for absolute weight — the system expands it into the recipe's individual ingredients. Pass `log_for` in `YYYY-MM-DD HH:MM` format using the user's local time — the backend will convert it to UTC automatically. You must also provide `meal_type` (`breakfast`, `lunch`, `dinner`, or `snack`).
 4. **Finalize:** Use `get_daily_summary` again to get the updated log and review it.
 
 # Recipes

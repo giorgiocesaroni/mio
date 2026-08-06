@@ -37,56 +37,88 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
     }
 
 
+_LOG_INGREDIENT_GRAMS = {
+    "type": "object",
+    "properties": {
+        "food_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the ingredient being logged.",
+        },
+        "quantity": {
+            "type": "number",
+            "description": "Quantity consumed in grams.",
+        },
+        "unit": {
+            "type": "string",
+            "const": "grams",
+        },
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "The meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["food_id", "quantity", "unit", "meal_type", "log_for"],
+}
+
+_LOG_INGREDIENT_SERVING = {
+    "type": "object",
+    "properties": {
+        "food_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the ingredient being logged.",
+        },
+        "quantity": {
+            "type": "number",
+            "description": "Number of servings consumed.",
+        },
+        "unit": {
+            "type": "string",
+            "const": "serving",
+        },
+        "serving_size_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the serving size.",
+        },
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "The meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["food_id", "quantity", "unit", "serving_size_id", "meal_type", "log_for"],
+}
+
 log_ingredient_declaration = models.FunctionDeclaration(
     name="log_ingredient",
-    description="Logs an ingredient. Specify quantity and unit: unit='grams' logs a weight in grams, unit='serving' logs a number of servings (requires serving_size_id).",
+    description="Logs an ingredient. Use unit='grams' for weight, or unit='serving' with a serving_size_id for servings.",
     parameters_json_schema={
-        "type": "object",
-        "properties": {
-            "food_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "ID of the ingredient being logged.",
-            },
-            "quantity": {
-                "type": "number",
-                "description": "Amount consumed. Interpretation depends on unit.",
-            },
-            "unit": {
-                "type": "string",
-                "enum": ["grams", "serving"],
-                "description": "'grams' means quantity is the weight in grams. 'serving' means quantity is the number of servings (requires serving_size_id).",
-            },
-            "serving_size_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "ID of the serving size. Required when unit='serving'.",
-            },
-            "meal_type": {
-                "type": "string",
-                "enum": ["breakfast", "lunch", "dinner", "snack"],
-                "description": "The meal type.",
-            },
-            "log_for": {
-                "type": "string",
-                "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
-            },
-        },
-        "required": ["food_id", "quantity", "unit", "meal_type", "log_for"],
+        "anyOf": [_LOG_INGREDIENT_GRAMS, _LOG_INGREDIENT_SERVING],
     },
 )
 
 
 def log_ingredient_tool(
     user_id: str,
-    food_id: str,
     quantity: float,
     unit: str,
     meal_type: str,
     log_for: str,
+    food_id: str | None = None,
     serving_size_id: str | None = None,
 ) -> dict:
-    fid = UUID(food_id)
+    fid = UUID(food_id) if food_id else None
     if unit == "grams":
         repository.insert_log_by_grams(
             models.InsertLogByGramsInput(
@@ -99,12 +131,10 @@ def log_ingredient_tool(
             user_id,
         )
     elif unit == "serving":
-        if not serving_size_id:
-            raise ValueError("serving_size_id is required when unit='serving'.")
         repository.insert_log_by_serving_size(
             models.InsertLogByServingSizeInput(
                 food_id=fid,
-                serving_size_id=UUID(serving_size_id),
+                serving_size_id=UUID(serving_size_id) if serving_size_id else None,
                 quantity=quantity,
                 meal_type=meal_type,  # type: ignore
                 log_for=log_for,
@@ -118,37 +148,69 @@ def log_ingredient_tool(
 
 # ── Recipe logging ────────────────────────────────────────────────────────────
 
+_LOG_RECIPE_PROPORTION = {
+    "type": "object",
+    "properties": {
+        "recipe_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the recipe being logged.",
+        },
+        "quantity": {
+            "type": "number",
+            "description": "Proportion of the recipe consumed (1 = entire recipe, 0.5 = half).",
+        },
+        "unit": {
+            "type": "string",
+            "const": "recipe",
+        },
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "The meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["recipe_id", "quantity", "unit", "meal_type", "log_for"],
+}
+
+_LOG_RECIPE_GRAMS = {
+    "type": "object",
+    "properties": {
+        "recipe_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the recipe being logged.",
+        },
+        "quantity": {
+            "type": "number",
+            "description": "Weight of the recipe consumed in grams.",
+        },
+        "unit": {
+            "type": "string",
+            "const": "grams",
+        },
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "The meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["recipe_id", "quantity", "unit", "meal_type", "log_for"],
+}
+
 log_recipe_declaration = models.FunctionDeclaration(
     name="log_recipe",
-    description="Logs consumption of a recipe. Specify quantity and unit: unit='recipe' logs a proportion of the whole recipe (e.g. quantity=0.5 for half), unit='grams' logs an absolute weight in grams. The system expands the recipe into per-ingredient logs, scaled proportionally.",
+    description="Logs a recipe. Use unit='recipe' for a proportion (e.g. quantity=0.5 for half), or unit='grams' for absolute weight. The system expands it into per-ingredient logs.",
     parameters_json_schema={
-        "type": "object",
-        "properties": {
-            "recipe_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "ID of the recipe being logged.",
-            },
-            "quantity": {
-                "type": "number",
-                "description": "Amount consumed. Interpretation depends on unit.",
-            },
-            "unit": {
-                "type": "string",
-                "enum": ["recipe", "grams"],
-                "description": "'recipe' means quantity is a proportion of the whole recipe (1 = entire recipe, 0.5 = half). 'grams' means quantity is the absolute weight in grams of the recipe consumed.",
-            },
-            "meal_type": {
-                "type": "string",
-                "enum": ["breakfast", "lunch", "dinner", "snack"],
-                "description": "The meal type.",
-            },
-            "log_for": {
-                "type": "string",
-                "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
-            },
-        },
-        "required": ["recipe_id", "quantity", "unit", "meal_type", "log_for"],
+        "anyOf": [_LOG_RECIPE_PROPORTION, _LOG_RECIPE_GRAMS],
     },
 )
 
@@ -182,39 +244,65 @@ def log_recipe_tool(
     return {"success": True}
 
 
+_UPDATE_LOG_INGREDIENT = {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the log entry to update.",
+        },
+        "food_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "New ingredient ID.",
+        },
+        "quantity_g": {"type": "number", "description": "New quantity in grams."},
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "New meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "New actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["id"],
+}
+
+_UPDATE_LOG_RECIPE = {
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the log entry to update.",
+        },
+        "recipe_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "New recipe ID.",
+        },
+        "quantity_g": {"type": "number", "description": "New quantity in grams."},
+        "meal_type": {
+            "type": "string",
+            "enum": ["breakfast", "lunch", "dinner", "snack"],
+            "description": "New meal type.",
+        },
+        "log_for": {
+            "type": "string",
+            "description": "New actual time of the meal, in YYYY-MM-DD HH:MM format.",
+        },
+    },
+    "required": ["id"],
+}
+
 update_log_declaration = models.FunctionDeclaration(
     name="update_log",
-    description="Updates an existing log entry. Only provided fields are changed.",
+    description="Updates an existing log entry. Provide food_id to update an ingredient log, or recipe_id to update a recipe log. Only provided fields are changed.",
     parameters_json_schema={
-        "type": "object",
-        "properties": {
-            "id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "UUID of the log entry to update.",
-            },
-            "food_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "New ingredient ID.",
-            },
-            "quantity_g": {"type": "number", "description": "New quantity in grams."},
-            "recipe_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "New recipe ID.",
-            },
-            "meal_type": {
-                "type": "string",
-                "enum": ["breakfast", "lunch", "dinner", "snack"],
-                "description": "New meal type.",
-            },
-            "log_for": {
-                "type": "string",
-                "description": "New actual time of the meal, in YYYY-MM-DD HH:MM format.",
-            },
-        },
-        "required": ["id"],
+        "anyOf": [_UPDATE_LOG_INGREDIENT, _UPDATE_LOG_RECIPE],
     },
 )
 
