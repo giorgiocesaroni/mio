@@ -311,21 +311,31 @@ _SERVING_SIZES_AGG = """
 def search_ingredients(query: str, limit: int = 10, user_id: str = "") -> list[models.Ingredient]:
     embedding = embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Ingredient)) as cur:
+        with conn.cursor() as cur:
             cur.execute(
                 f"""
                 SELECT i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
+                    i.embedding <=> %s::vector AS distance,
                     {_SERVING_SIZES_AGG}
                 FROM ingredients i
                 LEFT JOIN serving_sizes ss ON ss.food_id = i.id
                 WHERE i.embedding IS NOT NULL AND i.user_id = %s
-                GROUP BY i.id
-                ORDER BY i.embedding <=> %s::vector
+                GROUP BY i.id, i.embedding
+                ORDER BY distance
                 LIMIT %s
                 """,
-                (user_id, _embedding_to_str(embedding), limit),
+                (_embedding_to_str(embedding), user_id, limit),
             )
-            return cur.fetchall()
+            results = []
+            for row in cur.fetchall():
+                serving_sizes_raw = row[10] or []
+                results.append(models.Ingredient(
+                    id=row[0], name=row[1], protein_g=row[2], carbs_g=row[3],
+                    fat_g=row[4], calories_kcal=row[5], brand=row[6],
+                    source_url=row[7], state=row[8], distance=float(row[9]),
+                    serving_sizes=[models.ServingSize(**ss) for ss in serving_sizes_raw],
+                ))
+            return results
 
 
 def get_ingredient_by_id(ingredient_id: UUID, user_id: str) -> Optional[models.Ingredient]:
@@ -457,21 +467,30 @@ _RECIPE_ITEMS_AGG = """
 def search_recipes(query: str, limit: int = 10, user_id: str = "") -> list[models.Recipe]:
     embedding = embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Recipe)) as cur:
+        with conn.cursor() as cur:
             cur.execute(
                 f"""
                 SELECT r.id, r.name, r.image_url,
+                    r.embedding <=> %s::vector AS distance,
                     {_RECIPE_ITEMS_AGG}
                 FROM recipes r
                 LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id
-                WHERE r.user_id = %s
-                GROUP BY r.id
-                ORDER BY r.name ASC
+                WHERE r.user_id = %s AND r.embedding IS NOT NULL
+                GROUP BY r.id, r.embedding
+                ORDER BY distance
                 LIMIT %s
                 """,
-                (user_id, limit),
+                (_embedding_to_str(embedding), user_id, limit),
             )
-            return cur.fetchall()
+            results = []
+            for row in cur.fetchall():
+                items_raw = row[4] or []
+                results.append(models.Recipe(
+                    id=row[0], name=row[1], image_url=row[2],
+                    distance=float(row[3]),
+                    items=[models.RecipeItem(**item) for item in items_raw],
+                ))
+            return results
 
 
 def get_recipe_by_id(recipe_id: UUID, user_id: str) -> Optional[models.Recipe]:
@@ -492,15 +511,16 @@ def get_recipe_by_id(recipe_id: UUID, user_id: str) -> Optional[models.Recipe]:
 
 
 def insert_recipe(recipe: models.InsertRecipeInput, user_id: str) -> models.Recipe:
+    embedding = embeddings.generate_embedding(recipe.name)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO recipes (name, image_url, user_id)
-                VALUES (%s, %s, %s)
+                INSERT INTO recipes (name, image_url, embedding, user_id)
+                VALUES (%s, %s, %s::vector, %s)
                 RETURNING id
                 """,
-                (recipe.name, recipe.image_url, user_id),
+                (recipe.name, recipe.image_url, _embedding_to_str(embedding), user_id),
             )
             row = cur.fetchone()
             if row is None:
@@ -576,7 +596,8 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     i.id, i.name, i.protein_g, i.carbs_g, i.fat_g, i.calories_kcal, i.brand, i.source_url, i.state,
                     iss_agg.serving_sizes,
                     -- recipe fields (NULL when the log is a plain ingredient log)
-                    r.id, r.name, r.image_url
+                    r.id, r.name, r.image_url,
+                    ri_agg.recipe_items
                 FROM logs l
                 LEFT JOIN ingredients i ON i.id = l.food_id
                 LEFT JOIN (
@@ -587,6 +608,12 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     GROUP BY ss.food_id
                 ) iss_agg ON iss_agg.food_id = i.id
                 LEFT JOIN recipes r ON r.id = l.recipe_id
+                LEFT JOIN (
+                    SELECT ri.recipe_id,
+                        json_agg(json_build_object('id', ri.id, 'ingredient_id', ri.food_id, 'quantity_g', ri.quantity_g, 'quantity', ri.quantity, 'serving_size_id', ri.serving_size_id)) AS recipe_items
+                    FROM recipe_ingredients ri
+                    GROUP BY ri.recipe_id
+                ) ri_agg ON ri_agg.recipe_id = l.recipe_id
                 WHERE DATE(l.log_for AT TIME ZONE %s) = %s AND l.user_id = %s
                 ORDER BY l.log_for ASC
                 """,
@@ -594,15 +621,19 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
             )
             results: list[models.LogWithEntry] = []
             for row in cur.fetchall():
+                log_for_utc = row[7]
+                log_for_local = log_for_utc.astimezone(ZoneInfo(tz)).strftime("%Y-%m-%d %H:%M") if log_for_utc else None
+                quantity_g = row[2]
                 entry = models.LogWithEntry(
                     id=row[0],
                     food_id=row[1],
-                    quantity_g=row[2],
+                    quantity_g=quantity_g,
                     serving_size_id=row[3],
                     quantity=row[4],
                     recipe_id=row[5],
                     meal_type=row[6],
-                    log_for=row[7],
+                    log_for=log_for_utc,
+                    log_for_local=log_for_local,
                 )
                 # ingredient (row[8] = ingredient id)
                 if row[8] is not None:
@@ -619,12 +650,20 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                         state=row[16],
                         serving_sizes=[models.ServingSize(**ss) for ss in serving_sizes_raw],
                     )
-                # recipe (row[18] = recipe id)
+                    if quantity_g is not None:
+                        factor = float(quantity_g) / 100.0
+                        entry.calculated_calories_kcal = float(row[13]) * factor
+                        entry.calculated_protein_g = float(row[10]) * factor
+                        entry.calculated_carbs_g = float(row[11]) * factor
+                        entry.calculated_fat_g = float(row[12]) * factor
+                # recipe (row[18] = r.id, row[19] = r.name, row[20] = r.image_url, row[21] = ri_agg.recipe_items)
                 if row[18] is not None:
+                    items_raw = row[21] or []
                     entry.recipe = models.Recipe(
                         id=row[18],
                         name=row[19],
                         image_url=row[20],
+                        items=[models.RecipeItem(**item) for item in items_raw],
                     )
                 results.append(entry)
             return results

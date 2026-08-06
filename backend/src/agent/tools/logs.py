@@ -8,7 +8,7 @@ import src.agent.repository as repository
 
 get_daily_summary_declaration = models.FunctionDeclaration(
     name="get_daily_summary",
-    description="Returns log entries for a given day, the total macros and calories consumed, the latest weight measurement, and the current goal.",
+    description="Returns log entries for a given day with calculated macros per entry, the total macros and calories consumed, and the latest weight measurement.",
     parameters_json_schema={
         "type": "object",
         "properties": {
@@ -26,14 +26,12 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
     logs = repository.get_logs_by_day(day, user_id)
     daily_macros = repository.get_daily_macros(day, user_id)
     latest_measurement = repository.get_latest_measurement(user_id)
-    current_goal = repository.get_current_goal(user_id)
     return {
         "logs": [log.model_dump() for log in logs],
         "daily_macros": daily_macros,
         "latest_measurement": (
             latest_measurement.model_dump(mode="json") if latest_measurement else None
         ),
-        "current_goal": current_goal.model_dump(mode="json") if current_goal else None,
     }
 
 

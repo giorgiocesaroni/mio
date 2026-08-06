@@ -23,6 +23,8 @@ When adding new ingredients via the `insert_ingredient` tool, you must first use
 
 If an ingredient is typically consumed in serving sizes (i.e. "medium egg", "tablespoon", or "slice"), insert the serving size and use it when logging. You can rely on grams for any other scenario, or when a quantity doesn't align with any serving size. Prefer simple names and avoid using numbers.
 
+**Serving size labels**: Always use English, lowercase, singular nouns for serving size labels (e.g. "medium", "tablespoon", "slice", "cup", "piece"). Avoid abbreviations, foreign languages, or brand-specific terms.
+
 **State**: When inserting an ingredient, specify whether the nutrition facts refer to its `raw` or `cooked` state. This distinction matters: cooked vs. raw ingredients yield different nutrition facts per volume. Default to `cooked` unless the source explicitly states otherwise.
 
 **CRITICAL**: Always ground nutrition facts using the provided tools, and never hallucinate them.

@@ -151,6 +151,7 @@ class Ingredient(BaseModel):
     source_url: str | None = None
     state: IngredientState
     serving_sizes: list[ServingSize] = Field(default_factory=list)
+    distance: float | None = None
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:
@@ -214,6 +215,7 @@ class Recipe(BaseModel):
     name: str
     image_url: str | None = None
     items: list[RecipeItem] = Field(default_factory=list)
+    distance: float | None = None
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:
@@ -332,8 +334,13 @@ class LogWithEntry(BaseModel):
     recipe_id: Optional[UUID] = None
     meal_type: MealType
     log_for: datetime
+    log_for_local: str | None = None
     ingredient: Ingredient | None = None
     recipe: Recipe | None = None
+    calculated_calories_kcal: float | None = None
+    calculated_protein_g: float | None = None
+    calculated_carbs_g: float | None = None
+    calculated_fat_g: float | None = None
 
     @field_serializer("id")
     def serialize_id(self, id: UUID) -> str:

@@ -30,6 +30,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link
+          rel="icon"
+          href="/icon?<generated>"
+          type="image/png"
+          sizes="32x32"
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-97.5`}
       >
