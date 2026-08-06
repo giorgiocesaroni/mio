@@ -735,6 +735,39 @@ def update_log(input: models.UpdateLogInput, user_id: str) -> None:
             )
 
 
+def log_recipe_by_proportion(
+    recipe_id: UUID, proportion: float, meal_type: str, log_for: str, user_id: str
+) -> None:
+    """Log a recipe by proportion (0..1). Expands into per-ingredient logs scaled proportionally."""
+    tz = get_user_timezone(user_id)
+    log_for_dt = _localize_to_utc(log_for, tz)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            # Fetch recipe ingredients with their gram weights
+            cur.execute(
+                """
+                SELECT ri.food_id,
+                       COALESCE(ss.grams * ri.quantity, ri.quantity_g)::numeric AS item_grams
+                FROM recipe_ingredients ri
+                LEFT JOIN serving_sizes ss ON ss.id = ri.serving_size_id
+                WHERE ri.recipe_id = %s
+                """,
+                (str(recipe_id),),
+            )
+            items = cur.fetchall()
+            if not items:
+                raise Exception("Recipe has no ingredients; cannot log it.")
+            for food_id, item_grams in items:
+                scaled_grams = float(item_grams) * proportion
+                cur.execute(
+                    """
+                    INSERT INTO logs (food_id, quantity_g, recipe_id, meal_type, log_for, user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (str(food_id), scaled_grams, str(recipe_id), meal_type, log_for_dt, user_id),
+                )
+
+
 def delete_log(log_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:

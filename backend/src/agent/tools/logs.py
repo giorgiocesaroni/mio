@@ -37,137 +37,148 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
     }
 
 
-_LOG_BY_GRAMS_INGREDIENT = {
-    "type": "object",
-    "properties": {
-        "food_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID of the ingredient being logged.",
-        },
-        "quantity_g": {
-            "type": "number",
-            "description": "Quantity consumed in grams.",
-        },
-        "meal_type": {
-            "type": "string",
-            "enum": ["breakfast", "lunch", "dinner", "snack"],
-            "description": "The meal type.",
-        },
-        "log_for": {
-            "type": "string",
-            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
-        },
-    },
-    "required": ["food_id", "quantity_g", "meal_type", "log_for"],
-}
-
-_LOG_BY_GRAMS_RECIPE = {
-    "type": "object",
-    "properties": {
-        "recipe_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID of the recipe being logged.",
-        },
-        "quantity_g": {
-            "type": "number",
-            "description": "Amount of the whole recipe consumed, in grams. The system scales the recipe's ingredients proportionally.",
-        },
-        "meal_type": {
-            "type": "string",
-            "enum": ["breakfast", "lunch", "dinner", "snack"],
-            "description": "The meal type.",
-        },
-        "log_for": {
-            "type": "string",
-            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
-        },
-    },
-    "required": ["recipe_id", "quantity_g", "meal_type", "log_for"],
-}
-
-insert_log_by_grams_declaration = models.FunctionDeclaration(
-    name="insert_log_by_grams",
-    description="Logs food by specifying the quantity in grams. Provide either food_id (a single ingredient) or recipe_id (a recipe). When recipe_id is given, quantity_g is the total weight of the recipe consumed and the system expands it into the recipe's individual ingredients.",
+log_ingredient_declaration = models.FunctionDeclaration(
+    name="log_ingredient",
+    description="Logs an ingredient. Specify quantity and unit: unit='grams' logs a weight in grams, unit='serving' logs a number of servings (requires serving_size_id).",
     parameters_json_schema={
-        "anyOf": [_LOG_BY_GRAMS_INGREDIENT, _LOG_BY_GRAMS_RECIPE],
+        "type": "object",
+        "properties": {
+            "food_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the ingredient being logged.",
+            },
+            "quantity": {
+                "type": "number",
+                "description": "Amount consumed. Interpretation depends on unit.",
+            },
+            "unit": {
+                "type": "string",
+                "enum": ["grams", "serving"],
+                "description": "'grams' means quantity is the weight in grams. 'serving' means quantity is the number of servings (requires serving_size_id).",
+            },
+            "serving_size_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the serving size. Required when unit='serving'.",
+            },
+            "meal_type": {
+                "type": "string",
+                "enum": ["breakfast", "lunch", "dinner", "snack"],
+                "description": "The meal type.",
+            },
+            "log_for": {
+                "type": "string",
+                "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+            },
+        },
+        "required": ["food_id", "quantity", "unit", "meal_type", "log_for"],
     },
 )
 
 
-def insert_log_by_grams_tool(
-    user_id: str, quantity_g: float, meal_type: str, log_for: str, food_id: str | None = None, recipe_id: str | None = None,
+def log_ingredient_tool(
+    user_id: str,
+    food_id: str,
+    quantity: float,
+    unit: str,
+    meal_type: str,
+    log_for: str,
+    serving_size_id: str | None = None,
 ) -> dict:
-    fid = UUID(food_id) if food_id else None
-    rid = UUID(recipe_id) if recipe_id else None
-    repository.insert_log_by_grams(
-        models.InsertLogByGramsInput(
-            food_id=fid, quantity_g=quantity_g, recipe_id=rid, meal_type=meal_type, log_for=log_for,  # type: ignore
-        ),
-        user_id,
-    )
+    fid = UUID(food_id)
+    if unit == "grams":
+        repository.insert_log_by_grams(
+            models.InsertLogByGramsInput(
+                food_id=fid,
+                quantity_g=quantity,
+                recipe_id=None,
+                meal_type=meal_type,  # type: ignore
+                log_for=log_for,
+            ),
+            user_id,
+        )
+    elif unit == "serving":
+        if not serving_size_id:
+            raise ValueError("serving_size_id is required when unit='serving'.")
+        repository.insert_log_by_serving_size(
+            models.InsertLogByServingSizeInput(
+                food_id=fid,
+                serving_size_id=UUID(serving_size_id),
+                quantity=quantity,
+                meal_type=meal_type,  # type: ignore
+                log_for=log_for,
+            ),
+            user_id,
+        )
+    else:
+        raise ValueError(f"Invalid unit: {unit}. Must be 'grams' or 'serving'.")
     return {"success": True}
 
 
-_LOG_BY_SERVING_INGREDIENT = {
-    "type": "object",
-    "properties": {
-        "food_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID of the ingredient being logged.",
-        },
-        "serving_size_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID of the serving size used.",
-        },
-        "quantity": {
-            "type": "number",
-            "description": "Number of servings consumed.",
-        },
-        "meal_type": {
-            "type": "string",
-            "enum": ["breakfast", "lunch", "dinner", "snack"],
-            "description": "The meal type.",
-        },
-        "log_for": {
-            "type": "string",
-            "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
-        },
-    },
-    "required": ["food_id", "serving_size_id", "quantity", "meal_type", "log_for"],
-}
+# ── Recipe logging ────────────────────────────────────────────────────────────
 
-insert_log_by_serving_size_declaration = models.FunctionDeclaration(
-    name="insert_log_by_serving_size",
-    description="Logs an ingredient by specifying a serving size and the number of servings consumed.",
+log_recipe_declaration = models.FunctionDeclaration(
+    name="log_recipe",
+    description="Logs consumption of a recipe. Specify quantity and unit: unit='recipe' logs a proportion of the whole recipe (e.g. quantity=0.5 for half), unit='grams' logs an absolute weight in grams. The system expands the recipe into per-ingredient logs, scaled proportionally.",
     parameters_json_schema={
-        "anyOf": [_LOG_BY_SERVING_INGREDIENT],
+        "type": "object",
+        "properties": {
+            "recipe_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ID of the recipe being logged.",
+            },
+            "quantity": {
+                "type": "number",
+                "description": "Amount consumed. Interpretation depends on unit.",
+            },
+            "unit": {
+                "type": "string",
+                "enum": ["recipe", "grams"],
+                "description": "'recipe' means quantity is a proportion of the whole recipe (1 = entire recipe, 0.5 = half). 'grams' means quantity is the absolute weight in grams of the recipe consumed.",
+            },
+            "meal_type": {
+                "type": "string",
+                "enum": ["breakfast", "lunch", "dinner", "snack"],
+                "description": "The meal type.",
+            },
+            "log_for": {
+                "type": "string",
+                "description": "The actual time of the meal, in YYYY-MM-DD HH:MM format.",
+            },
+        },
+        "required": ["recipe_id", "quantity", "unit", "meal_type", "log_for"],
     },
 )
 
 
-def insert_log_by_serving_size_tool(
+def log_recipe_tool(
     user_id: str,
+    recipe_id: str,
     quantity: float,
+    unit: str,
     meal_type: str,
     log_for: str,
-    food_id: str | None = None,
-    serving_size_id: str | None = None,
 ) -> dict:
-    fid = UUID(food_id) if food_id else None
-    repository.insert_log_by_serving_size(
-        models.InsertLogByServingSizeInput(
-            food_id=fid,
-            serving_size_id=UUID(serving_size_id) if serving_size_id else None,
-            quantity=quantity,
-            meal_type=meal_type,  # type: ignore
-            log_for=log_for,
-        ),
-        user_id,
-    )
+    rid = UUID(recipe_id)
+    if unit == "recipe":
+        repository.log_recipe_by_proportion(
+            rid, quantity, meal_type, log_for, user_id
+        )
+    elif unit == "grams":
+        repository.insert_log_by_grams(
+            models.InsertLogByGramsInput(
+                food_id=None,
+                quantity_g=quantity,
+                recipe_id=rid,
+                meal_type=meal_type,  # type: ignore
+                log_for=log_for,
+            ),
+            user_id,
+        )
+    else:
+        raise ValueError(f"Invalid unit: {unit}. Must be 'recipe' or 'grams'.")
     return {"success": True}
 
 

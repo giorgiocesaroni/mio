@@ -39,8 +39,8 @@ TOOL_DECLARATIONS = [
     tools.update_recipe_declaration,
     tools.delete_recipe_declaration,
     tools.get_daily_summary_declaration,
-    tools.insert_log_by_grams_declaration,
-    tools.insert_log_by_serving_size_declaration,
+    tools.log_ingredient_declaration,
+    tools.log_recipe_declaration,
     tools.update_log_declaration,
     tools.delete_log_declaration,
     tools.get_current_goal_declaration,
@@ -261,11 +261,11 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                 response = tools.get_daily_summary_tool(
                     user_id=user_id, day=args["day"]
                 )
-            case "insert_log_by_grams":
-                tools.insert_log_by_grams_tool(user_id=user_id, **args)
+            case "log_ingredient":
+                tools.log_ingredient_tool(user_id=user_id, **args)
                 response = {"success": True}
-            case "insert_log_by_serving_size":
-                tools.insert_log_by_serving_size_tool(user_id=user_id, **args)
+            case "log_recipe":
+                tools.log_recipe_tool(user_id=user_id, **args)
                 response = {"success": True}
             case "update_log":
                 tools.update_log_tool(user_id=user_id, **args)
