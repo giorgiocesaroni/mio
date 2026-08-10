@@ -164,10 +164,10 @@ type Macros = { calories: number; protein: number; carbs: number; fat: number };
 function macrosOf(log: FoodLog): Macros {
   const q = log.log_quantity_g ?? 0;
   return {
-    calories: q * ((log.food_calories_kcal ?? 0) / 100),
-    protein: q * ((log.food_protein_g ?? 0) / 100),
-    carbs: q * ((log.food_carbs_g ?? 0) / 100),
-    fat: q * ((log.food_fat_g ?? 0) / 100),
+    calories: Math.round(q * ((log.food_calories_kcal ?? 0) / 100)),
+    protein: Math.round(q * ((log.food_protein_g ?? 0) / 100)),
+    carbs: Math.round(q * ((log.food_carbs_g ?? 0) / 100)),
+    fat: Math.round(q * ((log.food_fat_g ?? 0) / 100)),
   };
 }
 
@@ -243,10 +243,10 @@ function sumMacros(logs: FoodLog[]): Macros {
     (acc, log) => {
       const m = macrosOf(log);
       return {
-        calories: acc.calories + m.calories,
-        protein: acc.protein + m.protein,
-        carbs: acc.carbs + m.carbs,
-        fat: acc.fat + m.fat,
+        calories: Math.round(acc.calories + m.calories),
+        protein: Math.round(acc.protein + m.protein),
+        carbs: Math.round(acc.carbs + m.carbs),
+        fat: Math.round(acc.fat + m.fat),
       };
     },
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
@@ -293,7 +293,10 @@ function RecipeLogCard({
             {getElapsedTime(timestamp)}
           </P>
         </div>
-        <FoodBadges amount={`${totalGrams} g`} macros={sumMacros(block.logs)} />
+        <FoodBadges
+          amount={`${Math.round(totalGrams)} g`}
+          macros={sumMacros(block.logs)}
+        />
         {expanded && (
           <>
             <hr className="border-border my-2" />
