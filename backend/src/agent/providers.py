@@ -29,6 +29,11 @@ AVAILABLE_MODELS = [
         "provider": "openrouter",
         "name": "MiniMax M3",
     },
+    {
+        "id": "google/gemini-3.7-flash",
+        "provider": "openrouter",
+        "name": "Gemini 3.7 Flash",
+    },
 ]
 
 MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]
