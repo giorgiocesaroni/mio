@@ -213,7 +213,8 @@ export default function Home() {
     if (
       (!str.trim() && pendingAttachments.length === 0) ||
       isLoading ||
-      isFetchingHistory
+      isFetchingHistory ||
+      pendingAttachments.some((a) => a.isLoading)
     )
       return;
 
@@ -258,14 +259,23 @@ export default function Home() {
 
   const handleImageSelect = async (file: File) => {
     if (isLoading) return;
+    const attachment: PendingAttachment = {
+      url: "",
+      mime_type: file.type,
+      name: file.name,
+      isLoading: true,
+    };
+    setPendingAttachments((prev) => [...prev, attachment]);
     try {
       const { url, mime_type } = await uploadFile(file);
-      setPendingAttachments((prev) => [
-        ...prev,
-        { url, mime_type, name: file.name },
-      ]);
+      setPendingAttachments((prev) =>
+        prev.map((a) =>
+          a === attachment ? { ...a, url, mime_type, isLoading: false } : a,
+        ),
+      );
     } catch (err) {
       console.error("Upload failed:", err);
+      setPendingAttachments((prev) => prev.filter((a) => a !== attachment));
     }
   };
 
@@ -276,17 +286,26 @@ export default function Home() {
   const handleRecordingStop = useCallback(async () => {
     const attachment = await stopRecording();
     if (!attachment) return;
+    const file = new File([attachment.blob], "voice.wav", {
+      type: attachment.mime_type,
+    });
+    const pending: PendingAttachment = {
+      url: "",
+      mime_type: attachment.mime_type,
+      name: "Voice memo",
+      isLoading: true,
+    };
+    setPendingAttachments((prev) => [...prev, pending]);
     try {
-      const file = new File([attachment.blob], "voice.wav", {
-        type: attachment.mime_type,
-      });
       const { url, mime_type } = await uploadFile(file);
-      setPendingAttachments((prev) => [
-        ...prev,
-        { url, mime_type, name: "Voice memo" },
-      ]);
+      setPendingAttachments((prev) =>
+        prev.map((a) =>
+          a === pending ? { ...a, url, mime_type, isLoading: false } : a,
+        ),
+      );
     } catch (err) {
       console.error("Upload failed:", err);
+      setPendingAttachments((prev) => prev.filter((a) => a !== pending));
     }
   }, [stopRecording]);
 

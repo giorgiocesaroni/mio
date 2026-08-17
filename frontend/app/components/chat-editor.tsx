@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { twMerge } from "tailwind-merge";
 import { Card } from "./card";
 import { Button } from "./button";
-import { ArrowUp, Mic, Plus, X } from "lucide-react";
+import { ArrowUp, Loader2, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
@@ -24,6 +24,7 @@ export interface PendingAttachment {
   url: string;
   mime_type: string;
   name: string;
+  isLoading?: boolean;
 }
 
 interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -70,7 +71,11 @@ export const ChatEditor = ({
         <div className="flex flex-wrap gap-2 px-2 pt-1">
           {pendingAttachments.map((att, i) => (
             <div key={i} className="relative size-16 shrink-0">
-              {att.mime_type.startsWith("image/") ? (
+              {att.isLoading ? (
+                <div className="size-16 rounded-xl border border-border bg-muted-background flex items-center justify-center">
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : att.mime_type.startsWith("image/") ? (
                 <img
                   src={att.url}
                   alt={att.name}
@@ -143,7 +148,11 @@ export const ChatEditor = ({
           <Mic className="size-4" />
         </Button>
         <Button
-          disabled={disabled || (!text && pendingAttachments.length === 0)}
+          disabled={
+            disabled ||
+            (!text && pendingAttachments.length === 0) ||
+            pendingAttachments.some((a) => a.isLoading)
+          }
           className="bg-red-500 text-background-alt rounded-full aspect-square py-2 px-2"
           onClick={() => onSend?.(text)}
         >
