@@ -129,19 +129,28 @@ async def run_agent(
 ) -> AsyncGenerator[models.RunAgentStep, None]:
     # Try to extract title from original message first
     title = _extract_title_from_parts(input.message.parts)
-    
+
+    # Create the conversation up front. Transcription (below) records an
+    # llm_invocation referencing the conversation_id, and llm_invocations has a
+    # foreign key to conversations — so the row must exist before we transcribe,
+    # otherwise a brand-new conversation's first audio message would violate it.
+    repository.create_conversation_if_not_exists(
+        input.conversation_id, input.user_id, title
+    )
+
     # Preprocess message (transcribes audio)
     preprocessed_message = await _preprocess_message(
         input.message, input.user_id, input.conversation_id
     )
-    
-    # If no title from original message, try from transcribed text
+
+    # If no title from original message (e.g. audio-only), derive it from the
+    # now-transcribed text and backfill the conversation title.
     if title is None:
-        title = _extract_title_from_parts(preprocessed_message.parts)
-    
-    repository.create_conversation_if_not_exists(
-        input.conversation_id, input.user_id, title
-    )
+        transcribed_title = _extract_title_from_parts(preprocessed_message.parts)
+        if transcribed_title is not None:
+            repository.update_conversation_title(
+                input.conversation_id, transcribed_title
+            )
     user_input = _convert_input(preprocessed_message)
     repository.insert_conversation_message(
         input.conversation_id, user_input, input.user_id

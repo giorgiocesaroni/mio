@@ -74,6 +74,19 @@ def create_conversation_if_not_exists(
             )
 
 
+def update_conversation_title(conversation_id: UUID, title: str) -> None:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conversations
+                SET title = %s
+                WHERE id = %s
+                """,
+                (title, conversation_id),
+            )
+
+
 def get_conversations(user_id: str) -> list[models.Conversation]:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=class_row(models.Conversation)) as cur:
