@@ -2,9 +2,9 @@
 
 :root {
   --background: #faf9f6;
-  --background-alt: #ffffff;
+  --background-alt: #faf9f6;
   --foreground: #141413;
-  --border: #e0e0e0;
+  --border: #d1d1ce;
   --muted-foreground: #6c6c6c;
   --muted-background: rgb(247, 240, 240);
 }

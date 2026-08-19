@@ -33,9 +33,9 @@ AVAILABLE_MODELS = [
         "name": "MiMo-V2.5",
     },
     {
-        "id": "qwen/qwen3.8-27",
+        "id": "qwen/qwen3.8-27b",
         "provider": "openrouter",
-        "name": "Qwen3.8-27B",
+        "name": "Qwen3.8 27B",
     },
     {
         "id": "stepfun/step-3.7-flash",

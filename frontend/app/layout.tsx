@@ -39,7 +39,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-97.5`}
+        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-97.5 bg-background`}
       >
         <Providers>{children}</Providers>
       </body>
