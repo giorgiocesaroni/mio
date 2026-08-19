@@ -31,18 +31,20 @@ function getGreeting() {
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
+    if (step.data?.startsWith("data:image/") || step.mime_type?.startsWith("image/")) {
+      return (
+        <img
+          src={step.data}
+          alt="User image"
+          className="ml-8 justify-self-end max-w-24 max-h-24 object-cover rounded-lg"
+        />
+      );
+    }
     return (
       <Card className={`ml-8 justify-self-end px-4 py-2`}>
         {step.data ? (
           <div className="space-y-2">
-            {step.mime_type?.startsWith("image/") ? (
-              <img
-                src={step.data}
-                alt="User image"
-                className="max-w-24 max-h-24 object-cover rounded-lg"
-              />
-            ) : step.mime_type?.startsWith("audio/") ||
-              step.mime_type === "url" ? (
+            {step.mime_type?.startsWith("audio/") || step.mime_type === "url" ? (
               <audio controls src={step.data} className="min-w-32 max-w-full" />
             ) : null}
           </div>

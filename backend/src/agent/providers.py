@@ -47,6 +47,11 @@ AVAILABLE_MODELS = [
         "provider": "openrouter",
         "name": "MiniMax M3",
     },
+    {
+        "id": "bytedance-seed/seed-2-1-turbo",
+        "provider": "openrouter",
+        "name": "Seed 2.1 Turbo",
+    },
 ]
 
 MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]
