@@ -26,7 +26,12 @@ export type UserMessageStep = {
   mime_type?: string;
 };
 
-export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep;
+export type ErrorStep = {
+  type: "error";
+  text: string;
+};
+
+export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep | ErrorStep;
 
 export type Model = {
   id: string;

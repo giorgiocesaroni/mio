@@ -15,7 +15,7 @@ import {
   uploadFile,
 } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
-import { Cog, Loader2 } from "lucide-react";
+import { AlertCircle, Cog, Loader2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
@@ -73,6 +73,14 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       </div>
     );
   }
+  if (step.type === "error") {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 p-3 text-red-700">
+        <AlertCircle className="size-4 mt-0.5 shrink-0" />
+        <P className="font-serif break-words whitespace-pre-wrap">{step.text}</P>
+      </div>
+    );
+  }
   return (
     <div className="overflow-auto">
       <MessageContent text={step.text} />
@@ -122,6 +130,7 @@ export default function Home() {
   const sendMessage = useCallback(
     async (id: string, payload: object) => {
       setIsLoading(true);
+      setSteps((prev) => prev.filter((s) => s.type !== "error"));
       const controller = new AbortController();
       abortRef.current = controller;
       streamingContentRef.current = "";
@@ -178,7 +187,9 @@ export default function Home() {
         );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        const message = err instanceof Error ? err.message : String(err);
         console.error("Stream error:", err);
+        setSteps((prev) => [...prev, { type: "error", text: message }]);
       } finally {
         setIsLoading(false);
         abortRef.current = null;
@@ -197,7 +208,12 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (historyData && historyData.length > 0) setSteps(historyData);
+    if (historyData && historyData.length > 0) {
+      setSteps((prev) => {
+        const errors = prev.filter((s) => s.type === "error");
+        return [...historyData, ...errors];
+      });
+    }
   }, [historyData]);
 
   useEffect(() => {
