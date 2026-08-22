@@ -105,7 +105,7 @@ export const ChatEditor = ({
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             onSend?.(text);
           }

@@ -6,7 +6,6 @@ import src.agent.repository as repository
 import src.agent.tools as tools
 from src.agent.utils import (
     extract_tokens,
-    get_mimo_cost,
     get_openrouter_cost,
     inline_image_url,
 )
@@ -91,8 +90,13 @@ async def _invoke_model(
         # top_p=0.95,
         stream=True,
     )
-    if providers.PROVIDERS[provider]["supports_thinking_extension"]:
-        create_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    # Fixed reasoning: high for all models (MiMo thinking extension + OpenAI/OpenRouter reasoning_effort)
+    create_kwargs["reasoning_effort"] = "high"
+    create_kwargs["extra_body"] = {
+        "thinking": {"type": "high"},
+        "reasoning": {"effort": "high"},
+        "reasoning_effort": "high",
+    }
     for _ in range(3):
         try:
             stream = await client.chat.completions.create(**create_kwargs)
@@ -350,10 +354,7 @@ async def agent(
                 message_dict, usage = chunk
                 if usage:
                     uncached_input, cached_input, output = extract_tokens(usage)
-                    if provider == "mimo":
-                        cost = get_mimo_cost(model_id=model_id, usage=usage)
-                    else:
-                        cost = await get_openrouter_cost(model_id=model_id, usage=usage)
+                    cost = await get_openrouter_cost(model_id=model_id, usage=usage)
                     print(f"Invocation cost: ${cost}")
                     repository.insert_llm_invocation(
                         total_cost=cost,

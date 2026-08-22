@@ -2,12 +2,6 @@ import os
 from openai import AsyncOpenAI
 
 PROVIDERS = {
-    "mimo": {
-        "base_url": "https://api.xiaomimimo.com/v1",
-        "api_key_env": "MIMO_API_KEY",
-        # MiMo's OpenAI-compatible API accepts its own "thinking" extension.
-        "supports_thinking_extension": True,
-    },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "api_key_env": "OPENROUTER_API_KEY",
@@ -28,8 +22,8 @@ AVAILABLE_MODELS = [
         "name": "GPT-5.6 Luna",
     },
     {
-        "id": "mimo-v2.5",
-        "provider": "mimo",
+        "id": "xiaomi/mimo-v2.5",
+        "provider": "openrouter",
         "name": "MiMo-V2.5",
     },
     {
