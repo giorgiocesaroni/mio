@@ -33,9 +33,9 @@ AVAILABLE_MODELS = [
         "name": "MiMo-V2.5",
     },
     {
-        "id": "qwen/qwen3.8-27b",
+        "id": "qwen/qwen3.7-flash",
         "provider": "openrouter",
-        "name": "Qwen3.8 27B",
+        "name": "Qwen3.7 Flash",
     },
     {
         "id": "stepfun/step-3.7-flash",
@@ -51,6 +51,21 @@ AVAILABLE_MODELS = [
         "id": "bytedance-seed/seed-2-1-turbo",
         "provider": "openrouter",
         "name": "Seed 2.1 Turbo",
+    },
+    {
+        "id": "meta/muse-spark-1.2-contributor",
+        "provider": "openrouter",
+        "name": "Muse Spark 1.2",
+    },
+    {
+        "id": "deepseek/deepseek-v4-flash-vision-exp",
+        "provider": "openrouter",
+        "name": "DeepSeek V4 Flash Vision",
+    },
+    {
+        "id": "stealth/ox-alpha",
+        "provider": "openrouter",
+        "name": "Ox Alpha",
     },
 ]
 

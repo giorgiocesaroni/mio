@@ -40,19 +40,16 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
         />
       );
     }
-    return (
-      <Card className={`ml-8 justify-self-end px-4 py-2`}>
-        {step.data ? (
-          <div className="space-y-2">
-            {step.mime_type?.startsWith("audio/") || step.mime_type === "url" ? (
-              <audio controls src={step.data} className="min-w-32 max-w-full" />
-            ) : null}
-          </div>
-        ) : (
-          step.text
-        )}
-      </Card>
-    );
+    if (step.mime_type?.startsWith("audio/") || step.mime_type === "url") {
+      return (
+        <audio
+          controls
+          src={step.data}
+          className="ml-8 justify-self-end min-w-32 max-w-full"
+        />
+      );
+    }
+    return <Card className={`ml-8 justify-self-end px-4 py-2`}>{step.text}</Card>;
   }
   if (step.type === "tool_call") {
     return (
