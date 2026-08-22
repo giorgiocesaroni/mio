@@ -1,12 +1,23 @@
 import json
+import os
 import src.agent.models as models
 import src.agent.providers as providers
 import src.agent.repository as repository
 import src.agent.tools as tools
-from src.agent.utils import extract_tokens, get_mimo_cost, get_openrouter_cost, inline_image_url
+from src.agent.utils import (
+    extract_tokens,
+    get_mimo_cost,
+    get_openrouter_cost,
+    inline_image_url,
+)
 from typing import AsyncGenerator
 
 MAX_TURNS = 35
+
+# Maximum output tokens per model invocation. Configurable because some
+# providers/models (e.g. OpenRouter "contributor" tiers) truncate responses
+# when this is too low, which shows up as a model stopping mid-sentence.
+MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "4096"))
 
 
 def _sanitize_tool_calls(messages: list[dict]) -> None:
@@ -75,9 +86,9 @@ async def _invoke_model(
         model=model_id,
         messages=messages,
         tools=_to_openai_tools(TOOL_DECLARATIONS),
-        max_completion_tokens=1024,
-        temperature=1.0,
-        top_p=0.95,
+        max_completion_tokens=MAX_COMPLETION_TOKENS,
+        # temperature=1.0,
+        # top_p=0.95,
         stream=True,
     )
     if providers.PROVIDERS[provider]["supports_thinking_extension"]:
@@ -89,10 +100,13 @@ async def _invoke_model(
             tool_calls_acc: dict[int, dict] = {}
             tool_names_emitted: set[int] = set()
             usage = {}
+            finish_reason = None
 
             async for chunk in stream:
                 choice = chunk.choices[0] if chunk.choices else None
                 if choice:
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
                     delta = choice.delta
                     if delta.content:
                         content_parts.append(delta.content)
@@ -125,6 +139,21 @@ async def _invoke_model(
                 if chunk.usage:
                     usage = chunk.usage.model_dump()
 
+            completion_tokens = usage.get("completion_tokens") if usage else None
+            if finish_reason == "length":
+                print(
+                    f"[WARN] {model_id}: response TRUNCATED at "
+                    f"max_completion_tokens={MAX_COMPLETION_TOKENS} "
+                    f"(completion_tokens={completion_tokens}). Raise "
+                    f"MAX_COMPLETION_TOKENS if this is unexpected."
+                )
+            else:
+                print(
+                    f"[INFO] {model_id}: finished "
+                    f"(finish_reason={finish_reason}, "
+                    f"completion_tokens={completion_tokens})."
+                )
+
             message_dict = {
                 "role": "assistant",
                 "content": "".join(content_parts) or None,
@@ -145,7 +174,10 @@ async def _inline_content_images(parts: list[dict]) -> list[dict]:
             url = part.get("image_url", {}).get("url", "")
             if url and not url.startswith("data:"):
                 try:
-                    part = {"type": "image_url", "image_url": {"url": await inline_image_url(url)}}
+                    part = {
+                        "type": "image_url",
+                        "image_url": {"url": await inline_image_url(url)},
+                    }
                 except Exception as e:
                     print(f"Failed to inline image {url}: {e}")
         inlined.append(part)
@@ -210,12 +242,16 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                     )
                 }
             case "insert_ingredient":
-                response = {"ingredient": tools.insert_ingredient_tool(user_id=user_id, **args)}
+                response = {
+                    "ingredient": tools.insert_ingredient_tool(user_id=user_id, **args)
+                }
             case "update_ingredient":
                 tools.update_ingredient_tool(user_id=user_id, **args)
                 response = {"success": True}
             case "delete_ingredient":
-                tools.delete_ingredient_tool(user_id=user_id, ingredient_id=args["ingredient_id"])
+                tools.delete_ingredient_tool(
+                    user_id=user_id, ingredient_id=args["ingredient_id"]
+                )
                 response = {"success": True}
             # Serving Sizes
             case "get_serving_sizes_by_ingredient_id":
@@ -271,9 +307,7 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                 tools.update_log_tool(user_id=user_id, **args)
                 response = {"success": True}
             case "delete_log":
-                tools.delete_log_tool(
-                    user_id=user_id, log_id=args["log_id"]
-                )
+                tools.delete_log_tool(user_id=user_id, log_id=args["log_id"])
                 response = {"success": True}
             # Goals
             case "get_current_goal":
