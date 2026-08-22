@@ -64,7 +64,7 @@ AVAILABLE_MODELS = [
     {
         "id": "deepseek/deepseek-v4-flash-vision-exp",
         "provider": "openrouter",
-        "name": "DeepSeek V4 Flash Vision",
+        "name": "DeepSeek V4 Flash",
     },
     {
         "id": "stealth/ox-alpha",
