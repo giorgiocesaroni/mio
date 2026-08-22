@@ -43,6 +43,11 @@ AVAILABLE_MODELS = [
         "name": "Qwen3.8 27B",
     },
     {
+        "id": "qwen/qwen3.8-max",
+        "provider": "openrouter",
+        "name": "Qwen3.8 Max",
+    },
+    {
         "id": "stepfun/step-3.7-flash",
         "provider": "openrouter",
         "name": "Step 3.7 Flash",
