@@ -102,6 +102,7 @@ log_ingredient_declaration = models.FunctionDeclaration(
     name="log_ingredient",
     description="Logs an ingredient. Use unit='grams' for weight, or unit='serving' with a serving_size_id for servings.",
     parameters_json_schema={
+        "type": "object",
         "anyOf": [_LOG_INGREDIENT_GRAMS, _LOG_INGREDIENT_SERVING],
     },
 )
@@ -208,6 +209,7 @@ log_recipe_declaration = models.FunctionDeclaration(
     name="log_recipe",
     description="Logs a recipe. Use unit='recipe' for a proportion (e.g. quantity=0.5 for half), or unit='grams' for absolute weight. The system expands it into per-ingredient logs.",
     parameters_json_schema={
+        "type": "object",
         "anyOf": [_LOG_RECIPE_PROPORTION, _LOG_RECIPE_GRAMS],
     },
 )
@@ -300,6 +302,7 @@ update_log_declaration = models.FunctionDeclaration(
     name="update_log",
     description="Updates an existing log entry. Provide food_id to update an ingredient log, or recipe_id to update a recipe log. Only provided fields are changed.",
     parameters_json_schema={
+        "type": "object",
         "anyOf": [_UPDATE_LOG_INGREDIENT, _UPDATE_LOG_RECIPE],
     },
 )
