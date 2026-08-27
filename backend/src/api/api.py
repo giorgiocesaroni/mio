@@ -104,7 +104,7 @@ async def health():
 @app.get("/models")
 async def list_models():
     return {
-        "models": providers.AVAILABLE_MODELS,
+        "models": sorted(providers.AVAILABLE_MODELS, key=lambda m: m["id"]),
         "default": providers.DEFAULT_MODEL_ID,
     }
 

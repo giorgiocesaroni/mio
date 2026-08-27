@@ -27,19 +27,9 @@ AVAILABLE_MODELS = [
         "name": "MiMo-V2.5",
     },
     {
-        "id": "qwen/qwen3.7-flash",
+        "id": "qwen/qwen3.8-flash",
         "provider": "openrouter",
-        "name": "Qwen3.7 Flash",
-    },
-    {
-        "id": "qwen/qwen3.8-27b",
-        "provider": "openrouter",
-        "name": "Qwen3.8 27B",
-    },
-    {
-        "id": "qwen/qwen3.8-max",
-        "provider": "openrouter",
-        "name": "Qwen3.8 Max",
+        "name": "Qwen3.8 Flash",
     },
     {
         "id": "stepfun/step-3.7-flash",
@@ -67,9 +57,9 @@ AVAILABLE_MODELS = [
         "name": "DeepSeek V4 Flash",
     },
     {
-        "id": "stealth/ox-alpha",
+        "id": "z-ai/glm-5.3-flash",
         "provider": "openrouter",
-        "name": "Ox Alpha",
+        "name": "GLM 5.3 Flash",
     },
 ]
 
