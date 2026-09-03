@@ -12,9 +12,9 @@ PROVIDERS = {
 # Curated models, each mapped to the provider that serves it.
 AVAILABLE_MODELS = [
     {
-        "id": "google/gemini-3.7-flash",
+        "id": "google/gemini-3.8-flash",
         "provider": "openrouter",
-        "name": "Gemini 3.7 Flash",
+        "name": "Gemini 3.8 Flash",
     },
     {
         "id": "openai/gpt-5.6-luna",
@@ -47,9 +47,9 @@ AVAILABLE_MODELS = [
         "name": "Seed 2.1 Turbo",
     },
     {
-        "id": "meta/muse-spark-1.2-contributor",
+        "id": "meta/muse-spark-1.3-contributor",
         "provider": "openrouter",
-        "name": "Muse Spark 1.2",
+        "name": "Muse Spark 1.3",
     },
     {
         "id": "deepseek/deepseek-v4-flash-vision-exp",
