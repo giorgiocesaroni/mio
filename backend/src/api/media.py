@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 
 import supabase
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 _supabase_client: supabase.Client | None = None
 
@@ -45,6 +45,8 @@ def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
     try:
         with Image.open(io.BytesIO(data)) as img:
             img.load()
+            has_orientation = img.getexif().get(274, 1) != 1
+            img = ImageOps.exif_transpose(img)
             if img.mode in ("RGBA", "LA", "P", "CMYK"):
                 rgba = img.convert("RGBA")
                 background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
@@ -60,7 +62,7 @@ def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
             output = io.BytesIO()
             img.save(output, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
             compressed = output.getvalue()
-            if len(compressed) < len(data):
+            if len(compressed) < len(data) or has_orientation:
                 return compressed, "image/jpeg"
     except (UnidentifiedImageError, OSError, ValueError):
         pass

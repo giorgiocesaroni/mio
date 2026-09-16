@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -186,13 +187,39 @@ export const ChatEditor = ({
           )}
           onClick={() => onSend?.(text)}
         >
-          {isSending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : isSent ? (
-            <Check className="size-4" />
-          ) : (
-            <ArrowUp className="size-4" />
-          )}
+          <AnimatePresence initial={false} mode="wait">
+            {isSending ? (
+              <motion.span
+                key="loading"
+                initial={{ opacity: 0, scale: 0.7, filter: "blur(4px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 1.15, filter: "blur(4px)" }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+              >
+                <Loader2 className="size-4 animate-spin" />
+              </motion.span>
+            ) : isSent ? (
+              <motion.span
+                key="check"
+                initial={{ opacity: 0, scale: 0.7, filter: "blur(4px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 1.15, filter: "blur(4px)" }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+              >
+                <Check className="size-4" />
+              </motion.span>
+            ) : (
+              <motion.span
+                key="arrow"
+                initial={{ opacity: 0, scale: 0.7, filter: "blur(4px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 1.15, filter: "blur(4px)" }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+              >
+                <ArrowUp className="size-4" />
+              </motion.span>
+            )}
+          </AnimatePresence>
         </Button>
       </div>
     </div>
