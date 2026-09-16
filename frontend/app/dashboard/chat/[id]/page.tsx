@@ -54,7 +54,7 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       );
     }
     return (
-      <div className="ml-8 justify-self-end rounded-xl bg-muted px-4 py-2 text-base break-words">
+      <div className="ml-8 justify-self-end rounded-xl bg-muted px-4 py-2 text-sm break-words">
         {step.text}
       </div>
     );
@@ -332,7 +332,7 @@ export default function Home() {
   }, [stopRecording]);
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col text-sm">
       <PageTitle>Chat</PageTitle>
       <div
         className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid content-start gap-4"}`}
