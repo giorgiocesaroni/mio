@@ -10,16 +10,17 @@ import {
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Toast =
+type Feedback =
   | { kind: "working"; text: string }
   | { kind: "success"; text: string }
   | { kind: "error"; text: string };
 
 export function QuickLogComposer() {
   const [input, setInput] = useState("");
-  const [toast, setToast] = useState<Toast | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSent, setIsSent] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
@@ -38,7 +39,7 @@ export function QuickLogComposer() {
     [],
   );
 
-  const isWorking = toast?.kind === "working";
+  const isWorking = feedback?.kind === "working";
 
   const handleTextChange = (value: string) => {
     setInput(value);
@@ -46,7 +47,7 @@ export function QuickLogComposer() {
       setIsSent(false);
       if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     }
-    if (toast?.kind !== "working") setToast(null);
+    if (feedback?.kind !== "working") setFeedback(null);
   };
 
   const handleTextSubmit = async (str: string) => {
@@ -67,7 +68,7 @@ export function QuickLogComposer() {
 
     const text = str.trim();
     const attachments = pendingAttachments;
-    setToast({ kind: "working", text: "Logging…" });
+    setFeedback({ kind: "working", text: "Logging…" });
     resultRef.current = {};
     const controller = new AbortController();
     abortRef.current = controller;
@@ -95,22 +96,22 @@ export function QuickLogComposer() {
       );
       const { message, error } = resultRef.current;
       if (error) {
-        setToast({ kind: "error", text: error });
+        setFeedback({ kind: "error", text: error });
       } else {
         setInput("");
         setPendingAttachments([]);
-        setToast({ kind: "success", text: message ?? "Done." });
+        setFeedback({ kind: "success", text: message ?? "Done." });
         setIsSent(true);
         if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
         sentTimeoutRef.current = setTimeout(() => setIsSent(false), 10000);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setToast(null);
+        setFeedback(null);
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
-      setToast({ kind: "error", text: message });
+      setFeedback({ kind: "error", text: message });
     } finally {
       abortRef.current = null;
     }
@@ -179,16 +180,29 @@ export function QuickLogComposer() {
         }
         placeholder="What did you eat? Or fix today's logs…"
       />
-      {toast && (
-        <div
-          aria-live="polite"
-          className="fixed right-6 bottom-6 z-50 max-w-sm rounded-xl bg-muted px-4 py-3 text-sm shadow-lg ring-1 ring-foreground/10 break-words"
-        >
-          <span className={toast.kind === "error" ? "text-destructive" : undefined}>
-            {toast.text}
-          </span>
-        </div>
-      )}
+      <div className="min-h-16">
+        <AnimatePresence initial={false} mode="wait">
+          {feedback && (
+            <motion.div
+              key={`${feedback.kind}:${feedback.text}`}
+              aria-live="polite"
+              initial={{ opacity: 0, scale: 0.97, filter: "blur(6px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 1.03, filter: "blur(6px)" }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="rounded-xl bg-card px-4 py-3 text-sm shadow-sm ring-1 ring-foreground/10 break-words"
+            >
+              <span
+                className={
+                  feedback.kind === "error" ? "text-destructive" : undefined
+                }
+              >
+                {feedback.text}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
