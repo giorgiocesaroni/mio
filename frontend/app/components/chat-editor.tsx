@@ -109,7 +109,7 @@ export const ChatEditor = ({
       <textarea
         autoFocus={autoFocus}
         disabled={disabled}
-        className="max-h-[50vh] flex-1 resize-none field-sizing-content p-2 outline-none disabled:opacity-50"
+        className="max-h-[50vh] flex-1 resize-none field-sizing-content p-2 text-sm outline-none disabled:opacity-50"
         placeholder={placeholder}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
