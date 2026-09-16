@@ -51,15 +51,15 @@ function MacroCard({
     <Card
       onClick={target === undefined ? undefined : onClick}
       className={
-        target === undefined ? "py-3" : "cursor-pointer py-3 hover:bg-muted/50"
+        target === undefined ? undefined : "cursor-pointer hover:bg-muted/50"
       }
     >
-      <CardHeader className="gap-0 px-3">
+      <CardHeader className="gap-0">
         <CardDescription>
           {label} {suffix && ` ${suffix}`}
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-3">
+      <CardContent>
         <CardTitle>
           {displayValue} {unit}
         </CardTitle>
