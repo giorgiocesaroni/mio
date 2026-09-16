@@ -1,8 +1,16 @@
+import type { Viewport } from "next";
 import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "./components/app-sidebar";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export default function DashboardLayout({
   children,
