@@ -25,7 +25,7 @@ export default function ConversationsPage() {
       <div className="flex items-center justify-between">
         <PageTitle>Conversations</PageTitle>
         <Button
-          size="icon"
+          size="icon-sm"
           onClick={startNew}
           className="rounded-full bg-red-500 text-white hover:bg-red-600"
         >

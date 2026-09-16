@@ -11,6 +11,7 @@ import {
   getConversationMessages,
   getModels,
   streamChat,
+  transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
@@ -112,6 +113,7 @@ export default function Home() {
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
   const streamingTokenCountRef = useRef<number>(0);
@@ -239,6 +241,7 @@ export default function Home() {
       (!str.trim() && pendingAttachments.length === 0) ||
       isLoading ||
       isFetchingHistory ||
+      isTranscribing ||
       pendingAttachments.some((a) => a.isLoading)
     )
       return;
@@ -314,31 +317,23 @@ export default function Home() {
     const file = new File([attachment.blob], "voice.wav", {
       type: attachment.mime_type,
     });
-    const pending: PendingAttachment = {
-      url: "",
-      mime_type: attachment.mime_type,
-      name: "Voice memo",
-      isLoading: true,
-    };
-    setPendingAttachments((prev) => [...prev, pending]);
+    setIsTranscribing(true);
     try {
-      const { url, mime_type } = await uploadFile(file);
-      setPendingAttachments((prev) =>
-        prev.map((a) =>
-          a === pending ? { ...a, url, mime_type, isLoading: false } : a,
-        ),
-      );
+      const { text } = await transcribeAudio(file);
+      const transcript = text.trim();
+      if (transcript) {
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
     } catch (err) {
-      console.error("Upload failed:", err);
-      setPendingAttachments((prev) => prev.filter((a) => a !== pending));
+      console.error("Transcription failed:", err);
+    } finally {
+      setIsTranscribing(false);
     }
   }, [stopRecording]);
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="md:hidden">
-        <PageTitle />
-      </div>
+      <PageTitle>Chat</PageTitle>
       <div
         className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid content-start gap-4"}`}
       >
@@ -367,13 +362,13 @@ export default function Home() {
 
       <div className="sticky bottom-0 py-4">
         <ChatEditor
-          disabled={isLoading || (!isNew && isFetchingHistory)}
+          disabled={isLoading || (!isNew && isFetchingHistory) || isTranscribing}
           text={input}
           onTextChange={(text) => setInput(text)}
           onSend={handleTextSubmit}
           onRecordingStart={handleRecordingStart}
           onRecordingStop={handleRecordingStop}
-          isRecording={isRecording}
+          isRecording={isRecording || isTranscribing}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>

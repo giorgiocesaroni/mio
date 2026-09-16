@@ -3,7 +3,6 @@
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -15,6 +14,7 @@ import {
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
   streamQuickLog,
+  transcribeAudio,
   uploadFile,
   type QuickLogMode,
   type RunAgentStep,
@@ -108,6 +108,7 @@ export function QuickLogDialog({
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
@@ -166,6 +167,7 @@ export function QuickLogDialog({
     if (
       (!str.trim() && pendingAttachments.length === 0) ||
       isLoading ||
+      isTranscribing ||
       pendingAttachments.some((a) => a.isLoading)
     )
       return;
@@ -257,23 +259,17 @@ export function QuickLogDialog({
     const file = new File([attachment.blob], "voice.wav", {
       type: attachment.mime_type,
     });
-    const pending: PendingAttachment = {
-      url: "",
-      mime_type: attachment.mime_type,
-      name: "Voice memo",
-      isLoading: true,
-    };
-    setPendingAttachments((prev) => [...prev, pending]);
+    setIsTranscribing(true);
     try {
-      const { url, mime_type } = await uploadFile(file);
-      setPendingAttachments((prev) =>
-        prev.map((a) =>
-          a === pending ? { ...a, url, mime_type, isLoading: false } : a,
-        ),
-      );
+      const { text } = await transcribeAudio(file);
+      const transcript = text.trim();
+      if (transcript) {
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
     } catch (err) {
-      console.error("Upload failed:", err);
-      setPendingAttachments((prev) => prev.filter((a) => a !== pending));
+      console.error("Transcription failed:", err);
+    } finally {
+      setIsTranscribing(false);
     }
   }, [stopRecording]);
 
@@ -282,13 +278,10 @@ export function QuickLogDialog({
       <DialogContent className="max-h-[85vh] gap-2 overflow-hidden text-base sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {mode === "log" ? "Quick add" : "Edit today"}
-          </DialogTitle>
-          <DialogDescription>
             {mode === "log"
               ? "What did you eat?"
               : "What should change about today's logs?"}
-          </DialogDescription>
+          </DialogTitle>
         </DialogHeader>
 
         {steps.length > 0 && (
@@ -301,13 +294,13 @@ export function QuickLogDialog({
         )}
 
         <ChatEditor
-          disabled={isLoading}
+          disabled={isLoading || isTranscribing}
           text={input}
           onTextChange={setInput}
           onSend={handleTextSubmit}
           onRecordingStart={startRecording}
           onRecordingStop={handleRecordingStop}
-          isRecording={isRecording}
+          isRecording={isRecording || isTranscribing}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>

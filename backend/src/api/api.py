@@ -12,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
 import src.agent.providers as providers
+import src.agent.repository as repository
 import src.api.media as media
+from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
+from src.agent.utils import extract_tokens
 import supabase
 
 app = FastAPI()
@@ -203,6 +206,37 @@ async def upload_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
     return {"url": url, "mime_type": mime_type}
+
+
+@app.post("/transcribe")
+async def transcribe_voice_memo(
+    file: UploadFile = File(...),
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 25MB)")
+    mime_type = file.content_type or "audio/wav"
+    if not mime_type.startswith("audio/"):
+        raise HTTPException(status_code=400, detail="Audio file required")
+    try:
+        result = await transcribe_audio(data, mime_type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    uncached_input, cached_input, output = extract_tokens(result.usage)
+    repository.insert_llm_invocation(
+        total_cost=result.cost,
+        raw_usage_metadata=result.usage,
+        model_id=TRANSCRIBE_MODEL_ID,
+        uncached_input_tokens=uncached_input,
+        cached_input_tokens=cached_input,
+        output_tokens=output,
+        user_id=user_id,
+        conversation_id=None,
+    )
+    return {"text": result.text}
 
 
 @app.get("/conversations")

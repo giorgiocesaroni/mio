@@ -50,6 +50,19 @@ export async function uploadFile(file: File): Promise<{ url: string; mime_type: 
   return res.json();
 }
 
+export async function transcribeAudio(file: File): Promise<{ text: string }> {
+  const headers = await getAuthHeaders();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`Transcription failed: HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function getConversationMessages(
   conversationId: string,
 ): Promise<RunAgentStep[]> {

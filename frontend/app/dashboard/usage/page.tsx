@@ -3,6 +3,7 @@
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
 import { PageTitle } from "@/app/dashboard/components/page-title";
+import { CompactNumber } from "./components/compact-number";
 import {
   Card,
   CardContent,
@@ -13,14 +14,11 @@ import {
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
+  "meta/muse-voice-transcribe-1.0": "Muse Voice Transcribe 1.0 (transcription)",
 };
 
 function formatCost(cost: number): string {
   return `$${cost.toFixed(4)}`;
-}
-
-function formatTokens(tokens: number): string {
-  return tokens.toLocaleString();
 }
 
 export default function UsagePage() {
@@ -49,7 +47,7 @@ export default function UsagePage() {
           <CardHeader>
             <CardTitle>Total</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
               <p className="font-sans text-sm text-muted-foreground">Cost</p>
               <p className="font-medium text-foreground">
@@ -75,19 +73,10 @@ export default function UsagePage() {
               </p>
             </div>
             <div>
-              <p className="font-sans text-sm text-muted-foreground">
-                Input tokens
-              </p>
+              <p className="font-sans text-sm text-muted-foreground">Tokens</p>
               <p className="font-medium text-foreground">
-                {formatTokens(usage.total.prompt_tokens)}
-              </p>
-            </div>
-            <div>
-              <p className="font-sans text-sm text-muted-foreground">
-                Output tokens
-              </p>
-              <p className="font-medium text-foreground">
-                {formatTokens(usage.total.completion_tokens)}
+                <CompactNumber value={usage.total.prompt_tokens} /> /{" "}
+                <CompactNumber value={usage.total.completion_tokens} />
               </p>
             </div>
           </CardContent>
@@ -106,7 +95,7 @@ export default function UsagePage() {
                 <CardTitle className="text-base">{name}</CardTitle>
                 <CardDescription>{m.model_id}</CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-5">
+              <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
                 <div>
                   <p className="font-sans text-sm text-muted-foreground">
                     Cost
@@ -133,20 +122,12 @@ export default function UsagePage() {
                 </div>
                 <div>
                   <p className="font-sans text-sm text-muted-foreground">
-                    Input tokens
+                    Tokens
                   </p>
                   <p className="font-medium text-foreground">
-                    {formatTokens(
-                      m.uncached_input_tokens + m.cached_input_tokens,
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-sans text-sm text-muted-foreground">
-                    Output tokens
-                  </p>
-                  <p className="font-medium text-foreground">
-                    {formatTokens(m.output_tokens)}
+                    <CompactNumber
+                      value={m.uncached_input_tokens + m.cached_input_tokens}
+                    />{" "}/ <CompactNumber value={m.output_tokens} />
                   </p>
                 </div>
               </CardContent>

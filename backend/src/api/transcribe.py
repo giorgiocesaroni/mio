@@ -1,23 +1,33 @@
 import asyncio
-import base64
 from dataclasses import dataclass
+
 import httpx
-from google.genai import Client, errors, types
-from src.agent.utils import get_google_genai_cost
+from openai import (
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+)
 
-_client: Client | None = None
+from src.agent.providers import get_client
+from src.agent.utils import get_openrouter_cost
 
-MODEL_ID = "gemini-3.1-flash-lite"
+MODEL_ID = "meta/muse-voice-transcribe-1.0"
 
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 2.0
 
+_MIME_TO_FILENAME = {
+    "audio/wav": "voice.wav",
+    "audio/webm": "voice.webm",
+    "audio/ogg": "voice.ogg",
+    "audio/mpeg": "voice.mp3",
+    "audio/mp3": "voice.mp3",
+    "audio/flac": "voice.flac",
+    "audio/x-m4a": "voice.m4a",
+    "audio/m4a": "voice.m4a",
+}
 
-def _get_client() -> Client:
-    global _client
-    if _client is None:
-        _client = Client()
-    return _client
+_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
 @dataclass
@@ -27,8 +37,16 @@ class TranscriptionResult:
     usage: dict
 
 
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (APITimeoutError, APIConnectionError, httpx.TransportError)):
+        return True
+    if isinstance(exc, APIError):
+        return exc.status_code is None or exc.status_code in _RETRYABLE_STATUS
+    return False
+
+
 async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionResult:
-    """Transcribe audio to text using Gemini 3.1 Flash Lite.
+    """Transcribe audio to text using Muse Voice Transcribe 1.0 (via OpenRouter).
 
     Args:
         audio_data: Raw audio bytes
@@ -37,62 +55,55 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
     Returns:
         TranscriptionResult with text and cost info
     """
-    client = _get_client()
-    b64_audio = base64.b64encode(audio_data).decode()
+    client = get_client("openrouter")
+    filename = _MIME_TO_FILENAME.get(mime_type, "voice.wav")
 
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            response = await client.aio.models.generate_content(
+            response = await client.audio.transcriptions.create(
                 model=MODEL_ID,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_bytes(
-                                data=base64.b64decode(b64_audio),
-                                mime_type=mime_type,
-                            ),
-                            types.Part.from_text(
-                                text="Transcribe this audio exactly as spoken. Output only the transcription with no additional text, labels, or formatting."
-                            ),
-                        ],
-                    )
-                ],
-                config=types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level=types.ThinkingLevel.MINIMAL
-                    )
-                ),
+                file=(filename, audio_data, mime_type),
             )
-        except (errors.ServerError, httpx.TransportError) as exc:
-            last_error = exc
-            if attempt < _MAX_RETRIES:
+        except Exception as exc:
+            if _is_retryable(exc) and attempt < _MAX_RETRIES:
+                last_error = exc
                 await asyncio.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
                 continue
+            raise
         else:
             break
-    else:
+    else:  # pragma: no cover - loop always breaks or raises
         raise RuntimeError(
             f"Transcription failed after {_MAX_RETRIES} retries."
         ) from last_error
 
-    if not response.text:
-        raise ValueError("No transcription returned from Gemini API.")
+    text = (response.text or "").strip()
+    if not text:
+        raise ValueError("No transcription returned by the transcription API.")
 
-    usage_metadata = response.usage_metadata
-    cost = get_google_genai_cost(
-        model_id=MODEL_ID,
-        usage_metadata=usage_metadata,
-    )
+    raw_usage = getattr(response, "usage", None)
+    if raw_usage is None:
+        usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}
+    else:
+        dump = (
+            raw_usage if isinstance(raw_usage, dict) else raw_usage.model_dump()
+        )
+        usage = {
+            "prompt_tokens": dump.get("input_tokens", dump.get("prompt_tokens", 0))
+            or 0,
+            "completion_tokens": dump.get(
+                "output_tokens", dump.get("completion_tokens", 0)
+            )
+            or 0,
+        }
+        if isinstance(dump.get("cost"), (int, float)):
+            usage["cost"] = dump["cost"]
 
-    usage = {
-        "prompt_tokens": getattr(usage_metadata, "prompt_token_count", 0) or 0,
-        "completion_tokens": getattr(usage_metadata, "candidates_token_count", 0) or 0,
-    }
+    cost = await get_openrouter_cost(model_id=MODEL_ID, usage=usage)
 
     return TranscriptionResult(
-        text=response.text.strip(),
+        text=text,
         cost=cost,
         usage=usage,
     )
