@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { MediaRecorder as ExtMediaRecorder, register } from "extendable-media-recorder";
-import { connect } from "extendable-media-recorder-wav-encoder";
+
+// NOTE: extendable-media-recorder touches `Worker` at module scope, which
+// crashes server-side prerendering. It is dynamically imported on first
+// recording so this module stays SSR-safe.
 
 interface AudioAttachment {
   blob: Blob;
@@ -13,6 +15,8 @@ let registered = false;
 
 async function ensureWavEncoder() {
   if (!registered) {
+    const { connect } = await import("extendable-media-recorder-wav-encoder");
+    const { register } = await import("extendable-media-recorder");
     await register(await connect());
     registered = true;
   }
@@ -30,6 +34,9 @@ export function useAudioRecorder() {
     chunksRef.current = [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
+    const { MediaRecorder: ExtMediaRecorder } = await import(
+      "extendable-media-recorder"
+    );
     const mediaRecorder = new ExtMediaRecorder(stream, { mimeType: "audio/wav" });
     mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     mediaRecorderRef.current = mediaRecorder;

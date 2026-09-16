@@ -4,6 +4,7 @@ dotenv.load_dotenv()
 
 import base64
 import json
+import logging
 import os
 from uuid import UUID
 from fastapi import Depends, FastAPI, File, Request, HTTPException, UploadFile
@@ -19,6 +20,8 @@ from src.agent.utils import extract_tokens
 import supabase
 
 app = FastAPI()
+
+logger = logging.getLogger(__name__)
 
 origins = os.getenv("CORS_ORIGINS", "").split(",")
 
@@ -221,10 +224,23 @@ async def transcribe_voice_memo(
     mime_type = file.content_type or "audio/wav"
     if not mime_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="Audio file required")
+    logger.info(
+        "POST /transcribe: user=%s filename=%s mime=%s bytes=%d",
+        user_id,
+        file.filename,
+        mime_type,
+        len(data),
+    )
     try:
         result = await transcribe_audio(data, mime_type)
     except Exception as e:
+        logger.exception("POST /transcribe failed")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    logger.info(
+        "POST /transcribe done: chars=%d cost=%s",
+        len(result.text),
+        result.cost,
+    )
     uncached_input, cached_input, output = extract_tokens(result.usage)
     repository.insert_llm_invocation(
         total_cost=result.cost,

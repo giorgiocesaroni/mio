@@ -36,6 +36,7 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onRecordingStart?: () => void;
   onRecordingStop?: () => void;
   isRecording?: boolean;
+  isTranscribing?: boolean;
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (index: number) => void;
@@ -52,6 +53,7 @@ export const ChatEditor = ({
   onRecordingStart,
   onRecordingStop,
   isRecording = false,
+  isTranscribing = false,
   onImageSelect,
   pendingAttachments = [],
   onRemoveAttachment,
@@ -147,10 +149,20 @@ export const ChatEditor = ({
             isRecording && "animate-pulse bg-red-500 text-white hover:bg-red-600",
           )}
           disabled={disabled}
-          title={isRecording ? "Stop recording" : "Record voice memo"}
+          title={
+            isRecording
+              ? "Stop recording"
+              : isTranscribing
+                ? "Transcribing…"
+                : "Record voice memo"
+          }
           onClick={isRecording ? onRecordingStop : onRecordingStart}
         >
-          <Mic className="size-4" />
+          {isTranscribing ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Mic className="size-4" />
+          )}
         </Button>
         <Button
           size="icon"

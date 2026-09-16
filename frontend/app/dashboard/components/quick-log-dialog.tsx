@@ -300,7 +300,8 @@ export function QuickLogDialog({
           onSend={handleTextSubmit}
           onRecordingStart={startRecording}
           onRecordingStop={handleRecordingStop}
-          isRecording={isRecording || isTranscribing}
+          isRecording={isRecording}
+          isTranscribing={isTranscribing}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>

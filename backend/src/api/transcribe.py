@@ -1,4 +1,8 @@
 import asyncio
+import logging
+import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 
 import httpx
@@ -11,7 +15,9 @@ from openai import (
 from src.agent.providers import get_client
 from src.agent.utils import get_openrouter_cost
 
-MODEL_ID = "meta/muse-voice-transcribe-1.0"
+MODEL_ID = "openai/gpt-transcribe"
+
+logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 2.0
@@ -29,6 +35,8 @@ _MIME_TO_FILENAME = {
 
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
+_TRANSCRIBE_SAMPLE_RATE_HZ = 16000
+
 
 @dataclass
 class TranscriptionResult:
@@ -45,8 +53,36 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
+def _resample_to_16k_wav(data: bytes) -> bytes:
+    """Resample any audio to 16kHz mono WAV (Meta requirement) via ffmpeg."""
+    with tempfile.NamedTemporaryFile(suffix=".src", delete=False) as tmp:
+        tmp.write(data)
+        src_path = tmp.name
+    out_path = src_path + ".16k.wav"
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", src_path,
+                "-ar", str(_TRANSCRIBE_SAMPLE_RATE_HZ),
+                "-ac", "1",
+                "-c:a", "pcm_s16le",
+                out_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+        with open(out_path, "rb") as f:
+            return f.read()
+    finally:
+        for path in (src_path, out_path):
+            if os.path.exists(path):
+                os.unlink(path)
+
+
 async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionResult:
-    """Transcribe audio to text using Muse Voice Transcribe 1.0 (via OpenRouter).
+    """Transcribe audio to text using GPT Transcribe (via OpenRouter).
 
     Args:
         audio_data: Raw audio bytes
@@ -56,7 +92,19 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
         TranscriptionResult with text and cost info
     """
     client = get_client("openrouter")
+    try:
+        audio_data = _resample_to_16k_wav(audio_data)
+        mime_type = "audio/wav"
+    except Exception as exc:
+        logger.warning("transcribe resample failed, sending original: %s", exc)
     filename = _MIME_TO_FILENAME.get(mime_type, "voice.wav")
+    logger.info(
+        "transcribe start: model=%s file=%s mime=%s bytes=%d",
+        MODEL_ID,
+        filename,
+        mime_type,
+        len(audio_data),
+    )
 
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
@@ -66,6 +114,16 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
                 file=(filename, audio_data, mime_type),
             )
         except Exception as exc:
+            status = getattr(exc, "status_code", None)
+            body = getattr(exc, "body", None)
+            logger.warning(
+                "transcribe attempt %d/%d failed: %s status=%s body=%s",
+                attempt + 1,
+                _MAX_RETRIES + 1,
+                exc,
+                status,
+                body,
+            )
             if _is_retryable(exc) and attempt < _MAX_RETRIES:
                 last_error = exc
                 await asyncio.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
@@ -79,6 +137,11 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
         ) from last_error
 
     text = (response.text or "").strip()
+    logger.info(
+        "transcribe success: chars=%d usage=%s",
+        len(text),
+        getattr(response, "usage", None),
+    )
     if not text:
         raise ValueError("No transcription returned by the transcription API.")
 

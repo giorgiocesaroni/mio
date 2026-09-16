@@ -368,7 +368,8 @@ export default function Home() {
           onSend={handleTextSubmit}
           onRecordingStart={handleRecordingStart}
           onRecordingStop={handleRecordingStop}
-          isRecording={isRecording || isTranscribing}
+          isRecording={isRecording}
+          isTranscribing={isTranscribing}
           onImageSelect={handleImageSelect}
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>

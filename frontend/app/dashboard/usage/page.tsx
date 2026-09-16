@@ -15,6 +15,7 @@ import {
 const EXTRA_MODEL_NAMES: Record<string, string> = {
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
   "meta/muse-voice-transcribe-1.0": "Muse Voice Transcribe 1.0 (transcription)",
+  "openai/gpt-transcribe": "GPT Transcribe (transcription)",
 };
 
 function formatCost(cost: number): string {
