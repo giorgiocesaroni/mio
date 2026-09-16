@@ -10,16 +10,11 @@ import {
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
-import { AnimatePresence, motion } from "motion/react";
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-type Feedback =
-  | { kind: "success"; text: string }
-  | { kind: "error"; text: string };
 
 export function QuickLogComposer() {
   const [input, setInput] = useState("");
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -45,7 +40,6 @@ export function QuickLogComposer() {
       setIsSent(false);
       if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     }
-    if (!isWorking) setFeedback(null);
   };
 
   const handleTextSubmit = async (str: string) => {
@@ -94,22 +88,21 @@ export function QuickLogComposer() {
       );
       const { message, error } = resultRef.current;
       if (error) {
-        setFeedback({ kind: "error", text: error });
+        toast.error(error);
       } else {
         setInput("");
         setPendingAttachments([]);
-        setFeedback({ kind: "success", text: message ?? "Done." });
+        toast.success(message ?? "Done.");
         setIsSent(true);
         if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
         sentTimeoutRef.current = setTimeout(() => setIsSent(false), 10000);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setFeedback(null);
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
-      setFeedback({ kind: "error", text: message });
+      toast.error(message);
     } finally {
       abortRef.current = null;
       setIsWorking(false);
@@ -179,34 +172,6 @@ export function QuickLogComposer() {
         }
         placeholder="What did you eat? Or fix today's logs…"
       />
-      <motion.div
-        initial={false}
-        animate={{ height: feedback ? "auto" : 0 }}
-        transition={{ duration: 0.24, ease: "easeOut" }}
-        className="overflow-hidden"
-      >
-        <AnimatePresence initial={false} mode="wait">
-          {feedback && (
-            <motion.div
-              key={`${feedback.kind}:${feedback.text}`}
-              aria-live="polite"
-              initial={{ opacity: 0, scale: 0.97, filter: "blur(8px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 1.03, filter: "blur(8px)" }}
-              transition={{ duration: 0.24, delay: 0.24, ease: "easeOut" }}
-              className="rounded-xl bg-muted px-4 py-3 text-sm break-words"
-            >
-              <span
-                className={
-                  feedback.kind === "error" ? "text-destructive" : undefined
-                }
-              >
-                {feedback.text}
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
     </div>
   );
 }
