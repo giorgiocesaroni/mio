@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Loader2, Mic, Plus, X } from "lucide-react";
+import { ArrowUp, Check, Loader2, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
@@ -39,6 +39,7 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onRecordingStop?: () => void;
   isRecording?: boolean;
   isTranscribing?: boolean;
+  isSent?: boolean;
   onImageSelect?: (file: File) => void;
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (index: number) => void;
@@ -58,6 +59,7 @@ export const ChatEditor = ({
   onRecordingStop,
   isRecording = false,
   isTranscribing = false,
+  isSent = false,
   onImageSelect,
   pendingAttachments = [],
   onRemoveAttachment,
@@ -176,11 +178,18 @@ export const ChatEditor = ({
             (!text && pendingAttachments.length === 0) ||
             pendingAttachments.some((a) => a.isLoading)
           }
-          className="rounded-full bg-red-500 text-white hover:bg-red-600"
+          className={cn(
+            "rounded-full text-white",
+            isSent
+              ? "bg-green-500 hover:bg-green-600"
+              : "bg-red-500 hover:bg-red-600",
+          )}
           onClick={() => onSend?.(text)}
         >
           {isSending ? (
             <Loader2 className="size-4 animate-spin" />
+          ) : isSent ? (
+            <Check className="size-4" />
           ) : (
             <ArrowUp className="size-4" />
           )}
