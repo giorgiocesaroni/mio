@@ -14,13 +14,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Feedback =
-  | { kind: "working"; text: string }
   | { kind: "success"; text: string }
   | { kind: "error"; text: string };
 
 export function QuickLogComposer() {
   const [input, setInput] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [isWorking, setIsWorking] = useState(false);
   const [isSent, setIsSent] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
@@ -39,15 +39,13 @@ export function QuickLogComposer() {
     [],
   );
 
-  const isWorking = feedback?.kind === "working";
-
   const handleTextChange = (value: string) => {
     setInput(value);
     if (isSent) {
       setIsSent(false);
       if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
     }
-    if (feedback?.kind !== "working") setFeedback(null);
+    if (!isWorking) setFeedback(null);
   };
 
   const handleTextSubmit = async (str: string) => {
@@ -68,7 +66,7 @@ export function QuickLogComposer() {
 
     const text = str.trim();
     const attachments = pendingAttachments;
-    setFeedback({ kind: "working", text: "Logging…" });
+    setIsWorking(true);
     resultRef.current = {};
     const controller = new AbortController();
     abortRef.current = controller;
@@ -114,6 +112,7 @@ export function QuickLogComposer() {
       setFeedback({ kind: "error", text: message });
     } finally {
       abortRef.current = null;
+      setIsWorking(false);
     }
   };
 
@@ -180,17 +179,22 @@ export function QuickLogComposer() {
         }
         placeholder="What did you eat? Or fix today's logs…"
       />
-      <div className="min-h-16">
+      <motion.div
+        initial={false}
+        animate={{ height: feedback ? "auto" : 0 }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+        className="overflow-hidden"
+      >
         <AnimatePresence initial={false} mode="wait">
           {feedback && (
             <motion.div
               key={`${feedback.kind}:${feedback.text}`}
               aria-live="polite"
-              initial={{ opacity: 0, scale: 0.97, filter: "blur(6px)" }}
+              initial={{ opacity: 0, scale: 0.97, filter: "blur(8px)" }}
               animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 1.03, filter: "blur(6px)" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="rounded-xl bg-card px-4 py-3 text-sm shadow-sm ring-1 ring-foreground/10 break-words"
+              exit={{ opacity: 0, scale: 1.03, filter: "blur(8px)" }}
+              transition={{ duration: 0.24, delay: 0.24, ease: "easeOut" }}
+              className="rounded-xl bg-muted px-4 py-3 text-sm break-words"
             >
               <span
                 className={
@@ -202,7 +206,7 @@ export function QuickLogComposer() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </motion.div>
     </div>
   );
 }
