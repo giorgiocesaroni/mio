@@ -30,7 +30,7 @@ export default function ChatLayout({
 
   return (
     <ChatLoadingContext.Provider value={{ isLoading, setIsLoading }}>
-      <div className="flex min-h-screen flex-col">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </ChatLoadingContext.Provider>
   );
 }

@@ -15,15 +15,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { PencilLine, Plus } from "lucide-react";
 import { getElapsedTime } from "../utils";
 import { PageTitle } from "./components/page-title";
-import { QuickLogDialog } from "./components/quick-log-dialog";
-import type { QuickLogMode } from "@/repository/backend/queries";
+import { QuickLogComposer } from "./components/quick-log-composer";
 
 function MacroCard({
   label,
@@ -316,7 +313,7 @@ function RecipeLogCard({
   );
 }
 
-function DailyFoodLogsWithFoods({ onEdit }: { onEdit: () => void }) {
+function DailyFoodLogsWithFoods() {
   const { data: dailyFoodLogsView } = useQuery({
     queryKey: ["getDailyFoodLogsWithFoodsView"],
     queryFn: getDailyFoodLogsWithFoodsView,
@@ -326,16 +323,6 @@ function DailyFoodLogsWithFoods({ onEdit }: { onEdit: () => void }) {
 
   return (
     <div className="grid gap-4">
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          onClick={onEdit}
-          title="Edit today's logs"
-          className="px-0 text-muted-foreground"
-        >
-          <PencilLine className="size-3.5" /> Edit
-        </Button>
-      </div>
       {blocks.map((block, index) =>
         block.kind === "food" ? (
           <IngredientLogCard key={block.log.log_id} log={block.log} />
@@ -351,29 +338,12 @@ function DailyFoodLogsWithFoods({ onEdit }: { onEdit: () => void }) {
 }
 
 export default function DashboardPage() {
-  const [quickDialog, setQuickDialog] = useState<QuickLogMode | null>(null);
   return (
     <div className="grid gap-12">
-      <div className="flex items-center justify-between gap-4">
-        <PageTitle>Today</PageTitle>
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon-sm"
-            onClick={() => setQuickDialog("log")}
-            title="Quick add — log instantly, no questions"
-            className="rounded-full bg-red-500 text-white hover:bg-red-600"
-          >
-            <Plus className="size-4" />
-          </Button>
-        </div>
-      </div>
+      <PageTitle>Today</PageTitle>
       <DailyMacros />
-      <DailyFoodLogsWithFoods onEdit={() => setQuickDialog("edit")} />
-      <QuickLogDialog
-        open={quickDialog !== null}
-        mode={quickDialog ?? "log"}
-        onClose={() => setQuickDialog(null)}
-      />
+      <QuickLogComposer />
+      <DailyFoodLogsWithFoods />
     </div>
   );
 }

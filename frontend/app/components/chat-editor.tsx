@@ -33,6 +33,8 @@ interface ChatEditorProps extends React.HTMLAttributes<HTMLDivElement> {
   onTextChange: (text: string) => void;
   onSend?: (text: string) => void;
   disabled?: boolean;
+  isSending?: boolean;
+  autoFocus?: boolean;
   onRecordingStart?: () => void;
   onRecordingStop?: () => void;
   isRecording?: boolean;
@@ -50,6 +52,8 @@ export const ChatEditor = ({
   placeholder = "Type a message...",
   onSend,
   disabled = false,
+  isSending = false,
+  autoFocus = true,
   onRecordingStart,
   onRecordingStop,
   isRecording = false,
@@ -65,7 +69,7 @@ export const ChatEditor = ({
   return (
     <div
       className={cn(
-        "grid w-full gap-2 rounded-3xl border border-border bg-background-alt p-2",
+        "grid w-full gap-2 rounded-xl bg-card p-2 text-card-foreground ring-1 ring-foreground/10",
         className,
       )}
       {...props}
@@ -103,7 +107,7 @@ export const ChatEditor = ({
         </div>
       )}
       <textarea
-        autoFocus={true}
+        autoFocus={autoFocus}
         disabled={disabled}
         className="max-h-[50vh] flex-1 resize-none field-sizing-content p-2 outline-none disabled:opacity-50"
         placeholder={placeholder}
@@ -168,13 +172,18 @@ export const ChatEditor = ({
           size="icon"
           disabled={
             disabled ||
+            isSending ||
             (!text && pendingAttachments.length === 0) ||
             pendingAttachments.some((a) => a.isLoading)
           }
           className="rounded-full bg-red-500 text-white hover:bg-red-600"
           onClick={() => onSend?.(text)}
         >
-          <ArrowUp className="size-4" />
+          {isSending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <ArrowUp className="size-4" />
+          )}
         </Button>
       </div>
     </div>
