@@ -25,7 +25,7 @@ async def _fetch_audio_from_url(url: str) -> tuple[bytes, str]:
 async def _preprocess_message(
     message: models.MessageType,
     user_id: str,
-    conversation_id: UUID,
+    conversation_id: UUID | None,
 ) -> models.MessageType:
     """Preprocess message by transcribing audio parts to text."""
     new_parts = []
@@ -62,6 +62,60 @@ async def _preprocess_message(
         else:
             new_parts.append(part)
     return type(message)(parts=new_parts)
+
+
+async def run_quick_log(
+    input: models.QuickLogInput,
+) -> AsyncGenerator[models.RunAgentStep, None]:
+    """One-shot log/edit without a conversation. Always mutates logs, never asks."""
+    # Transcribe audio parts (no conversation row; invocations logged with NULL conversation_id).
+    preprocessed_message = await _preprocess_message(input.message, input.user_id, None)
+    user_input = _convert_input(preprocessed_message)
+    contents = [user_input]
+
+    timezone = repository.get_user_timezone(input.user_id)
+    today = (
+        input.day
+        or datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
+    )
+    daily_macros = repository.get_daily_macros(today, input.user_id)
+    current_goal = repository.get_current_goal(input.user_id)
+    system_prompt = prompts.get_quick_log_prompt(
+        mode=input.mode,
+        day=today,
+        daily_macros=daily_macros,
+        current_goal=current_goal.model_dump(mode="json") if current_goal else None,
+        timezone=timezone,
+    )
+    agent_input = models.AgentInput(
+        conversation_id=None,
+        user_id=input.user_id,
+        system_prompt=system_prompt,
+        contents=contents,
+        model=input.model,
+    )
+    async for chunk in agent(agent_input):
+        if isinstance(chunk, models.ContentTokenStep):
+            yield chunk
+        elif isinstance(chunk, models.ToolCallStartStep):
+            yield chunk
+        elif isinstance(chunk, dict):
+            role = chunk.get("role")
+            if role == "assistant":
+                content = chunk.get("content")
+                if content:
+                    yield models.MessageStep(type="message", text=content)
+                for tc in chunk.get("tool_calls") or []:
+                    func = tc["function"]
+                    try:
+                        args = json.loads(func["arguments"])
+                    except json.JSONDecodeError:
+                        args = {}
+                    yield models.ToolCallStep(
+                        type="tool_call",
+                        name=func["name"],
+                        args=args,
+                    )
 
 
 def _convert_input(message: models.MessageType) -> dict:

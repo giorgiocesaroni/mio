@@ -1,20 +1,20 @@
 "use client";
 
 import { useRef } from "react";
-import { twMerge } from "tailwind-merge";
-import { Card } from "./card";
-import { Button } from "./button";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { ArrowUp, Loader2, Mic, Plus, X } from "lucide-react";
 
 export const ChatChip = ({
   className,
   children,
-}: React.HTMLAttributes<HTMLDivElement>) => (
+  ...props
+}: React.ComponentProps<typeof Button>) => (
   <Button
-    className={twMerge(
-      "rounded-full text-sm px-3 border-muted-background bg-muted-background font-normal",
-      className,
-    )}
+    variant="secondary"
+    size="sm"
+    className={cn("rounded-full font-normal", className)}
+    {...props}
   >
     {children}
   </Button>
@@ -61,38 +61,41 @@ export const ChatEditor = ({
 }: ChatEditorProps) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   return (
-    <Card
-      className={twMerge(
-        "w-full border-border rounded-3xl bg-background-alt grid gap-2 p-2 shadow-2xl",
+    <div
+      className={cn(
+        "grid w-full gap-2 rounded-3xl border border-border bg-background-alt p-2",
         className,
       )}
+      {...props}
     >
       {pendingAttachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-2 pt-1">
           {pendingAttachments.map((att, i) => (
             <div key={i} className="relative size-16 shrink-0">
               {att.isLoading ? (
-                <div className="size-16 rounded-xl border border-border bg-muted-background flex items-center justify-center">
+                <div className="flex size-16 items-center justify-center rounded-xl border bg-muted">
                   <Loader2 className="size-6 animate-spin text-muted-foreground" />
                 </div>
               ) : att.mime_type.startsWith("image/") ? (
                 <img
                   src={att.url}
                   alt={att.name}
-                  className="size-16 object-cover rounded-xl border border-border"
+                  className="size-16 rounded-xl border object-cover"
                 />
               ) : (
-                <div className="size-16 rounded-xl border border-border bg-muted-background flex items-center justify-center">
+                <div className="flex size-16 items-center justify-center rounded-xl border bg-muted">
                   <Mic className="size-6 text-muted-foreground" />
                 </div>
               )}
-              <button
+              <Button
+                variant="outline"
+                size="icon-xs"
                 onClick={() => onRemoveAttachment?.(i)}
-                className="absolute -top-1.5 -right-1.5 size-4 flex items-center justify-center bg-background border border-border rounded-full text-muted-foreground hover:text-foreground"
+                className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-background"
                 title="Remove"
               >
                 <X className="size-2.5" />
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -100,7 +103,7 @@ export const ChatEditor = ({
       <textarea
         autoFocus={true}
         disabled={disabled}
-        className="flex-1 outline-none p-2 field-sizing-content resize-none max-h-[50vh] disabled:opacity-50"
+        className="max-h-[50vh] flex-1 resize-none field-sizing-content p-2 outline-none disabled:opacity-50"
         placeholder={placeholder}
         value={text}
         onChange={(e) => onTextChange(e.target.value)}
@@ -111,7 +114,7 @@ export const ChatEditor = ({
           }
         }}
       />
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 px-1 pb-1">
         {children}
         <input
           ref={imageInputRef}
@@ -125,8 +128,10 @@ export const ChatEditor = ({
           }}
         />
         <Button
+          variant="secondary"
+          size="icon"
           disabled={disabled}
-          className="bg-muted-background border-muted-background rounded-full aspect-square py-2 px-2"
+          className="rounded-full"
           onClick={() => imageInputRef.current?.click()}
           title="Choose an image"
         >
@@ -135,11 +140,11 @@ export const ChatEditor = ({
         <div className="flex-1"></div>
         {modelSelector}
         <Button
-          className={twMerge(
-            "rounded-full aspect-square py-2 px-2 select-none",
-            isRecording
-              ? "bg-red-500 border-red-500 text-white animate-pulse"
-              : "bg-muted-background border-muted-background",
+          variant="secondary"
+          size="icon"
+          className={cn(
+            "rounded-full select-none",
+            isRecording && "animate-pulse bg-red-500 text-white hover:bg-red-600",
           )}
           disabled={disabled}
           title={isRecording ? "Stop recording" : "Record voice memo"}
@@ -148,17 +153,18 @@ export const ChatEditor = ({
           <Mic className="size-4" />
         </Button>
         <Button
+          size="icon"
           disabled={
             disabled ||
             (!text && pendingAttachments.length === 0) ||
             pendingAttachments.some((a) => a.isLoading)
           }
-          className="bg-red-500 text-background-alt rounded-full aspect-square py-2 px-2"
+          className="rounded-full bg-red-500 text-white hover:bg-red-600"
           onClick={() => onSend?.(text)}
         >
           <ArrowUp className="size-4" />
         </Button>
       </div>
-    </Card>
+    </div>
   );
 };

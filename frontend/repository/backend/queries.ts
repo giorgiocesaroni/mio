@@ -80,22 +80,17 @@ export async function getUsage(): Promise<UsageOverview> {
   return res.json();
 }
 
-export async function streamChat(
-  conversationId: string,
-  payload: object,
-  model: string | undefined,
+async function streamSSE(
+  path: string,
+  body: object,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
   const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/chat`, {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
-    body: JSON.stringify({
-      conversation_id: conversationId,
-      message: payload,
-      ...(model ? { model } : {}),
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
@@ -125,4 +120,46 @@ export async function streamChat(
   }
 
   queryClient.invalidateQueries();
+}
+
+export type QuickLogMode = "log" | "edit";
+
+export async function streamQuickLog(
+  mode: QuickLogMode,
+  day: string,
+  payload: object,
+  model: string | undefined,
+  signal: AbortSignal,
+  onStep: (step: RunAgentStep) => void,
+): Promise<void> {
+  return streamSSE(
+    "/quick-log",
+    {
+      mode,
+      day,
+      message: payload,
+      ...(model ? { model } : {}),
+    },
+    signal,
+    onStep,
+  );
+}
+
+export async function streamChat(
+  conversationId: string,
+  payload: object,
+  model: string | undefined,
+  signal: AbortSignal,
+  onStep: (step: RunAgentStep) => void,
+): Promise<void> {
+  return streamSSE(
+    "/chat",
+    {
+      conversation_id: conversationId,
+      message: payload,
+      ...(model ? { model } : {}),
+    },
+    signal,
+    onStep,
+  );
 }

@@ -34,6 +34,10 @@ A typical module may contain the following files, along with module-specific fil
 
 ## `frontend/`
 
+### Design system
+
+The project uses shadcn/ui. Feel free to install new components as needed using `pnpm dlx shadcn@latest add ...`.
+
 ### Folder Structure
 
 The folder structure follows a typical Next.js application (using App Router).

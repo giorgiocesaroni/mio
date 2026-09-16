@@ -4,41 +4,26 @@ import {
   getCurrentGoal,
   getDailyFoodLogsWithFoodsView,
   getDailyMacrosView,
-  getTotalLlmCost,
 } from "@/repository/supabase/queries";
 import { Database } from "@/repository/supabase/types";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { H1, P } from "../components/typography";
 import {
   Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../components/card";
-import { Button } from "../components/button";
-import { Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { PencilLine, Plus } from "lucide-react";
 import { getElapsedTime } from "../utils";
-
-function TotalCost() {
-  const router = useRouter();
-  const { data } = useQuery({
-    queryKey: ["getTotalLlmCost"],
-    queryFn: getTotalLlmCost,
-  });
-
-  return (
-    <button
-      type="button"
-      onClick={() => router.push("/dashboard/usage")}
-      className="cursor-pointer hover:opacity-80 transition-opacity"
-      title="View usage"
-    >
-      <P className="text-sm">${(data?.total_cost ?? 0).toFixed(2)}</P>
-    </button>
-  );
-}
+import { PageTitle } from "./components/page-title";
+import { QuickLogDialog } from "./components/quick-log-dialog";
+import type { QuickLogMode } from "@/repository/backend/queries";
 
 function MacroCard({
   label,
@@ -66,23 +51,23 @@ function MacroCard({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="block text-left"
-      disabled={target === undefined}
+    <Card
+      onClick={target === undefined ? undefined : onClick}
+      className={
+        target === undefined ? "py-3" : "cursor-pointer py-3 hover:bg-muted/50"
+      }
     >
-      <Card className={target === undefined ? "" : "cursor-pointer"}>
+      <CardHeader className="gap-0 px-3">
         <CardDescription>
           {label} {suffix && ` ${suffix}`}
         </CardDescription>
-        <CardHeader>
-          <CardTitle>
-            {displayValue} {unit}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-    </button>
+      </CardHeader>
+      <CardContent className="px-3">
+        <CardTitle>
+          {displayValue} {unit}
+        </CardTitle>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -97,9 +82,7 @@ function MacroBadge({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-sm leading-none">
-      <span className={`${color} text-white text-xs font-bold px-1 rounded`}>
-        {letter}
-      </span>
+      <Badge className={cn(color, "size-5 p-0 text-white")}>{letter}</Badge>
       {value} g
     </span>
   );
@@ -119,7 +102,7 @@ function DailyMacros() {
   });
 
   return (
-    <div className="grid md:grid-cols-4 grid-cols-2 gap-4 items-center">
+    <div className="grid grid-cols-2 items-center gap-4 md:grid-cols-4">
       <MacroCard
         label="Calories"
         unit="Kcal"
@@ -184,11 +167,11 @@ function amountOf(log: FoodLog): string {
 
 function FoodBadges({ amount, macros }: { amount?: string; macros: Macros }) {
   return (
-    <div className="whitespace-nowrap grid grid-cols-4 md:grid-cols-5 gap-4 items-center text-sm text-muted-foreground">
+    <div className="grid grid-cols-4 items-center gap-4 whitespace-nowrap text-muted-foreground md:grid-cols-5">
       {amount !== undefined && (
-        <span className="hidden md:inline whitespace-nowrap">{amount}</span>
+        <span className="hidden whitespace-nowrap md:inline">{amount}</span>
       )}
-      <P>{macros.calories.toFixed()} Kcal</P>
+      <span>{macros.calories.toFixed()} Kcal</span>
       <MacroBadge
         letter="P"
         color="bg-red-500"
@@ -256,12 +239,18 @@ function sumMacros(logs: FoodLog[]): Macros {
 function IngredientLogCard({ log }: { log: FoodLog }) {
   const timestamp = log.log_created_at!;
   return (
-    <Card className="grid gap-2">
-      <div className="overflow-auto flex justify-between items-center gap-4">
-        <P className="truncate text-foreground font-medium">{log.food_name}</P>
-        <P className="whitespace-nowrap text-sm">{getElapsedTime(timestamp)}</P>
-      </div>
-      <FoodBadges amount={amountOf(log)} macros={macrosOf(log)} />
+    <Card>
+      <CardContent className="grid gap-2">
+        <div className="flex items-center justify-between gap-4 overflow-auto">
+          <p className="truncate font-medium text-foreground">
+            {log.food_name}
+          </p>
+          <p className="whitespace-nowrap text-muted-foreground">
+            {getElapsedTime(timestamp)}
+          </p>
+        </div>
+        <FoodBadges amount={amountOf(log)} macros={macrosOf(log)} />
+      </CardContent>
     </Card>
   );
 }
@@ -278,20 +267,22 @@ function RecipeLogCard({
     0,
   );
   return (
-    <button
-      type="button"
+    <Card
       onClick={() => setExpanded((v) => !v)}
-      className="text-left"
+      className="cursor-pointer hover:bg-muted/30"
     >
-      <Card className="grid gap-2">
-        <div className="overflow-auto flex justify-between items-center gap-4">
-          <P className="truncate text-foreground font-medium">
+      <CardContent className="grid gap-2">
+        <div className="flex items-center justify-between gap-4 overflow-auto">
+          <p className="truncate font-medium text-foreground">
             {block.recipeName}
-            <span className="text-muted-foreground font-normal"> (recipe)</span>
-          </P>
-          <P className="whitespace-nowrap text-sm">
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              (recipe)
+            </span>
+          </p>
+          <p className="whitespace-nowrap text-muted-foreground">
             {getElapsedTime(timestamp)}
-          </P>
+          </p>
         </div>
         <FoodBadges
           amount={`${Math.round(totalGrams)} g`}
@@ -299,18 +290,17 @@ function RecipeLogCard({
         />
         {expanded && (
           <>
-            <hr className="border-border my-2" />
+            <Separator className="my-2" />
             <div className="grid gap-1">
               {block.logs.map((log) => {
                 const m = macrosOf(log);
                 return (
                   <div
                     key={log.log_id}
-                    className="flex justify-between items-center gap-4 text-sm px-1"
+                    className="flex items-center justify-between gap-4 px-1"
                   >
                     <span className="truncate text-muted-foreground">
-                      {log.food_name}{" "}
-                      <span className="">({amountOf(log)})</span>
+                      {log.food_name} <span>({amountOf(log)})</span>
                     </span>
                     <span className="whitespace-nowrap text-muted-foreground">
                       {m.calories.toFixed()} Kcal
@@ -321,12 +311,12 @@ function RecipeLogCard({
             </div>
           </>
         )}
-      </Card>
-    </button>
+      </CardContent>
+    </Card>
   );
 }
 
-function DailyFoodLogsWithFoods() {
+function DailyFoodLogsWithFoods({ onEdit }: { onEdit: () => void }) {
   const { data: dailyFoodLogsView } = useQuery({
     queryKey: ["getDailyFoodLogsWithFoodsView"],
     queryFn: getDailyFoodLogsWithFoodsView,
@@ -336,6 +326,16 @@ function DailyFoodLogsWithFoods() {
 
   return (
     <div className="grid gap-4">
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          onClick={onEdit}
+          title="Edit today's logs"
+          className="px-0 text-muted-foreground"
+        >
+          <PencilLine className="size-3.5" /> Edit
+        </Button>
+      </div>
       {blocks.map((block, index) =>
         block.kind === "food" ? (
           <IngredientLogCard key={block.log.log_id} log={block.log} />
@@ -351,23 +351,29 @@ function DailyFoodLogsWithFoods() {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const [quickDialog, setQuickDialog] = useState<QuickLogMode | null>(null);
   return (
-    <div className="grid gap-12 p-4">
-      <div className="flex items-center gap-4 justify-between">
-        <H1 className="text-xl md:text-xl">Today</H1>
+    <div className="grid gap-12">
+      <div className="flex items-center justify-between gap-4">
+        <PageTitle>Today</PageTitle>
         <div className="flex items-center gap-2">
-          <TotalCost />
           <Button
-            onClick={() => router.push("/dashboard/chat/new")}
-            className="bg-red-500 border-red-500 text-background-alt aspect-square py-2 px-2 rounded-full"
+            size="icon-sm"
+            onClick={() => setQuickDialog("log")}
+            title="Quick add — log instantly, no questions"
+            className="rounded-full bg-red-500 text-white hover:bg-red-600"
           >
             <Plus className="size-4" />
           </Button>
         </div>
       </div>
       <DailyMacros />
-      <DailyFoodLogsWithFoods />
+      <DailyFoodLogsWithFoods onEdit={() => setQuickDialog("edit")} />
+      <QuickLogDialog
+        open={quickDialog !== null}
+        mode={quickDialog ?? "log"}
+        onClose={() => setQuickDialog(null)}
+      />
     </div>
   );
 }

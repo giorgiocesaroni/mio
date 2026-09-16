@@ -2,11 +2,14 @@
 
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/app/components/button";
-import { Card, CardHeader } from "@/app/components/card";
-import { H1, P } from "@/app/components/typography";
+import { PageTitle } from "@/app/dashboard/components/page-title";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
@@ -21,7 +24,6 @@ function formatTokens(tokens: number): string {
 }
 
 export default function UsagePage() {
-  const router = useRouter();
   const { data: usage } = useQuery({
     queryKey: ["usage"],
     queryFn: getUsage,
@@ -37,56 +39,58 @@ export default function UsagePage() {
   );
 
   return (
-    <div className="grid gap-8 p-4">
+    <div className="grid gap-8">
       <header className="flex items-center gap-2">
-        <Button
-          className="bg-red-500 border-red-500 text-background-alt aspect-square px-2 py-2 rounded-full"
-          onClick={() => router.push("/dashboard")}
-        >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <H1 className="text-xl md:text-xl">Usage</H1>
+        <PageTitle>Usage</PageTitle>
       </header>
 
       {usage && (
         <Card>
           <CardHeader>
-            <P>Total</P>
+            <CardTitle>Total</CardTitle>
           </CardHeader>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-5">
             <div>
-              <P className="text-sm">Cost</P>
-              <P className="text-foreground font-medium">
+              <p className="font-sans text-sm text-muted-foreground">Cost</p>
+              <p className="font-medium text-foreground">
                 {formatCost(usage.total.total_cost)}
-              </P>
+              </p>
             </div>
             <div>
-              <P className="text-sm">Messages</P>
-              <P className="text-foreground font-medium">
+              <p className="font-sans text-sm text-muted-foreground">
+                Messages
+              </p>
+              <p className="font-medium text-foreground">
                 {usage.total.total_invocations.toLocaleString()}
-              </P>
+              </p>
             </div>
             <div>
-              <P className="text-sm">Cost/message</P>
-              <P className="text-foreground font-medium">
+              <p className="font-sans text-sm text-muted-foreground">
+                Cost/message
+              </p>
+              <p className="font-medium text-foreground">
                 {formatCost(
                   usage.total.total_cost / usage.total.total_invocations,
                 )}
-              </P>
+              </p>
             </div>
             <div>
-              <P className="text-sm">Input tokens</P>
-              <P className="text-foreground font-medium">
+              <p className="font-sans text-sm text-muted-foreground">
+                Input tokens
+              </p>
+              <p className="font-medium text-foreground">
                 {formatTokens(usage.total.prompt_tokens)}
-              </P>
+              </p>
             </div>
             <div>
-              <P className="text-sm">Output tokens</P>
-              <P className="text-foreground font-medium">
+              <p className="font-sans text-sm text-muted-foreground">
+                Output tokens
+              </p>
+              <p className="font-medium text-foreground">
                 {formatTokens(usage.total.completion_tokens)}
-              </P>
+              </p>
             </div>
-          </div>
+          </CardContent>
         </Card>
       )}
 
@@ -99,48 +103,63 @@ export default function UsagePage() {
           return (
             <Card key={m.model_id}>
               <CardHeader>
-                <P className="font-medium text-foreground">{name}</P>
+                <CardTitle className="text-base">{name}</CardTitle>
+                <CardDescription>{m.model_id}</CardDescription>
               </CardHeader>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-5">
                 <div>
-                  <P className="text-sm">Cost</P>
-                  <P className="text-foreground font-medium">
+                  <p className="font-sans text-sm text-muted-foreground">
+                    Cost
+                  </p>
+                  <p className="font-medium text-foreground">
                     {formatCost(m.total_cost)}
-                  </P>
+                  </p>
                 </div>
                 <div>
-                  <P className="text-sm">Messages</P>
-                  <P className="text-foreground font-medium">
+                  <p className="font-sans text-sm text-muted-foreground">
+                    Messages
+                  </p>
+                  <p className="font-medium text-foreground">
                     {m.invocations.toLocaleString()}
-                  </P>
+                  </p>
                 </div>
                 <div>
-                  <P className="text-sm">Cost/message</P>
-                  <P className="text-foreground font-medium">
+                  <p className="font-sans text-sm text-muted-foreground">
+                    Cost/message
+                  </p>
+                  <p className="font-medium text-foreground">
                     {formatCost(m.cost_per_message)}
-                  </P>
+                  </p>
                 </div>
                 <div>
-                  <P className="text-sm">Input tokens</P>
-                  <P className="text-foreground font-medium">
+                  <p className="font-sans text-sm text-muted-foreground">
+                    Input tokens
+                  </p>
+                  <p className="font-medium text-foreground">
                     {formatTokens(
                       m.uncached_input_tokens + m.cached_input_tokens,
                     )}
-                  </P>
+                  </p>
                 </div>
                 <div>
-                  <P className="text-sm">Output tokens</P>
-                  <P className="text-foreground font-medium">
+                  <p className="font-sans text-sm text-muted-foreground">
+                    Output tokens
+                  </p>
+                  <p className="font-medium text-foreground">
                     {formatTokens(m.output_tokens)}
-                  </P>
+                  </p>
                 </div>
-              </div>
+              </CardContent>
             </Card>
           );
         })}
         {usage && usage.models.length === 0 && (
           <Card>
-            <P>No LLM invocations yet.</P>
+            <CardContent>
+              <p className="font-sans text-muted-foreground">
+                No LLM invocations yet.
+              </p>
+            </CardContent>
           </Card>
         )}
       </div>

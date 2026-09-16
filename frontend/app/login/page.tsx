@@ -2,8 +2,16 @@
 
 import { useActionState } from "react";
 import { Logo } from "@/app/components/logo";
-import { H1, P } from "@/app/components/typography";
-import { Button } from "@/app/components/button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { login, type LoginState } from "./actions";
 
 const initialState: LoginState = { error: null };
@@ -12,61 +20,63 @@ export default function LoginPage() {
   const [state, formAction, isPending] = useActionState(login, initialState);
 
   return (
-    <div className="mx-auto max-w-5xl font-sans md:p-12 p-6 grid content-center gap-16 min-h-screen">
-      <section className="flex flex-col gap-8 items-center text-center">
+    <div className="mx-auto grid min-h-screen max-w-5xl content-center gap-16 p-6 font-sans md:p-12">
+      <section className="flex flex-col items-center gap-8 text-center">
         <Logo />
-        <div className="flex flex-col gap-2 items-center">
-          <H1>Welcome back.</H1>
-          <P className="text-muted-foreground">Sign in to continue to Mio.</P>
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="font-sans text-4xl font-medium tracking-tight md:text-6xl">
+            Welcome back.
+          </h1>
+          <p className="font-sans text-muted-foreground">
+            Sign in to continue to Mio.
+          </p>
         </div>
 
-        <form
-          action={formAction}
-          className="flex flex-col gap-4 w-full max-w-sm"
-        >
-          <div className="flex flex-col gap-1 text-left">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              placeholder="you@example.com"
-              className="rounded-xl border border-border bg-background-alt px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground"
-            />
-          </div>
+        <Card className="w-full max-w-sm text-left">
+          <CardHeader>
+            <CardTitle>Sign in</CardTitle>
+            <CardDescription>
+              Enter your credentials to access your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={formAction} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  placeholder="you@example.com"
+                />
+              </div>
 
-          <div className="flex flex-col gap-1 text-left">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              placeholder="••••••••"
-              className="rounded-xl border border-border bg-background-alt px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 placeholder:text-muted-foreground"
-            />
-          </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="••••••••"
+                />
+              </div>
 
-          {state.error && (
-            <P className="text-sm text-red-500 text-left">{state.error}</P>
-          )}
+              {state.error && (
+                <p className="text-left text-sm text-destructive">
+                  {state.error}
+                </p>
+              )}
 
-          <Button
-            type="submit"
-            variant={"default"}
-            disabled={isPending}
-            className="w-full justify-center mt-2"
-          >
-            {isPending ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
+              <Button type="submit" disabled={isPending} className="w-full">
+                {isPending ? "Signing in…" : "Sign in"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

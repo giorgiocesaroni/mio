@@ -8,24 +8,26 @@ export function MessageContent({ text }: { text: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        p: ({ children }) => <p className="my-2 font-serif">{children}</p>,
+        p: ({ children }) => (
+          <p className="my-2 font-sans break-words">{children}</p>
+        ),
         h1: ({ children }) => (
-          <h1 className="my-2 font-semibold font-serif">{children}</h1>
+          <h1 className="my-2 font-semibold font-sans">{children}</h1>
         ),
         h2: ({ children }) => (
-          <h2 className="my-2 font-semibold font-serif">{children}</h2>
+          <h2 className="my-2 font-semibold font-sans">{children}</h2>
         ),
         h3: ({ children }) => (
-          <h3 className="my-2 font-semibold font-serif">{children}</h3>
+          <h3 className="my-2 font-semibold font-sans">{children}</h3>
         ),
-        ul: ({ children }) => <ul className=" font-serif">{children}</ul>,
+        ul: ({ children }) => <ul className=" font-sans">{children}</ul>,
         li: ({ children }) => (
-          <li className="ml-4 list-disc font-serif">{children}</li>
+          <li className="ml-4 list-disc font-sans break-words">{children}</li>
         ),
         strong: ({ children }) => (
           <strong className="font-bold">{children}</strong>
         ),
-        ol: ({ children }) => <ol className="font-serif">{children}</ol>,
+        ol: ({ children }) => <ol className="font-sans">{children}</ol>,
         hr: () => <hr className="opacity-25 my-3" />,
         code: ({ className, children, ...props }) => {
           return (

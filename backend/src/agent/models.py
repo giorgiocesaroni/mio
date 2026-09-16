@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_serializer, validator
 
 
 class AgentInput(BaseModel):
-    conversation_id: UUID
+    conversation_id: Optional[UUID] = None
     user_id: str
     system_prompt: str
     contents: list[dict]
@@ -80,6 +80,17 @@ class RunAgentInput(BaseModel):
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
         return str(conversation_id)
+
+
+QuickLogMode = Literal["log", "edit"]
+
+
+class QuickLogInput(BaseModel):
+    user_id: str
+    message: MessageType
+    mode: QuickLogMode = "log"
+    day: Optional[str] = None  # YYYY-MM-DD in the user's timezone; defaults to today
+    model: Optional[str] = None
 
 
 # ── Ingredient ────────────────────────────────────────────────────────────────

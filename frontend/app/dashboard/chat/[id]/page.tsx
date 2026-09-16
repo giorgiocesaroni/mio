@@ -1,11 +1,10 @@
 "use client";
 
-import { Card } from "@/app/components/card";
 import {
   ChatEditor,
   type PendingAttachment,
 } from "@/app/components/chat-editor";
-import { H1, P } from "@/app/components/typography";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
   type RunAgentStep,
@@ -20,6 +19,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
 import { MessageContent } from "../components/message-content";
+import { PageTitle } from "@/app/dashboard/components/page-title";
 import { useChatLoading } from "../layout";
 
 function getGreeting() {
@@ -31,12 +31,15 @@ function getGreeting() {
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
-    if (step.data?.startsWith("data:image/") || step.mime_type?.startsWith("image/")) {
+    if (
+      step.data?.startsWith("data:image/") ||
+      step.mime_type?.startsWith("image/")
+    ) {
       return (
         <img
           src={step.data}
           alt="User image"
-          className="ml-8 justify-self-end max-w-24 max-h-24 object-cover rounded-lg"
+          className="max-h-24 max-w-24 justify-self-end rounded-lg object-cover"
         />
       );
     }
@@ -45,44 +48,50 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
         <audio
           controls
           src={step.data}
-          className="ml-8 justify-self-end min-w-32 max-w-full"
+          className="ml-8 min-w-32 max-w-full justify-self-end"
         />
       );
     }
-    return <Card className={`ml-8 justify-self-end px-4 py-2`}>{step.text}</Card>;
+    return (
+      <div className="ml-8 justify-self-end rounded-xl bg-muted px-4 py-2 text-base break-words">
+        {step.text}
+      </div>
+    );
   }
   if (step.type === "tool_call") {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <Cog className="size-4" /> <P className="font-serif">{step.name}</P>
+        <Cog className="size-4" /> <p className="font-sans">{step.name}</p>
       </div>
     );
   }
   if (step.type === "tool_call_start") {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+      <div className="flex animate-pulse items-center gap-2 text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />{" "}
-        <P className="font-serif">{step.name}...</P>
+        <p className="font-sans">{step.name}...</p>
       </div>
     );
   }
   if (step.type === "content_token") {
     return (
-      <div className="overflow-auto">
+      <div className="min-w-0">
         <MessageContent text={step.token} />
       </div>
     );
   }
   if (step.type === "error") {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-red-500/50 bg-red-500/10 p-3 text-red-700">
-        <AlertCircle className="size-4 mt-0.5 shrink-0" />
-        <P className="font-serif break-words whitespace-pre-wrap">{step.text}</P>
-      </div>
+      <Alert variant="destructive">
+        <AlertCircle />
+        <AlertDescription className="break-words whitespace-pre-wrap">
+          {step.text}
+        </AlertDescription>
+      </Alert>
     );
   }
   return (
-    <div className="overflow-auto">
+    <div className="min-w-0">
       <MessageContent text={step.text} />
     </div>
   );
@@ -122,7 +131,8 @@ export default function Home() {
       ? model
       : (modelsData?.default ?? undefined);
 
-  const handleModelChange = (value: string) => {
+  const handleModelChange = (value: string | null) => {
+    if (!value) return;
     setModel(value);
     window.localStorage.setItem("model", value);
   };
@@ -325,18 +335,21 @@ export default function Home() {
   }, [stopRecording]);
 
   return (
-    <div className="flex flex-col flex-1">
+    <div className="flex flex-1 flex-col">
+      <div className="md:hidden">
+        <PageTitle />
+      </div>
       <div
-        className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid gap-4 p-4 content-start"}`}
+        className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid content-start gap-4"}`}
       >
         {steps.length === 0 && (
-          <H1 className="md:text-2xl text-2xl text-muted-foreground">
+          <h1 className="text-2xl text-muted-foreground md:text-2xl">
             {isFetchingHistory
               ? "Loading..."
               : historyData
                 ? null
                 : getGreeting()}
-          </H1>
+          </h1>
         )}
         {steps.map((step, i) => (
           <StepDisplay key={i} step={step} />
@@ -345,16 +358,14 @@ export default function Home() {
           <div
             ref={bottomRef}
             className={
-              "flex transition-colors duration-200 size-4 rounded-full" +
-              (isLoading
-                ? " bg-red-500 animate-pulse"
-                : " bg-border animate-none")
+              "flex size-4 rounded-full transition-colors duration-200" +
+              (isLoading ? " animate-pulse bg-red-500" : " animate-none bg-border")
             }
           ></div>
         )}
       </div>
 
-      <div className="p-4 sticky bottom-0">
+      <div className="sticky bottom-0 py-4">
         <ChatEditor
           disabled={isLoading || (!isNew && isFetchingHistory)}
           text={input}
@@ -370,7 +381,7 @@ export default function Home() {
           }
           modelSelector={
             modelsData ? (
-              <span className="relative inline-block mx-2">
+              <span className="relative mx-2 inline-block">
                 <span className="invisible text-sm whitespace-nowrap">
                   {modelsData.models.find((m) => m.id === resolvedModel)
                     ?.name ?? ""}
@@ -379,7 +390,7 @@ export default function Home() {
                   aria-label="Model"
                   value={resolvedModel ?? ""}
                   onChange={(e) => handleModelChange(e.target.value)}
-                  className="absolute inset-0 appearance-none bg-transparent text-sm text-muted-foreground outline-none cursor-pointer"
+                  className="absolute inset-0 cursor-pointer appearance-none bg-transparent text-sm text-muted-foreground outline-none"
                 >
                   {modelsData.models.map((m) => (
                     <option key={m.id} value={m.id}>

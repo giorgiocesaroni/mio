@@ -1,7 +1,14 @@
+import { cn } from "@/lib/utils";
+
 export function Logo({ className }: { className?: string }) {
   return (
-    <div className="border rounded-2xl aspect-square md:size-18 size-14 flex items-center justify-center bg-red-500 text-background-alt">
-      <p className="md:text-5xl text-4xl font-serif">m</p>
+    <div
+      className={cn(
+        "flex aspect-square size-14 items-center justify-center rounded-2xl border bg-red-500 text-white md:size-18",
+        className,
+      )}
+    >
+      <p className="font-sans text-4xl md:text-5xl">m</p>
     </div>
   );
 }

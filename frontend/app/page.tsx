@@ -1,29 +1,30 @@
 "use client";
 
 import { Brain, Code, Globe, Heart, Key } from "lucide-react";
-import { H1, P } from "./components/typography";
 import { Logo } from "./components/logo";
 import {
   Card,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./components/card";
+} from "@/components/ui/card";
 import { ChatChip, ChatEditor } from "./components/chat-editor";
 import { useState } from "react";
 
 export default function Home() {
   const [text, setText] = useState("");
   return (
-    <div className="mx-auto max-w-5xl font-sans md:p-12 p-6 grid content-center gap-16 min-h-screen">
-      <section className="flex flex-col gap-8 items-center text-center">
+    <div className="mx-auto grid min-h-screen max-w-5xl content-center gap-16 p-6 font-sans md:p-12">
+      <section className="flex flex-col items-center gap-8 text-center">
         <Logo className="bg-red-500" />
-        <H1>Effortless food tracking.</H1>
-        <P className="max-w-lg md:text-lg">
+        <h1 className="font-sans text-4xl font-medium tracking-tight md:text-6xl">
+          Effortless food tracking.
+        </h1>
+        <p className="max-w-lg font-sans text-muted-foreground md:text-lg">
           With Mio, you can easily track your food intake with voice, text, and
           images. The agent handles searching, refining, and logging foods for
           you. Powered by MiMo, open source, BYOK.
-        </P>
+        </p>
         <ChatEditor
           className="max-w-lg shadow-xl"
           text={text}
@@ -34,52 +35,53 @@ export default function Home() {
             setText("");
           }}
         >
-          <ChatChip className="hidden sm:flex">
-            <Brain className="size-4 text-blue-500 shrink-0" />
+          <ChatChip className="hidden sm:inline-flex">
+            <Brain className="size-4 shrink-0 text-blue-500" />
             <span className="truncate">MiMo v2.5</span>
           </ChatChip>
           <ChatChip>
-            <Globe className="size-4 text-blue-500 shrink-0" />
+            <Globe className="size-4 shrink-0 text-blue-500" />
             <span className="truncate">Search</span>
           </ChatChip>
         </ChatEditor>
       </section>
 
-      <section className="grid md:grid-cols-3 gap-6">
+      <section className="grid gap-6 md:grid-cols-3">
         <Card>
           <CardHeader>
             <Brain className="size-4 text-muted-foreground" />
             <CardTitle>Powered by MiMo</CardTitle>
+            <CardDescription>
+              MiMo&apos;s intelligence handles the heavy lifting of nutrition
+              tracking.
+            </CardDescription>
           </CardHeader>
-          <CardDescription>
-            MiMo's intelligence handles the heavy lifting of nutrition tracking.
-          </CardDescription>
         </Card>
         <Card>
           <CardHeader>
             <Code className="size-4 text-muted-foreground" />
             <CardTitle>Open source</CardTitle>
+            <CardDescription>
+              The code is accessible on GitHub. The product is free, forever.
+            </CardDescription>
           </CardHeader>
-          <CardDescription>
-            The code is accessible on GitHub. The product is free, forever.
-          </CardDescription>
         </Card>
         <Card>
           <CardHeader>
             <Key className="size-4 text-muted-foreground" />
             <CardTitle>BYOK</CardTitle>
+            <CardDescription>
+              Bring your own MiMo API key to start. Cheap and intelligent.
+            </CardDescription>
           </CardHeader>
-          <CardDescription>
-            Bring your own MiMo API key to start. Cheap and intelligent.
-          </CardDescription>
         </Card>
       </section>
       <section>
         <a href="https://www.giorgiocesaroni.com" target="_blank">
-          <P className="text-sm flex items-center gap-1 justify-center">
-            Crafted with <Heart className="size-4 stroke-0 fill-red-500" /> by
+          <p className="flex items-center justify-center gap-1 font-sans text-sm text-muted-foreground">
+            Crafted with <Heart className="size-4 fill-red-500 stroke-0" /> by
             Giorgio
-          </P>
+          </p>
         </a>
       </section>
     </div>

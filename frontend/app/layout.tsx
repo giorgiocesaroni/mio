@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Merriweather } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "@/app/globals.css";
 import Providers from "./providers";
 
@@ -13,10 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const merriweather = Merriweather({
-  variable: "--font-merriweather-serif",
-  subsets: ["latin"],
-});
+
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -39,7 +36,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${merriweather.variable} antialiased min-w-97.5 bg-background`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-w-97.5 bg-background`}
       >
         <Providers>{children}</Providers>
       </body>
