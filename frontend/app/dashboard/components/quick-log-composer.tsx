@@ -12,26 +12,42 @@ import {
 } from "@/repository/backend/queries";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Status =
-  | { kind: "idle" }
-  | { kind: "working" }
-  | { kind: "done"; text: string }
+type Toast =
+  | { kind: "working"; text: string }
+  | { kind: "success"; text: string }
   | { kind: "error"; text: string };
 
 export function QuickLogComposer() {
   const [input, setInput] = useState("");
-  const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [isSent, setIsSent] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const abortRef = useRef<AbortController | null>(null);
+  const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRef = useRef<{ message?: string; error?: string }>({});
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+    },
+    [],
+  );
 
-  const isWorking = status.kind === "working";
+  const isWorking = toast?.kind === "working";
+
+  const handleTextChange = (value: string) => {
+    setInput(value);
+    if (isSent) {
+      setIsSent(false);
+      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+    }
+    if (toast?.kind !== "working") setToast(null);
+  };
 
   const handleTextSubmit = async (str: string) => {
     if (
@@ -51,7 +67,7 @@ export function QuickLogComposer() {
 
     const text = str.trim();
     const attachments = pendingAttachments;
-    setStatus({ kind: "working" });
+    setToast({ kind: "working", text: "Logging…" });
     resultRef.current = {};
     const controller = new AbortController();
     abortRef.current = controller;
@@ -79,19 +95,22 @@ export function QuickLogComposer() {
       );
       const { message, error } = resultRef.current;
       if (error) {
-        setStatus({ kind: "error", text: error });
+        setToast({ kind: "error", text: error });
       } else {
         setInput("");
         setPendingAttachments([]);
-        setStatus({ kind: "done", text: message ?? "Done." });
+        setToast({ kind: "success", text: message ?? "Done." });
+        setIsSent(true);
+        if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
+        sentTimeoutRef.current = setTimeout(() => setIsSent(false), 10000);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setStatus({ kind: "idle" });
+        setToast(null);
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
-      setStatus({ kind: "error", text: message });
+      setToast({ kind: "error", text: message });
     } finally {
       abortRef.current = null;
     }
@@ -146,12 +165,13 @@ export function QuickLogComposer() {
         disabled={isWorking || isTranscribing}
         isSending={isWorking}
         text={input}
-        onTextChange={setInput}
+        onTextChange={handleTextChange}
         onSend={handleTextSubmit}
         onRecordingStart={startRecording}
         onRecordingStop={handleRecordingStop}
         isRecording={isRecording}
         isTranscribing={isTranscribing}
+        isSent={isSent}
         onImageSelect={handleImageSelect}
         pendingAttachments={pendingAttachments}
         onRemoveAttachment={(i) =>
@@ -159,18 +179,14 @@ export function QuickLogComposer() {
         }
         placeholder="What did you eat? Or fix today's logs…"
       />
-      {status.kind !== "idle" && (
+      {toast && (
         <div
           aria-live="polite"
-          className="justify-self-end rounded-xl bg-muted px-4 py-2 text-base break-words"
+          className="fixed right-6 bottom-6 z-50 max-w-sm rounded-xl bg-muted px-4 py-3 text-sm shadow-lg ring-1 ring-foreground/10 break-words"
         >
-          {status.kind === "working" && (
-            <span className="text-muted-foreground">Logging…</span>
-          )}
-          {status.kind === "done" && status.text}
-          {status.kind === "error" && (
-            <span className="text-destructive">{status.text}</span>
-          )}
+          <span className={toast.kind === "error" ? "text-destructive" : undefined}>
+            {toast.text}
+          </span>
         </div>
       )}
     </div>
