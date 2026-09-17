@@ -88,20 +88,28 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
               <ReferenceLine
                 y={average}
                 stroke="#ef4444"
-                strokeWidth={2.5}
+                strokeWidth={2}
                 strokeLinecap="round"
-                label={{
-                  value: `${formatAverageValue(average, dataKey)} ${unit}`,
-                  position: "insideTopLeft",
-                  fill: "#ef4444",
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 12,
-                  fontWeight: 600,
+                label={({ viewBox }) => {
+                  const { x, y } = viewBox as { x?: number; y?: number };
+                  return (
+                    <text
+                      x={x ?? 0}
+                      y={(y ?? 0) - 6}
+                      fill="#ef4444"
+                      fontFamily="var(--font-sans)"
+                      fontSize={12}
+                      fontWeight={600}
+                      textAnchor="start"
+                    >
+                      {`${formatAverageValue(average, dataKey)} ${unit}`}
+                    </text>
+                  );
                 }}
               />
               <Bar
                 dataKey={dataKey}
-                fill="var(--color-muted)"
+                fill="var(--color-border)"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>
