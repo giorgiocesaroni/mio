@@ -22,6 +22,7 @@ import {
   getTotalLlmCost,
 } from "@/repository/supabase/queries";
 import {
+  ChartNoAxesCombined,
   LayoutDashboard,
   MessageCircle,
   PanelLeftIcon,
@@ -77,6 +78,16 @@ export function AppSidebar() {
                 >
                   <MessageCircle />
                   <span>Chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={<Link href="/dashboard/trends" />}
+                  isActive={pathname === "/dashboard/trends"}
+                  onClick={closeMobile}
+                >
+                  <ChartNoAxesCombined />
+                  <span>Trends</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
