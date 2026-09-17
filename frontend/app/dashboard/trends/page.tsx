@@ -60,13 +60,23 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
       <CardContent>
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -24 }}>
+            <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} width={40} />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => Math.round(Number(value)).toLocaleString()}
+                allowDecimals={false}
+                width={52}
+              />
               <Tooltip
                 contentStyle={{ borderRadius: 12, border: "none", fontSize: 12 }}
-                formatter={(value) => [`${value} ${unit}`, config.label]}
+                formatter={(value) => [
+                  `${Math.round(Number(value)).toLocaleString()} ${unit}`,
+                  config.label,
+                ]}
               />
               <Line
                 type="monotone"
@@ -97,10 +107,10 @@ export default function TrendsPage() {
     const row = macros?.find((macro) => macro.day?.slice(0, 10) === key);
     return {
       label,
-      calories: Number(row?.total_calories_kcal ?? 0),
-      protein: Number(row?.total_protein_g ?? 0),
-      carbs: Number(row?.total_carbs_g ?? 0),
-      fat: Number(row?.total_fat_g ?? 0),
+      calories: Math.round(Number(row?.total_calories_kcal ?? 0)),
+      protein: Math.round(Number(row?.total_protein_g ?? 0)),
+      carbs: Math.round(Number(row?.total_carbs_g ?? 0)),
+      fat: Math.round(Number(row?.total_fat_g ?? 0)),
     };
   });
 
