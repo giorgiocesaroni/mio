@@ -7,11 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getDailyMacrosTrend } from "@/repository/supabase/queries";
+import { PageTitle } from "@/app/dashboard/components/page-title";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -61,11 +63,8 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader>
         <CardTitle>{title}</CardTitle>
-        <span className="text-sm text-muted-foreground">
-          Avg {formatAxisValue(average)} {unit}
-        </span>
       </CardHeader>
       <CardContent>
         <div className="h-48 w-full">
@@ -80,7 +79,23 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
                   config.label,
                 ]}
               />
-              <Bar dataKey={dataKey} fill={config.color} radius={[4, 4, 0, 0]} />
+              <ReferenceLine
+                y={average}
+                stroke="#ef4444"
+                strokeDasharray="4 4"
+                label={{
+                  value: `${formatAxisValue(average)} ${unit}`,
+                  position: "insideTopLeft",
+                  fill: "#ef4444",
+                  fontSize: 12,
+                  fontWeight: 500,
+                }}
+              />
+              <Bar
+                dataKey={dataKey}
+                fill="hsl(var(--muted-foreground) / 0.35)"
+                radius={[4, 4, 0, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -110,8 +125,8 @@ export default function TrendsPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold">Trends</h1>
+      <div className="grid gap-1">
+        <PageTitle>Trends</PageTitle>
         <p className="text-sm text-muted-foreground">Your nutrition over the last 7 days.</p>
       </div>
       {isLoading ? (
