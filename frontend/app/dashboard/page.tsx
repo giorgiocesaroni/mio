@@ -34,7 +34,7 @@ function DayPicker({
   const today = days[days.length - 1].key;
 
   return (
-    <div className="grid grid-cols-7 gap-4">
+    <div className="grid grid-cols-7 gap-2">
       {days.map(({ date, key }) => {
         const isToday = key === today;
         return (
