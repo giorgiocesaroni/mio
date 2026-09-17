@@ -30,6 +30,12 @@ function formatAxisValue(value: number): string {
   return Math.round(value).toString();
 }
 
+function formatAverageValue(value: number, dataKey: keyof typeof chartConfig): string {
+  return dataKey === "calories"
+    ? Math.round(value).toLocaleString()
+    : formatAxisValue(value);
+}
+
 function getLastSevenDays() {
   const today = new Date();
   return Array.from({ length: 7 }, (_, index) => {
@@ -85,7 +91,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
                 strokeWidth={2.5}
                 strokeLinecap="round"
                 label={{
-                  value: `${formatAxisValue(average)} ${unit}`,
+                  value: `${formatAverageValue(average, dataKey)} ${unit}`,
                   position: "insideTopLeft",
                   fill: "#ef4444",
                   fontSize: 12,
@@ -94,7 +100,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
               />
               <Bar
                 dataKey={dataKey}
-                fill="hsl(var(--muted-foreground) / 0.35)"
+                fill="#a1a1aa"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>
