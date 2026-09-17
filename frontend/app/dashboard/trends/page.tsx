@@ -9,13 +9,12 @@ import {
 import { getDailyMacrosTrend } from "@/repository/supabase/queries";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
 } from "recharts";
 
 function dayKey(date: Date): string {
@@ -58,25 +57,22 @@ type TrendCardProps = {
 
 function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
   const config = chartConfig[dataKey];
+  const average = data.reduce((sum, point) => sum + Number(point[dataKey]), 0) / data.length;
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>{title}</CardTitle>
+        <span className="text-sm text-muted-foreground">
+          Avg {formatAxisValue(average)} {unit}
+        </span>
       </CardHeader>
       <CardContent>
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
+            <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => formatAxisValue(Number(value))}
-                width="auto"
-              />
               <Tooltip
                 contentStyle={{ borderRadius: 12, border: "none", fontSize: 12 }}
                 formatter={(value) => [
@@ -84,16 +80,8 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
                   config.label,
                 ]}
               />
-              <Line
-                type="monotone"
-                dataKey={dataKey}
-                stroke={config.color}
-                strokeWidth={2.5}
-                dot={{ r: 3, fill: config.color, strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
-                connectNulls
-              />
-            </LineChart>
+              <Bar dataKey={dataKey} fill={config.color} radius={[4, 4, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </CardContent>
