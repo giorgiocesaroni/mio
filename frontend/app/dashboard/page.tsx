@@ -225,7 +225,7 @@ function amountOf(log: FoodLog): string {
         : log.log_serving_size_label
     }`;
   }
-  return `${log.log_quantity_g} g`;
+  return `${Math.round(log.log_quantity_g ?? 0)} g`;
 }
 
 function FoodBadges({ amount, macros }: { amount?: string; macros: Macros }) {
@@ -304,11 +304,11 @@ function IngredientLogCard({ log }: { log: FoodLog }) {
   return (
     <Card>
       <CardContent className="grid gap-2">
-        <div className="flex items-center justify-between gap-4 overflow-auto">
-          <p className="truncate font-medium text-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
+          <p className="min-w-0 truncate font-medium text-foreground">
             {log.food_name}
           </p>
-          <p className="whitespace-nowrap text-muted-foreground">
+          <p className="shrink-0 whitespace-nowrap text-muted-foreground">
             {getElapsedTime(timestamp)}
           </p>
         </div>
@@ -335,15 +335,14 @@ function RecipeLogCard({
       className="cursor-pointer hover:bg-muted/30"
     >
       <CardContent className="grid gap-2">
-        <div className="flex items-center justify-between gap-4 overflow-auto">
-          <p className="truncate font-medium text-foreground">
-            {block.recipeName}
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              (recipe)
+        <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
+          <p className="min-w-0 truncate font-medium text-foreground">
+            <span className="mr-2 rounded-md bg-muted px-2 py-1 text-xs font-normal text-muted-foreground">
+              Recipe
             </span>
+            {block.recipeName}
           </p>
-          <p className="whitespace-nowrap text-muted-foreground">
+          <p className="shrink-0 whitespace-nowrap text-muted-foreground">
             {getElapsedTime(timestamp)}
           </p>
         </div>
