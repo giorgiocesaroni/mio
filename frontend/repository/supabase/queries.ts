@@ -6,8 +6,7 @@ export const supabase = createClient<Database>();
 export const getDailyMacrosView = async () => {
   const { data, error } = await supabase
     .from("v_daily_macros")
-    .select("*")
-    .maybeSingle();
+    .select("*");
   if (error) throw error;
   return data;
 };
