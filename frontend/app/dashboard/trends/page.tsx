@@ -44,7 +44,7 @@ function getLastSevenDays() {
     date.setDate(today.getDate() - 6 + index);
     return {
       key: dayKey(date),
-      label: date.toLocaleDateString(undefined, { weekday: "short" }),
+      label: date.toLocaleDateString(undefined, { weekday: "narrow" }),
     };
   });
 }
@@ -75,7 +75,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
       <CardContent>
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
               <Tooltip
@@ -88,7 +88,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
               <ReferenceLine
                 y={average}
                 stroke="#ef4444"
-                strokeWidth={2}
+                strokeWidth={2.5}
                 strokeLinecap="round"
                 label={({ viewBox }) => {
                   const { x, y } = viewBox as { x?: number; y?: number };
