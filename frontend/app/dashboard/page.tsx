@@ -44,10 +44,12 @@ function DayPicker({
             aria-pressed={selectedDay === key}
             onClick={() => onSelect(key)}
             className={cn(
-              "grid gap-1 rounded-xl py-2 text-center text-sm transition-colors",
+              "grid gap-1 rounded-xl border py-2 text-center text-sm transition-colors",
               isToday
-                ? "bg-red-500 text-white hover:bg-red-600"
-                : "text-foreground hover:bg-muted",
+                ? selectedDay === key
+                  ? "border-red-500 bg-red-500 text-white hover:bg-red-600"
+                  : "border-red-500 text-red-500 hover:bg-red-50"
+                : "border-border text-foreground hover:bg-muted",
               selectedDay === key && !isToday && "bg-muted",
             )}
           >
@@ -57,7 +59,11 @@ function DayPicker({
             <span
               className={cn(
                 "text-sm",
-                isToday ? "text-white/80" : "text-muted-foreground",
+                isToday
+                  ? selectedDay === key
+                    ? "text-white/80"
+                    : "text-red-500"
+                  : "text-muted-foreground",
               )}
             >
               {date.toLocaleDateString(undefined, { weekday: "narrow" })}
