@@ -82,7 +82,8 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
               <ReferenceLine
                 y={average}
                 stroke="#ef4444"
-                strokeDasharray="4 4"
+                strokeWidth={2.5}
+                strokeLinecap="round"
                 label={{
                   value: `${formatAxisValue(average)} ${unit}`,
                   position: "insideTopLeft",
