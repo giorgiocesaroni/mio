@@ -8,6 +8,66 @@ import {
 import { Database } from "@/repository/supabase/types";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+
+function dayKey(date: Date): string {
+  return date.toLocaleDateString("en-CA");
+}
+
+function getRecentDays() {
+  const today = new Date();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(today.getDate() - 6 + index);
+    return { date, key: dayKey(date) };
+  });
+}
+
+function DayPicker({
+  selectedDay,
+  onSelect,
+}: {
+  selectedDay: string;
+  onSelect: (day: string) => void;
+}) {
+  const days = getRecentDays();
+  const today = days[days.length - 1].key;
+
+  return (
+    <div className="grid grid-cols-7 gap-2">
+      {days.map(({ date, key }) => {
+        const isToday = key === today;
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={selectedDay === key}
+            onClick={() => onSelect(key)}
+            className={cn(
+              "grid gap-1 rounded-xl py-2 text-center text-sm transition-colors",
+              isToday
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "text-foreground hover:bg-muted",
+              selectedDay === key && !isToday && "bg-muted",
+            )}
+          >
+            <span className="font-heading text-base leading-snug font-medium">
+              {date.getDate()}
+            </span>
+            <span
+              className={cn(
+                "text-sm",
+                isToday ? "text-white/80" : "text-muted-foreground",
+              )}
+            >
+              {date.toLocaleDateString(undefined, { weekday: "short" })}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 import {
   Card,
   CardContent,
@@ -85,13 +145,14 @@ function MacroBadge({
   );
 }
 
-function DailyMacros() {
+function DailyMacros({ day }: { day: string }) {
   const [showDifference, setShowDifference] = useState(false);
 
-  const { data: macros } = useQuery({
+  const { data: macrosByDay } = useQuery({
     queryKey: ["getDailyMacrosView"],
     queryFn: getDailyMacrosView,
   });
+  const macros = macrosByDay?.find((row) => row.day?.slice(0, 10) === day);
 
   const { data: goal } = useQuery({
     queryKey: ["getCurrentGoal"],
@@ -313,11 +374,14 @@ function RecipeLogCard({
   );
 }
 
-function DailyFoodLogsWithFoods() {
-  const { data: dailyFoodLogsView } = useQuery({
+function DailyFoodLogsWithFoods({ day }: { day: string }) {
+  const { data: logsByDay } = useQuery({
     queryKey: ["getDailyFoodLogsWithFoodsView"],
     queryFn: getDailyFoodLogsWithFoodsView,
   });
+  const dailyFoodLogsView = logsByDay?.filter(
+    (log) => log.day?.slice(0, 10) === day,
+  );
 
   const blocks = buildBlocks(dailyFoodLogsView ?? []);
 
@@ -338,12 +402,15 @@ function DailyFoodLogsWithFoods() {
 }
 
 export default function DashboardPage() {
+  const [selectedDay, setSelectedDay] = useState(dayKey(new Date()));
+
   return (
     <div className="grid gap-12">
-      <PageTitle>Today</PageTitle>
-      <DailyMacros />
-      <QuickLogComposer />
-      <DailyFoodLogsWithFoods />
+      <PageTitle>Mio</PageTitle>
+      <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
+      <DailyMacros day={selectedDay} />
+      <QuickLogComposer day={selectedDay} />
+      <DailyFoodLogsWithFoods day={selectedDay} />
     </div>
   );
 }

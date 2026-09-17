@@ -13,7 +13,7 @@ import {
 import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export function QuickLogComposer() {
+export function QuickLogComposer({ day }: { day: string }) {
   const [input, setInput] = useState("");
   const [isWorking, setIsWorking] = useState(false);
   const [isSent, setIsSent] = useState(false);
@@ -55,9 +55,6 @@ export function QuickLogComposer() {
       typeof window !== "undefined"
         ? (window.localStorage.getItem("model") ?? undefined)
         : undefined;
-    // Local YYYY-MM-DD so edits scope to the day the user is looking at.
-    const day = new Date().toLocaleDateString("en-CA");
-
     const text = str.trim();
     const attachments = pendingAttachments;
     setIsWorking(true);
