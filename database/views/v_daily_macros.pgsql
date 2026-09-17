@@ -8,7 +8,7 @@ with profile as (
   limit 1
 )
 select
-  date_trunc('day'::text, now() at time zone coalesce((select timezone from profile), 'UTC')) as day,
+  date_trunc('day'::text, coalesce(l.log_for, l.created_at) at time zone coalesce((select timezone from profile), 'UTC')) as day,
   coalesce(sum((i.protein_g * coalesce(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) as total_protein_g,
   coalesce(sum((i.carbs_g * coalesce(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) as total_carbs_g,
   coalesce(sum((i.fat_g * coalesce(ss.grams * l.quantity, l.quantity_g))::numeric / 100.0), 0) as total_fat_g,
