@@ -60,7 +60,7 @@ function DayPicker({
                 isToday ? "text-white/80" : "text-muted-foreground",
               )}
             >
-              {date.toLocaleDateString(undefined, { weekday: "short" })}
+              {date.toLocaleDateString(undefined, { weekday: "narrow" })}
             </span>
           </button>
         );
