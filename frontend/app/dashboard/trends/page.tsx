@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getDailyMacrosTrend } from "@/repository/supabase/queries";
+import { PageTitle } from "@/app/dashboard/components/page-title";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -110,8 +111,8 @@ export default function TrendsPage() {
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold">Trends</h1>
+      <div className="grid gap-1">
+        <PageTitle>Trends</PageTitle>
         <p className="text-sm text-muted-foreground">Your nutrition over the last 7 days.</p>
       </div>
       {isLoading ? (
