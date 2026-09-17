@@ -19,6 +19,16 @@ export const getDailyMacrosView = async (day: string) => {
   return data?.[0] ?? null;
 };
 
+export const getDailyMacrosTrend = async (startDay: string) => {
+  const { data, error } = await supabase
+    .from("v_daily_macros")
+    .select("*")
+    .gte("day", startDay)
+    .order("day", { ascending: true });
+  if (error) throw error;
+  return data;
+};
+
 export const getDailyFoodLogsWithFoodsView = async (day: string) => {
   const { data, error } = await supabase
     .from("v_daily_food_logs_with_foods")
