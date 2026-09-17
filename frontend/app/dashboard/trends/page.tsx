@@ -94,13 +94,14 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
                   value: `${formatAverageValue(average, dataKey)} ${unit}`,
                   position: "insideTopLeft",
                   fill: "#ef4444",
+                  fontFamily: "var(--font-sans)",
                   fontSize: 12,
-                  fontWeight: 500,
+                  fontWeight: 600,
                 }}
               />
               <Bar
                 dataKey={dataKey}
-                fill="#a1a1aa"
+                fill="var(--color-muted)"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>
