@@ -148,11 +148,10 @@ function MacroBadge({
 function DailyMacros({ day }: { day: string }) {
   const [showDifference, setShowDifference] = useState(false);
 
-  const { data: macrosByDay } = useQuery({
-    queryKey: ["getDailyMacrosView"],
-    queryFn: getDailyMacrosView,
+  const { data: macros } = useQuery({
+    queryKey: ["getDailyMacrosView", day],
+    queryFn: () => getDailyMacrosView(day),
   });
-  const macros = macrosByDay?.find((row) => row.day?.slice(0, 10) === day);
 
   const { data: goal } = useQuery({
     queryKey: ["getCurrentGoal"],
@@ -375,13 +374,10 @@ function RecipeLogCard({
 }
 
 function DailyFoodLogsWithFoods({ day }: { day: string }) {
-  const { data: logsByDay } = useQuery({
-    queryKey: ["getDailyFoodLogsWithFoodsView"],
-    queryFn: getDailyFoodLogsWithFoodsView,
+  const { data: dailyFoodLogsView } = useQuery({
+    queryKey: ["getDailyFoodLogsWithFoodsView", day],
+    queryFn: () => getDailyFoodLogsWithFoodsView(day),
   });
-  const dailyFoodLogsView = logsByDay?.filter(
-    (log) => log.day?.slice(0, 10) === day,
-  );
 
   const blocks = buildBlocks(dailyFoodLogsView ?? []);
 
