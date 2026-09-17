@@ -63,6 +63,40 @@ type TrendCardProps = {
   unit: string;
 };
 
+type TrendTooltipProps = {
+  active?: boolean;
+  payload?: Array<{
+    value?: number;
+    payload?: { key?: string };
+  }>;
+  unit: string;
+  label: string;
+};
+
+function TrendTooltip({ active, payload, unit, label }: TrendTooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  const point = payload[0].payload;
+  const date = point?.key
+    ? new Date(`${point.key}T12:00:00`)
+    : undefined;
+
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2 text-sm shadow-lg">
+      <p className="font-medium text-foreground">
+        {date?.toLocaleDateString(undefined, {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        })}
+      </p>
+      <p className="text-muted-foreground">
+        {label}: {Math.round(Number(payload[0].value ?? 0)).toLocaleString()} {unit}
+      </p>
+    </div>
+  );
+}
+
 function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
   const config = chartConfig[dataKey];
   const average = data.reduce((sum, point) => sum + Number(point[dataKey]), 0) / data.length;
@@ -79,11 +113,8 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: "none", fontSize: 12 }}
-                formatter={(value) => [
-                  `${Math.round(Number(value)).toLocaleString()} ${unit}`,
-                  config.label,
-                ]}
+                content={<TrendTooltip unit={unit} label={config.label} />}
+                cursor={{ fill: "var(--color-muted)" }}
               />
               <ReferenceLine
                 y={average}
@@ -131,6 +162,7 @@ export default function TrendsPage() {
   const data = days.map(({ key, label }) => {
     const row = macros?.find((macro) => macro.day?.slice(0, 10) === key);
     return {
+      key,
       label,
       calories: Math.round(Number(row?.total_calories_kcal ?? 0)),
       protein: Math.round(Number(row?.total_protein_g ?? 0)),
