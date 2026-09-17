@@ -30,6 +30,4 @@ from
   logs l
   join ingredients i on i.id = l.food_id
   left join serving_sizes ss on ss.id = l.serving_size_id
-  left join recipes r on r.id = l.recipe_id
-where
-  date_trunc('day'::text, coalesce(l.log_for, l.created_at) at time zone coalesce((select timezone from profile), 'UTC')) = date_trunc('day'::text, now() at time zone coalesce((select timezone from profile), 'UTC'));
+  left join recipes r on r.id = l.recipe_id;
