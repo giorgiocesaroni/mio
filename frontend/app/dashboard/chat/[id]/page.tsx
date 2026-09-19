@@ -20,7 +20,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
 import { MessageContent } from "../components/message-content";
-import { PageTitle } from "@/app/dashboard/components/page-title";
+import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useChatLoading } from "../layout";
 
 function getGreeting() {
@@ -332,8 +332,7 @@ export default function Home() {
   }, [stopRecording]);
 
   return (
-    <div className="flex flex-1 flex-col text-sm">
-      <PageTitle>Chat</PageTitle>
+    <DashboardPage title="Chat" bodyClassName="flex flex-col text-sm">
       <div
         className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid content-start gap-4"}`}
       >
@@ -360,7 +359,7 @@ export default function Home() {
         )}
       </div>
 
-      <div className="sticky bottom-0 py-4">
+      <div className="sticky bottom-0 pt-4">
         <ChatEditor
           disabled={isLoading || (!isNew && isFetchingHistory) || isTranscribing}
           text={input}
@@ -399,6 +398,6 @@ export default function Home() {
           }
         ></ChatEditor>
       </div>
-    </div>
+    </DashboardPage>
   );
 }

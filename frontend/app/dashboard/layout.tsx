@@ -23,9 +23,7 @@ export default function DashboardLayout({
       <Toaster />
       <AppSidebar />
       <SidebarInset>
-        <div className="flex flex-1 flex-col font-sans">
-          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col p-6">{children}</div>
-        </div>
+        <div className="flex flex-1 flex-col font-sans">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

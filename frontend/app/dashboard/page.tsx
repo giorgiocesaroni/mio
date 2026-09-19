@@ -84,7 +84,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { getElapsedTime } from "../utils";
-import { PageTitle } from "./components/page-title";
+import { DashboardPage } from "./components/dashboard-page";
 import { QuickLogComposer } from "./components/quick-log-composer";
 
 function MacroCard({
@@ -401,16 +401,15 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
   );
 }
 
-export default function DashboardPage() {
+export default function DashboardHomePage() {
   const [selectedDay, setSelectedDay] = useState(dayKey(new Date()));
 
   return (
-    <div className="grid gap-12">
-      <PageTitle>Mio</PageTitle>
+    <DashboardPage title="Mio" bodyClassName="gap-12">
       <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
       <DailyMacros day={selectedDay} />
       <QuickLogComposer day={selectedDay} />
       <DailyFoodLogsWithFoods day={selectedDay} />
-    </div>
+    </DashboardPage>
   );
 }

@@ -2,7 +2,7 @@
 
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
-import { PageTitle } from "@/app/dashboard/components/page-title";
+import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { CompactNumber } from "./components/compact-number";
 import {
   Card,
@@ -38,10 +38,7 @@ export default function UsagePage() {
   );
 
   return (
-    <div className="grid gap-8">
-      <header className="flex items-center gap-2">
-        <PageTitle>Usage</PageTitle>
-      </header>
+    <DashboardPage title="Usage" bodyClassName="gap-8">
 
       {usage && (
         <Card>
@@ -145,6 +142,6 @@ export default function UsagePage() {
           </Card>
         )}
       </div>
-    </div>
+    </DashboardPage>
   );
 }

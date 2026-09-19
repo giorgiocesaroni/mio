@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getDailyMacrosTrend } from "@/repository/supabase/queries";
-import { PageTitle } from "@/app/dashboard/components/page-title";
+import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -172,11 +172,11 @@ export default function TrendsPage() {
   });
 
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-1">
-        <PageTitle>Trends</PageTitle>
-        <p className="text-sm text-muted-foreground">Your nutrition over the last 7 days.</p>
-      </div>
+    <DashboardPage
+    title="Trends"
+    subtitle="Your nutrition over the last 7 days."
+    bodyClassName="gap-6"
+  >
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading trends…</div>
       ) : (
@@ -187,6 +187,6 @@ export default function TrendsPage() {
           <TrendCard title="Fat" dataKey="fat" data={data} unit="g" />
         </div>
       )}
-    </div>
+    </DashboardPage>
   );
 }

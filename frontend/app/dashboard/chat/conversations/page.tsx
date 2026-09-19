@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getElapsedTime } from "@/app/utils";
-import { PageTitle } from "@/app/dashboard/components/page-title";
+import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { Plus } from "lucide-react";
 
 export default function ConversationsPage() {
@@ -21,17 +21,19 @@ export default function ConversationsPage() {
   const startNew = () => router.push("/dashboard/chat/new");
 
   return (
-    <div className="grid gap-8">
-      <div className="flex items-center justify-between">
-        <PageTitle>Conversations</PageTitle>
-        <Button
-          size="icon-sm"
-          onClick={startNew}
-          className="rounded-full bg-red-500 text-white hover:bg-red-600"
-        >
-          <Plus className="size-4" />
-        </Button>
-      </div>
+    <DashboardPage
+    title="Conversations"
+    bodyClassName="gap-8"
+    actions={
+      <Button
+        size="icon-sm"
+        onClick={startNew}
+        className="rounded-full bg-red-500 text-white hover:bg-red-600"
+      >
+        <Plus className="size-4" />
+      </Button>
+    }
+  >
 
       <div className="grid gap-3">
         {isLoading &&
@@ -53,6 +55,6 @@ export default function ConversationsPage() {
           </Card>
         ))}
       </div>
-    </div>
+    </DashboardPage>
   );
 }
