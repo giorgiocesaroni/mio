@@ -258,17 +258,20 @@ export default function Home() {
 
     const text = str.trim();
     setInput("");
-    const attachments = pendingAttachments;
+    const attachments = [...pendingAttachments].sort(
+      (a, b) =>
+        Number(b.mime_type.startsWith("image/")) -
+        Number(a.mime_type.startsWith("image/")),
+    );
     setPendingAttachments([]);
 
-    const parts: object[] = [];
+    const parts: object[] = attachments.map((att) => ({
+      url: att.url,
+      mime_type: att.mime_type,
+    }));
     if (text) parts.push({ text });
-    for (const att of attachments)
-      parts.push({ url: att.url, mime_type: att.mime_type });
 
     if (attachments.length > 0) {
-      if (text)
-        setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
       for (const att of attachments)
         setSteps((prev) => [
           ...prev,
@@ -279,6 +282,8 @@ export default function Home() {
             mime_type: att.mime_type,
           },
         ]);
+      if (text)
+        setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
     } else {
       setSteps((prev) => [...prev, { type: "user_message" as const, text }]);
     }
