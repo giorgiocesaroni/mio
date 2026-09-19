@@ -51,7 +51,7 @@ export function AppSidebar() {
   });
 
   const recent = (conversations ?? []).slice(0, 10);
-  const { toggleSidebar, setOpenMobile } = useSidebar();
+  const { toggleSidebar, setOpenMobile, isMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
 
   return (
@@ -157,7 +157,11 @@ export function AppSidebar() {
                   <MoreVertical className="ml-auto size-4 shrink-0" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="w-56">
+              <DropdownMenuContent
+                side={isMobile ? "bottom" : "right"}
+                align="start"
+                className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
+              >
                 <DropdownMenuItem
                   onSelect={() => {
                     closeMobile();
@@ -171,13 +175,13 @@ export function AppSidebar() {
                   <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem onSelect={() => setTheme("system")}>
-                      System{theme === "system" ? " ✓" : ""}
+                      System
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setTheme("light")}>
-                      Light{theme === "light" ? " ✓" : ""}
+                      Light
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => setTheme("dark")}>
-                      Dark{theme === "dark" ? " ✓" : ""}
+                      Dark
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
