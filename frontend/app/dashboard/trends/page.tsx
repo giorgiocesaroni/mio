@@ -8,11 +8,11 @@ import {
 } from "@/components/ui/card";
 import { getDailyMacrosTrend } from "@/repository/supabase/queries";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -102,7 +102,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
   const average = data.reduce((sum, point) => sum + Number(point[dataKey]), 0) / data.length;
 
   return (
-    <Card>
+    <Card className="h-[17rem]">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -110,7 +110,6 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
               <Tooltip
                 content={<TrendTooltip unit={unit} label={config.label} />}
@@ -173,12 +172,30 @@ export default function TrendsPage() {
 
   return (
     <DashboardPage
-    title="Trends"
-    subtitle="Your nutrition over the last 7 days."
+    title={
+      <>
+        <span>Trends</span>
+        <span className="ml-2 text-sm font-normal tracking-normal text-muted-foreground">
+          7 days
+        </span>
+      </>
+    }
     bodyClassName="gap-6"
   >
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading trends…</div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {chartConfig &&
+            Object.keys(chartConfig).map((key) => (
+              <Card className="h-[17rem]" key={key}>
+                <CardHeader>
+                  <Skeleton className="h-5 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-48 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <TrendCard title="Calories" dataKey="calories" data={data} unit="kcal" />
