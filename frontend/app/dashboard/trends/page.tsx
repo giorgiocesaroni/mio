@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { getCurrentGoal, getDailyMacrosTrend } from "@/repository/supabase/queries";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
+import { ChartLineLabel, ChartTooltip } from "@/app/dashboard/components/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -65,42 +66,7 @@ type TrendCardProps = {
   target?: number;
 };
 
-type TrendTooltipProps = {
-  active?: boolean;
-  payload?: Array<{
-    value?: number;
-    payload?: { key?: string };
-  }>;
-  unit: string;
-  label: string;
-};
-
-function TrendTooltip({ active, payload, unit, label }: TrendTooltipProps) {
-  if (!active || !payload?.length) return null;
-
-  const point = payload[0].payload;
-  const date = point?.key
-    ? new Date(`${point.key}T12:00:00`)
-    : undefined;
-
-  return (
-    <div className="rounded-lg border bg-background px-3 py-2 text-sm shadow-lg">
-      <p className="font-medium text-foreground">
-        {date?.toLocaleDateString(undefined, {
-          weekday: "long",
-          month: "short",
-          day: "numeric",
-        })}
-      </p>
-      <p className="text-muted-foreground">
-        {label}: {Math.round(Number(payload[0].value ?? 0)).toLocaleString()} {unit}
-      </p>
-    </div>
-  );
-}
-
 function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
-  const config = chartConfig[dataKey];
   const average = data.reduce((sum, point) => sum + Number(point[dataKey]), 0) / data.length;
   const chartMax = Math.max(...data.map((point) => Number(point[dataKey])), target ?? 0);
 
@@ -119,7 +85,7 @@ function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
               <YAxis hide domain={[0, chartMax || 1]} />
               <Tooltip
-                content={<TrendTooltip unit={unit} label={config.label} />}
+                content={<ChartTooltip unit={unit} />}
                 cursor={{ fill: "var(--color-muted)" }}
               />
               {target !== undefined && (
@@ -128,22 +94,14 @@ function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
                   stroke="#ef4444"
                   strokeWidth={2.5}
                   strokeLinecap="round"
-                  label={({ viewBox }) => {
-                    const { x, y } = viewBox as { x?: number; y?: number };
-                    return (
-                      <text
-                        x={x ?? 0}
-                        y={(y ?? 0) - 6}
-                        fill="#ef4444"
-                        fontFamily="var(--font-sans)"
-                        fontSize={12}
-                        fontWeight={600}
-                        textAnchor="start"
-                      >
-                        {`${formatAverageValue(target, dataKey)} ${unit}`}
-                      </text>
-                    );
-                  }}
+                  label={
+                    <ChartLineLabel
+                      value={target}
+                      chartMax={chartMax}
+                      unit={unit}
+                      formatValue={(value) => formatAverageValue(value, dataKey)}
+                    />
+                  }
                 />
               )}
               <Bar
@@ -194,7 +152,7 @@ export default function TrendsPage() {
     bodyClassName="gap-6"
   >
       {isLoading ? (
-        <div className="grid gap-4">
+        <div className="grid gap-12">
           {Object.entries(chartConfig).map(([key, config]) => (
             <Card className="h-[17rem]" key={key}>
               <CardHeader>
@@ -207,7 +165,7 @@ export default function TrendsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-12">
           <TrendCard title="Calories" dataKey="calories" data={data} unit="kcal" target={goal?.calories_kcal} />
           <TrendCard title="Protein" dataKey="protein" data={data} unit="g" target={goal?.protein_g} />
           <TrendCard title="Carbs" dataKey="carbs" data={data} unit="g" target={goal?.carbs_g} />

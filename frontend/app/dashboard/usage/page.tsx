@@ -3,6 +3,7 @@
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
+import { ChartLineLabel, ChartTooltip } from "@/app/dashboard/components/chart";
 import { CompactNumber } from "./components/compact-number";
 import {
   Card,
@@ -18,7 +19,6 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
 } from "recharts";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
@@ -64,15 +64,21 @@ export default function UsagePage() {
     label,
     cost: usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
   }));
-  const averageSpend = dailyData.reduce((sum, point) => sum + point.cost, 0) / dailyData.length;
-  const chartMax = Math.max(...dailyData.map((point) => point.cost), averageSpend, 0.0001);
-  const labeledModels = (usage?.models ?? []).filter(
-    (model) => Boolean(modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id]),
+  const averageSpend =
+    dailyData.reduce((sum, point) => sum + point.cost, 0) / dailyData.length;
+  const chartMax = Math.max(
+    ...dailyData.map((point) => point.cost),
+    averageSpend,
+    0.0001,
+  );
+  const labeledModels = (usage?.models ?? []).filter((model) =>
+    Boolean(
+      modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id],
+    ),
   );
 
   return (
     <DashboardPage title="Usage" bodyClassName="gap-8">
-
       {usage && (
         <Card>
           <CardHeader>
@@ -125,18 +131,27 @@ export default function UsagePage() {
           <CardContent>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyData} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
-                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                  <YAxis
+                <BarChart
+                  data={dailyData}
+                  margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
+                >
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 12 }}
+                  />
+                  {/* <YAxis
                     orientation="right"
                     width={48}
                     axisLine={false}
                     tickLine={false}
                     domain={[0, chartMax]}
                     tickFormatter={(value) => `$${Number(value).toFixed(2)}`}
-                  />
+                    minTickGap={24}
+                  /> */}
                   <Tooltip
-                    formatter={(value) => [formatCost(Number(value)), "Spend"]}
+                    content={<ChartTooltip formatValue={formatCost} />}
                     cursor={{ fill: "var(--color-muted)" }}
                   />
                   <ReferenceLine
@@ -144,24 +159,19 @@ export default function UsagePage() {
                     stroke="#ef4444"
                     strokeWidth={2.5}
                     strokeLinecap="round"
-                    label={({ viewBox }) => {
-                      const { x, y } = viewBox as { x?: number; y?: number };
-                      return (
-                        <text
-                          x={x ?? 0}
-                          y={(y ?? 0) - 6}
-                          fill="#ef4444"
-                          fontFamily="var(--font-sans)"
-                          fontSize={12}
-                          fontWeight={600}
-                          textAnchor="start"
-                        >
-                          {formatCost(averageSpend)}
-                        </text>
-                      );
-                    }}
+                    label={
+                      <ChartLineLabel
+                        value={averageSpend}
+                        chartMax={chartMax}
+                        formatValue={formatCost}
+                      />
+                    }
                   />
-                  <Bar dataKey="cost" fill="var(--color-border)" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="cost"
+                    fill="var(--color-border)"
+                    radius={[4, 4, 0, 0]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -171,7 +181,8 @@ export default function UsagePage() {
 
       <div className="grid gap-4">
         {labeledModels.flatMap((m) => {
-          const name = modelNames.get(m.model_id) ?? EXTRA_MODEL_NAMES[m.model_id];
+          const name =
+            modelNames.get(m.model_id) ?? EXTRA_MODEL_NAMES[m.model_id];
           if (!name) return [];
           return [
             <Card key={m.model_id}>
@@ -211,11 +222,12 @@ export default function UsagePage() {
                   <p className="font-medium text-foreground">
                     <CompactNumber
                       value={m.uncached_input_tokens + m.cached_input_tokens}
-                    />{" "}/ <CompactNumber value={m.output_tokens} />
+                    />{" "}
+                    / <CompactNumber value={m.output_tokens} />
                   </p>
                 </div>
               </CardContent>
-            </Card>
+            </Card>,
           ];
         })}
         {usage && labeledModels.length === 0 && (
