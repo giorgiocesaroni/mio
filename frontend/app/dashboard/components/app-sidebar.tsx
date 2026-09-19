@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
@@ -25,12 +26,14 @@ import {
   ChartNoAxesCombined,
   LayoutDashboard,
   MessageCircle,
+  Monitor,
   PanelLeftIcon,
   Receipt,
 } from "lucide-react";
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
   const { data: conversations } = useQuery({
     queryKey: ["getConversations"],
     queryFn: getConversations,
@@ -141,6 +144,21 @@ export function AppSidebar() {
             <SidebarMenuBadge>
               ${(costData?.total_cost ?? 0).toFixed(2)}
             </SidebarMenuBadge>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <div className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground group-data-[collapsible=icon]:justify-center">
+              <Monitor className="size-4 shrink-0" />
+              <select
+                aria-label="Theme"
+                value={theme ?? "system"}
+                onChange={(event) => setTheme(event.target.value)}
+                className="min-w-0 flex-1 cursor-pointer bg-transparent outline-none group-data-[collapsible=icon]:hidden"
+              >
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
