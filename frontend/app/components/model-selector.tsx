@@ -1,12 +1,17 @@
-import { cn } from "@/lib/utils";
-
 type Model = {
   id: string;
   name: string;
 };
 
+const MODEL_ABBREVIATIONS: Record<string, string> = {
+  "GPT-5.6 Luna": "GPT",
+  "Gemini 3.8 Flash": "Gemini",
+  "DeepSeek V4.1 Flash": "DeepSeek",
+  "GLM 5.3 Flash": "GLM",
+};
+
 function abbreviatedModelName(name: string): string {
-  return name.trim().split(/\s+/)[0] ?? name;
+  return MODEL_ABBREVIATIONS[name] ?? name;
 }
 
 export function ModelSelector({
@@ -30,10 +35,7 @@ export function ModelSelector({
         aria-label="Model"
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "absolute inset-0 cursor-pointer appearance-none bg-transparent text-sm outline-none",
-          "text-transparent",
-        )}
+        className="absolute inset-0 cursor-pointer appearance-none bg-transparent text-sm text-transparent outline-none"
       >
         {models.map((model) => (
           <option key={model.id} value={model.id}>
