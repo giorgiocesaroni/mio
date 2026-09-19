@@ -4,6 +4,7 @@ import {
   ChatEditor,
   type PendingAttachment,
 } from "@/app/components/chat-editor";
+import { ModelSelector } from "@/app/components/model-selector";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
@@ -376,24 +377,11 @@ export default function Home() {
           }
           modelSelector={
             modelsData ? (
-              <span className="relative mx-2 inline-block">
-                <span className="invisible text-sm whitespace-nowrap">
-                  {modelsData.models.find((m) => m.id === resolvedModel)
-                    ?.name ?? ""}
-                </span>
-                <select
-                  aria-label="Model"
-                  value={resolvedModel ?? ""}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="absolute inset-0 cursor-pointer appearance-none bg-transparent text-sm text-muted-foreground outline-none"
-                >
-                  {modelsData.models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </span>
+              <ModelSelector
+                models={modelsData.models}
+                value={resolvedModel}
+                onChange={handleModelChange}
+              />
             ) : null
           }
         ></ChatEditor>
