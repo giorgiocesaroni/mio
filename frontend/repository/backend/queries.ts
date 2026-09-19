@@ -2,6 +2,8 @@ import { supabase } from "@/repository/supabase/queries";
 import type { ModelsResponse, RunAgentStep, UsageOverview } from "./types";
 import { queryClient } from "@/app/providers";
 
+const BACKEND_BASE_PATH = "/backend";
+
 export type {
   ToolCallStep,
   ToolCallStartStep,
@@ -41,7 +43,7 @@ export async function uploadFile(file: File): Promise<{ url: string; mime_type: 
   const headers = await getAuthHeaders();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/upload`, {
+  const res = await fetch(`${BACKEND_BASE_PATH}/upload`, {
     method: "POST",
     headers,
     body: formData,
@@ -54,7 +56,7 @@ export async function transcribeAudio(file: File): Promise<{ text: string }> {
   const headers = await getAuthHeaders();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/transcribe`, {
+  const res = await fetch(`${BACKEND_BASE_PATH}/transcribe`, {
     method: "POST",
     headers,
     body: formData,
@@ -68,7 +70,7 @@ export async function getConversationMessages(
 ): Promise<RunAgentStep[]> {
   const headers = await getAuthHeaders();
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BACKEND_URL}/conversations/${conversationId}/messages`,
+    `${BACKEND_BASE_PATH}/conversations/${conversationId}/messages`,
     { headers },
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -77,7 +79,7 @@ export async function getConversationMessages(
 
 export async function getModels(): Promise<ModelsResponse> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/models`, {
+  const res = await fetch(`${BACKEND_BASE_PATH}/models`, {
     headers,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -86,7 +88,7 @@ export async function getModels(): Promise<ModelsResponse> {
 
 export async function getUsage(): Promise<UsageOverview> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/usage`, {
+  const res = await fetch(`${BACKEND_BASE_PATH}/usage`, {
     headers,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -100,7 +102,7 @@ async function streamSSE(
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
   const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${path}`, {
+  const response = await fetch(`${BACKEND_BASE_PATH}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(body),

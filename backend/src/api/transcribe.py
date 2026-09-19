@@ -15,7 +15,7 @@ from openai import (
 from src.agent.providers import get_client
 from src.agent.utils import get_openrouter_cost
 
-MODEL_ID = "meta/muse-voice-transcribe-1.0"
+MODEL_ID = "openai/gpt-transcribe"
 
 logger = logging.getLogger(__name__)
 
