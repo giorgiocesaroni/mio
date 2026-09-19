@@ -60,7 +60,7 @@ export function DashboardBody({
   return (
     <div
       className={cn(
-        "mx-auto grid w-full max-w-3xl flex-1 content-start p-6",
+        "mx-auto flex w-full max-w-3xl flex-1 flex-col content-start p-6",
         className,
       )}
     >
