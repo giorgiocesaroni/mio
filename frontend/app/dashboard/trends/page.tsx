@@ -172,13 +172,11 @@ export default function TrendsPage() {
 
   return (
     <DashboardPage
-    title={
-      <>
-        <span>Trends</span>
-        <span className="ml-2 text-sm font-normal tracking-normal text-muted-foreground">
-          7 days
-        </span>
-      </>
+    title="Trends"
+    actions={
+      <span className="text-sm font-normal tracking-normal text-muted-foreground">
+        7 days
+      </span>
     }
     bodyClassName="gap-6"
   >
