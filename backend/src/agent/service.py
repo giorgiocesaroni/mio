@@ -1,6 +1,7 @@
 import base64
 import datetime
 import json
+import mimetypes
 from typing import AsyncGenerator
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -286,6 +287,10 @@ def get_conversations(user_id: str) -> list[models.Conversation]:
     return repository.get_conversations(user_id)
 
 
+def _mime_type_from_url(url: str) -> str | None:
+    return mimetypes.guess_type(url.split("?", 1)[0])[0]
+
+
 def get_conversation_history(
     conversation_id: UUID, user_id: str
 ) -> list[models.RunAgentStep]:
@@ -323,7 +328,11 @@ def get_conversation_history(
                                 type="user_message",
                                 text=label,
                                 data=url,
-                                mime_type="url" if not url.startswith("data:") else None,
+                                mime_type=(
+                                    _mime_type_from_url(url)
+                                    if not url.startswith("data:")
+                                    else None
+                                ),
                             )
                         )
                     elif part.get("type") == "input_audio":
@@ -339,7 +348,11 @@ def get_conversation_history(
                                 type="user_message",
                                 text=label,
                                 data=url,
-                                mime_type="url" if not url.startswith("data:") else mime,
+                                mime_type=(
+                                    _mime_type_from_url(url)
+                                    if not url.startswith("data:")
+                                    else mime
+                                ),
                             )
                         )
         elif role == "assistant":
