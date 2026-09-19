@@ -116,15 +116,19 @@ export default function UsagePage() {
 
       {usage && (
         <Card className="h-[17rem]">
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle>7-day spend</CardTitle>
+            <span className="text-sm font-normal text-muted-foreground">
+              {formatCost(averageSpend)} avg.
+            </span>
           </CardHeader>
           <CardContent>
             <div className="h-48 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
+                <BarChart data={dailyData} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
                   <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
                   <YAxis
+                    orientation="right"
                     width={48}
                     axisLine={false}
                     tickLine={false}
@@ -140,7 +144,22 @@ export default function UsagePage() {
                     stroke="#ef4444"
                     strokeWidth={2.5}
                     strokeLinecap="round"
-                    label={{ value: "Average", fill: "#ef4444", fontSize: 12, position: "insideTopRight" }}
+                    label={({ viewBox }) => {
+                      const { x, y } = viewBox as { x?: number; y?: number };
+                      return (
+                        <text
+                          x={x ?? 0}
+                          y={(y ?? 0) - 6}
+                          fill="#ef4444"
+                          fontFamily="var(--font-sans)"
+                          fontSize={12}
+                          fontWeight={600}
+                          textAnchor="start"
+                        >
+                          {formatCost(averageSpend)}
+                        </text>
+                      );
+                    }}
                   />
                   <Bar dataKey="cost" fill="var(--color-border)" radius={[4, 4, 0, 0]} />
                 </BarChart>

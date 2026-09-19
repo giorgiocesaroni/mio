@@ -109,7 +109,7 @@ function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>{title}</CardTitle>
         <span className="text-sm font-normal text-muted-foreground">
-          Average: {formatAverageValue(average, dataKey)} {unit}
+          {formatAverageValue(average, dataKey)} {unit} avg.
         </span>
       </CardHeader>
       <CardContent>
@@ -128,7 +128,22 @@ function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
                   stroke="#ef4444"
                   strokeWidth={2.5}
                   strokeLinecap="round"
-                  label={{ value: "Goal", fill: "#ef4444", fontSize: 12, position: "insideTopRight" }}
+                  label={({ viewBox }) => {
+                    const { x, y } = viewBox as { x?: number; y?: number };
+                    return (
+                      <text
+                        x={x ?? 0}
+                        y={(y ?? 0) - 6}
+                        fill="#ef4444"
+                        fontFamily="var(--font-sans)"
+                        fontSize={12}
+                        fontWeight={600}
+                        textAnchor="start"
+                      >
+                        {`${formatAverageValue(target, dataKey)} ${unit}`}
+                      </text>
+                    );
+                  }}
                 />
               )}
               <Bar
