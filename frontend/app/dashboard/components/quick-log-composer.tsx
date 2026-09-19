@@ -46,6 +46,24 @@ export function QuickLogComposer({ day }: { day: string }) {
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRef = useRef<{ message?: string; error?: string }>({});
 
+  const handleRecordingStart = useCallback(async () => {
+    try {
+      await startRecording();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof DOMException &&
+        (err.name === "NotAllowedError" || err.name === "SecurityError")
+      ) {
+        toast.error("Microphone access was denied.");
+      } else if (err instanceof DOMException && err.name === "NotFoundError") {
+        toast.error("No microphone was found.");
+      } else {
+        toast.error(message);
+      }
+    }
+  }, [startRecording]);
+
   useEffect(
     () => () => {
       abortRef.current?.abort();
@@ -124,7 +142,12 @@ export function QuickLogComposer({ day }: { day: string }) {
 
   const handleImageSelect = async (file: File) => {
     if (isWorking) return;
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
     const attachment: PendingAttachment = {
+      id,
       url: "",
       mime_type: file.type,
       name: file.name,
@@ -135,18 +158,23 @@ export function QuickLogComposer({ day }: { day: string }) {
       const { url, mime_type } = await uploadFile(file);
       setPendingAttachments((prev) =>
         prev.map((a) =>
-          a === attachment ? { ...a, url, mime_type, isLoading: false } : a,
+          a.id === id ? { ...a, url, mime_type, isLoading: false } : a,
         ),
       );
     } catch (err) {
       console.error("Upload failed:", err);
-      setPendingAttachments((prev) => prev.filter((a) => a !== attachment));
+      setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Upload failed: ${message}`);
     }
   };
 
   const handleRecordingStop = useCallback(async () => {
     const attachment = await stopRecording();
-    if (!attachment) return;
+    if (!attachment) {
+      toast.error("No audio was captured. Try recording again.");
+      return;
+    }
     const file = new File([attachment.blob], "voice", {
       type: attachment.mime_type,
     });
@@ -159,6 +187,8 @@ export function QuickLogComposer({ day }: { day: string }) {
       }
     } catch (err) {
       console.error("Transcription failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Transcription failed: ${message}`);
     } finally {
       setIsTranscribing(false);
     }
@@ -173,7 +203,7 @@ export function QuickLogComposer({ day }: { day: string }) {
         text={input}
         onTextChange={handleTextChange}
         onSend={handleTextSubmit}
-        onRecordingStart={startRecording}
+        onRecordingStart={handleRecordingStart}
         onRecordingStop={handleRecordingStop}
         isRecording={isRecording}
         isTranscribing={isTranscribing}

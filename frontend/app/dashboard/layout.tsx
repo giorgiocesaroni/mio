@@ -4,7 +4,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "./components/app-sidebar";
-import { Toaster } from "sonner";
+import { ThemedToaster } from "@/app/components/themed-toaster";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -20,7 +20,7 @@ export default function DashboardLayout({
 }>) {
   return (
     <SidebarProvider>
-      <Toaster />
+      <ThemedToaster />
       <AppSidebar />
       <SidebarInset>
         <div className="flex flex-1 flex-col font-sans">{children}</div>

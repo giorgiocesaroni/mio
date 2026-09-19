@@ -18,6 +18,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Cog, Loader2 } from "lucide-react";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
 import { MessageContent } from "../components/message-content";
@@ -293,7 +294,12 @@ export default function Home() {
 
   const handleImageSelect = async (file: File) => {
     if (isLoading) return;
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
     const attachment: PendingAttachment = {
+      id,
       url: "",
       mime_type: file.type,
       name: file.name,
@@ -304,22 +310,41 @@ export default function Home() {
       const { url, mime_type } = await uploadFile(file);
       setPendingAttachments((prev) =>
         prev.map((a) =>
-          a === attachment ? { ...a, url, mime_type, isLoading: false } : a,
+          a.id === id ? { ...a, url, mime_type, isLoading: false } : a,
         ),
       );
     } catch (err) {
       console.error("Upload failed:", err);
-      setPendingAttachments((prev) => prev.filter((a) => a !== attachment));
+      setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Upload failed: ${message}`);
     }
   };
 
-  const handleRecordingStart = useCallback(() => {
-    startRecording();
+  const handleRecordingStart = useCallback(async () => {
+    try {
+      await startRecording();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof DOMException &&
+        (err.name === "NotAllowedError" || err.name === "SecurityError")
+      ) {
+        toast.error("Microphone access was denied.");
+      } else if (err instanceof DOMException && err.name === "NotFoundError") {
+        toast.error("No microphone was found.");
+      } else {
+        toast.error(message);
+      }
+    }
   }, [startRecording]);
 
   const handleRecordingStop = useCallback(async () => {
     const attachment = await stopRecording();
-    if (!attachment) return;
+    if (!attachment) {
+      toast.error("No audio was captured. Try recording again.");
+      return;
+    }
     const file = new File([attachment.blob], "voice", {
       type: attachment.mime_type,
     });
@@ -332,6 +357,8 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Transcription failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Transcription failed: ${message}`);
     } finally {
       setIsTranscribing(false);
     }

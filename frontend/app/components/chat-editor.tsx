@@ -22,6 +22,7 @@ export const ChatChip = ({
 );
 
 export interface PendingAttachment {
+  id: string;
   url: string;
   mime_type: string;
   name: string;
