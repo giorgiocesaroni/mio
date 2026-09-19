@@ -408,7 +408,9 @@ export default function DashboardHomePage() {
     <DashboardPage title="Mio" bodyClassName="gap-12">
       <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
       <DailyMacros day={selectedDay} />
-      <QuickLogComposer day={selectedDay} />
+      <div className="sticky bottom-6 z-10">
+        <QuickLogComposer day={selectedDay} />
+      </div>
       <DailyFoodLogsWithFoods day={selectedDay} />
     </DashboardPage>
   );
