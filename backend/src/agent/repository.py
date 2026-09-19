@@ -174,6 +174,24 @@ def get_total_llm_usage() -> dict:
             }
 
 
+def get_daily_llm_usage() -> list[dict]:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT created_at::date AS day, COALESCE(SUM(total_cost), 0) AS total_cost
+                FROM llm_invocations
+                WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
+                GROUP BY created_at::date
+                ORDER BY day
+                """
+            )
+            return [
+                {"day": row[0].isoformat(), "total_cost": float(row[1])}
+                for row in cur.fetchall()
+            ]
+
+
 def get_conversation_llm_usage(conversation_id: UUID) -> dict:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:

@@ -276,7 +276,11 @@ def get_usage_overview() -> dict:
         }
         for m in by_model
     ]
-    return {"total": total, "models": models}
+    return {
+        "total": total,
+        "models": models,
+        "daily": repository.get_daily_llm_usage(),
+    }
 
 
 def get_conversation_usage(conversation_id: UUID) -> dict:

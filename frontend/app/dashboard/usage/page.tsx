@@ -11,6 +11,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from "recharts";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
@@ -20,6 +27,19 @@ const EXTRA_MODEL_NAMES: Record<string, string> = {
 
 function formatCost(cost: number): string {
   return `$${cost.toFixed(4)}`;
+}
+
+function getLastSevenDays() {
+  const today = new Date();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(today.getDate() - 6 + index);
+    return {
+      key: date.toISOString().slice(0, 10),
+      label: date.toLocaleDateString(undefined, { weekday: "narrow" }),
+    };
+  });
 }
 
 export default function UsagePage() {
@@ -35,6 +55,15 @@ export default function UsagePage() {
 
   const modelNames = new Map(
     (modelsData?.models ?? []).map((m) => [m.id, m.name]),
+  );
+  const days = getLastSevenDays();
+  const dailyData = days.map(({ key, label }) => ({
+    key,
+    label,
+    cost: usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
+  }));
+  const labeledModels = (usage?.models ?? []).filter(
+    (model) => Boolean(modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id]),
   );
 
   return (
@@ -81,13 +110,33 @@ export default function UsagePage() {
         </Card>
       )}
 
+      {usage && (
+        <Card className="h-[17rem]">
+          <CardHeader>
+            <CardTitle>7-day spend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
+                  <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    formatter={(value) => [formatCost(Number(value)), "Spend"]}
+                    cursor={{ fill: "var(--color-muted)" }}
+                  />
+                  <Bar dataKey="cost" fill="var(--color-border)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4">
-        {usage?.models.map((m) => {
-          const name =
-            modelNames.get(m.model_id) ??
-            EXTRA_MODEL_NAMES[m.model_id] ??
-            m.model_id;
-          return (
+        {labeledModels.flatMap((m) => {
+          const name = modelNames.get(m.model_id) ?? EXTRA_MODEL_NAMES[m.model_id];
+          if (!name) return [];
+          return [
             <Card key={m.model_id}>
               <CardHeader>
                 <CardTitle className="text-base">{name}</CardTitle>
@@ -130,9 +179,9 @@ export default function UsagePage() {
                 </div>
               </CardContent>
             </Card>
-          );
+          ];
         })}
-        {usage && usage.models.length === 0 && (
+        {usage && labeledModels.length === 0 && (
           <Card>
             <CardContent>
               <p className="font-sans text-muted-foreground">
