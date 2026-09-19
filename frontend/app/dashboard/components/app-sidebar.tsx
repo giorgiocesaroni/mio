@@ -1,9 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -13,26 +23,22 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import {
-  getConversations,
-  getTotalLlmCost,
-} from "@/repository/supabase/queries";
+import { getConversations } from "@/repository/supabase/queries";
 import {
   ChartNoAxesCombined,
   LayoutDashboard,
   MessageCircle,
-  Monitor,
   PanelLeftIcon,
   Receipt,
 } from "lucide-react";
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: conversations } = useQuery({
     queryKey: ["getConversations"],
@@ -40,10 +46,6 @@ export function AppSidebar() {
   });
 
   const recent = (conversations ?? []).slice(0, 10);
-  const { data: costData } = useQuery({
-    queryKey: ["getTotalLlmCost"],
-    queryFn: getTotalLlmCost,
-  });
   const { toggleSidebar, setOpenMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
 
@@ -75,12 +77,13 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  render={<Link href="/dashboard/chat/new" />}
-                  isActive={pathname === "/dashboard/chat/new"}
-                  onClick={closeMobile}
+                  onClick={() => {
+                    closeMobile();
+                    router.push(`/dashboard/chat/${crypto.randomUUID()}`);
+                  }}
                 >
                   <MessageCircle />
-                  <span>Chat</span>
+                  <span>New chat</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -133,32 +136,32 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              render={<Link href="/dashboard/usage" />}
-              isActive={pathname === "/dashboard/usage"}
-              onClick={closeMobile}
-            >
-              <Receipt />
-              <span>Usage</span>
-            </SidebarMenuButton>
-            <SidebarMenuBadge>
-              ${(costData?.total_cost ?? 0).toFixed(2)}
-            </SidebarMenuBadge>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <div className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground group-data-[collapsible=icon]:justify-center">
-              <Monitor className="size-4 shrink-0" />
-              <select
-                aria-label="Theme"
-                value={theme ?? "system"}
-                onChange={(event) => setTheme(event.target.value)}
-                className="min-w-0 flex-1 cursor-pointer bg-transparent outline-none group-data-[collapsible=icon]:hidden"
-              >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton tooltip="Options">
+                  <PanelLeftIcon />
+                  <span>Options</span>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-56">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    closeMobile();
+                    router.push("/dashboard/usage");
+                  }}
+                >
+                  <Receipt />
+                  <span>Usage</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+                  <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

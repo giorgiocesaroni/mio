@@ -62,4 +62,5 @@ export type UsageOverview = {
     completion_tokens: number;
   };
   models: UsageModel[];
+  daily: Array<{ day: string; total_cost: number }>;
 };
