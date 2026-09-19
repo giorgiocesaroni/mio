@@ -17,6 +17,7 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  YAxis,
 } from "recharts";
 
 function dayKey(date: Date): string {
@@ -111,6 +112,7 @@ function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+              <YAxis hide domain={[0, "dataMax"]} />
               <Tooltip
                 content={<TrendTooltip unit={unit} label={config.label} />}
                 cursor={{ fill: "var(--color-muted)" }}
@@ -172,29 +174,26 @@ export default function TrendsPage() {
 
   return (
     <DashboardPage
-    title={
-      <>
-        <span>Trends</span>
-        <span className="ml-2 text-sm font-normal tracking-normal text-muted-foreground">
-          7 days
-        </span>
-      </>
+    title="Trends"
+    actions={
+      <span className="text-sm font-normal tracking-normal text-muted-foreground">
+        7 days
+      </span>
     }
     bodyClassName="gap-6"
   >
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2">
-          {chartConfig &&
-            Object.keys(chartConfig).map((key) => (
-              <Card className="h-[17rem]" key={key}>
-                <CardHeader>
-                  <Skeleton className="h-5 w-24" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-48 w-full" />
-                </CardContent>
-              </Card>
-            ))}
+          {Object.entries(chartConfig).map(([key, config]) => (
+            <Card className="h-[17rem]" key={key}>
+              <CardHeader>
+                <CardTitle>{config.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-48 w-full" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
