@@ -72,12 +72,14 @@ export function AppSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  render={<Link href="/dashboard" />}
+                  asChild
                   isActive={pathname === "/dashboard"}
                   onClick={closeMobile}
                 >
-                  <LayoutDashboard />
-                  <span>Dashboard</span>
+                  <Link href="/dashboard">
+                    <LayoutDashboard />
+                    <span>Dashboard</span>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -93,12 +95,14 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  render={<Link href="/dashboard/trends" />}
+                  asChild
                   isActive={pathname === "/dashboard/trends"}
                   onClick={closeMobile}
                 >
-                  <ChartNoAxesCombined />
-                  <span>Trends</span>
+                  <Link href="/dashboard/trends">
+                    <ChartNoAxesCombined />
+                    <span>Trends</span>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -114,24 +118,28 @@ export function AppSidebar() {
               {recent.map((conv) => (
                 <SidebarMenuItem key={conv.id}>
                   <SidebarMenuButton
-                    render={<Link href={`/dashboard/chat/${conv.id}`} />}
+                    asChild
                     isActive={pathname === `/dashboard/chat/${conv.id}`}
                     onClick={closeMobile}
                   >
-                    <span className="truncate">
-                      {conv.title || "New conversation"}
-                    </span>
+                    <Link href={`/dashboard/chat/${conv.id}`}>
+                      <span className="truncate">
+                        {conv.title || "New conversation"}
+                      </span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  render={<Link href="/dashboard/chat/conversations" />}
+                  asChild
                   isActive={pathname === "/dashboard/chat/conversations"}
                   className="text-muted-foreground"
                   onClick={closeMobile}
                 >
-                  <span>Show more</span>
+                  <Link href="/dashboard/chat/conversations">
+                    <span>Show more</span>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

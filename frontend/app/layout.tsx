@@ -26,7 +26,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable}`}
+    >
       <head>
         <link
           rel="icon"
@@ -35,9 +39,7 @@ export default function RootLayout({
           sizes="32x32"
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-w-97.5 bg-background`}
-      >
+      <body className="antialiased min-w-97.5 bg-background">
         <Providers>{children}</Providers>
       </body>
     </html>
