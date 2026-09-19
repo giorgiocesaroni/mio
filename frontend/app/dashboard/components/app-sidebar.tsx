@@ -31,6 +31,7 @@ import {
   ChartNoAxesCombined,
   LayoutDashboard,
   MessageCircle,
+  MoreVertical,
   PanelLeftIcon,
   Receipt,
   User,
@@ -143,8 +144,9 @@ export function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton tooltip="User">
-                  <User />
+                  <User className="size-4 shrink-0" />
                   <span className="truncate">{userData?.email ?? "User"}</span>
+                  <MoreVertical className="ml-auto size-4 shrink-0" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-56">
@@ -154,7 +156,7 @@ export function AppSidebar() {
                     router.push("/dashboard/usage");
                   }}
                 >
-                  <Receipt />
+                  <Receipt className="size-4 shrink-0" />
                   <span>Usage</span>
                 </DropdownMenuItem>
                 <DropdownMenuSub>
