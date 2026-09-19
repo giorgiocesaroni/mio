@@ -6,11 +6,13 @@ import {
 } from "@/app/components/chat-editor";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
+  getModels,
   streamQuickLog,
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function QuickLogComposer({ day }: { day: string }) {
@@ -21,6 +23,23 @@ export function QuickLogComposer({ day }: { day: string }) {
     PendingAttachment[]
   >([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [model, setModel] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("model");
+  });
+  const { data: modelsData } = useQuery({
+    queryKey: ["models"],
+    queryFn: getModels,
+    staleTime: Infinity,
+  });
+  const resolvedModel =
+    model && modelsData?.models.some((m) => m.id === model)
+      ? model
+      : (modelsData?.default ?? undefined);
+  const handleModelChange = (value: string) => {
+    setModel(value);
+    window.localStorage.setItem("model", value);
+  };
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const abortRef = useRef<AbortController | null>(null);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,10 +70,6 @@ export function QuickLogComposer({ day }: { day: string }) {
     )
       return;
 
-    const model =
-      typeof window !== "undefined"
-        ? (window.localStorage.getItem("model") ?? undefined)
-        : undefined;
     const text = str.trim();
     const attachments = pendingAttachments;
     setIsWorking(true);
@@ -74,7 +89,7 @@ export function QuickLogComposer({ day }: { day: string }) {
         "edit",
         day,
         { parts },
-        model,
+        resolvedModel,
         controller.signal,
         (step) => {
           // No conversation view: ignore tokens/tool calls, keep only the
@@ -168,6 +183,27 @@ export function QuickLogComposer({ day }: { day: string }) {
           setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
         }
         placeholder="What did you eat? Or fix today's logs…"
+        modelSelector={
+          modelsData ? (
+            <span className="relative mx-2 inline-block">
+              <span className="invisible text-sm whitespace-nowrap">
+                {modelsData.models.find((m) => m.id === resolvedModel)?.name ?? ""}
+              </span>
+              <select
+                aria-label="Model"
+                value={resolvedModel ?? ""}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="absolute inset-0 cursor-pointer appearance-none bg-transparent text-sm text-muted-foreground outline-none"
+              >
+                {modelsData.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </span>
+          ) : null
+        }
       />
     </div>
   );
