@@ -8,10 +8,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,13 +26,14 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getConversations } from "@/repository/supabase/queries";
+import { getConversations, supabase } from "@/repository/supabase/queries";
 import {
   ChartNoAxesCombined,
   LayoutDashboard,
   MessageCircle,
   PanelLeftIcon,
   Receipt,
+  User,
 } from "lucide-react";
 
 export function AppSidebar() {
@@ -43,6 +43,10 @@ export function AppSidebar() {
   const { data: conversations } = useQuery({
     queryKey: ["getConversations"],
     queryFn: getConversations,
+  });
+  const { data: userData } = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => (await supabase.auth.getUser()).data.user,
   });
 
   const recent = (conversations ?? []).slice(0, 10);
@@ -138,9 +142,9 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton tooltip="Options">
-                  <PanelLeftIcon />
-                  <span>Options</span>
+                <SidebarMenuButton tooltip="User">
+                  <User />
+                  <span className="truncate">{userData?.email ?? "User"}</span>
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-56">
@@ -153,13 +157,20 @@ export function AppSidebar() {
                   <Receipt />
                   <span>Usage</span>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Theme</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
-                  <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onSelect={() => setTheme("system")}>
+                      System{theme === "system" ? " ✓" : ""}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setTheme("light")}>
+                      Light{theme === "light" ? " ✓" : ""}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setTheme("dark")}>
+                      Dark{theme === "dark" ? " ✓" : ""}
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

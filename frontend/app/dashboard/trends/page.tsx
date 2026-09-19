@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getDailyMacrosTrend } from "@/repository/supabase/queries";
+import { getCurrentGoal, getDailyMacrosTrend } from "@/repository/supabase/queries";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
@@ -62,6 +62,7 @@ type TrendCardProps = {
   dataKey: keyof typeof chartConfig;
   data: Array<Record<string, number | string>>;
   unit: string;
+  target?: number;
 };
 
 type TrendTooltipProps = {
@@ -98,47 +99,38 @@ function TrendTooltip({ active, payload, unit, label }: TrendTooltipProps) {
   );
 }
 
-function TrendCard({ title, dataKey, data, unit }: TrendCardProps) {
+function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
   const config = chartConfig[dataKey];
   const average = data.reduce((sum, point) => sum + Number(point[dataKey]), 0) / data.length;
+  const chartMax = Math.max(...data.map((point) => Number(point[dataKey])), target ?? 0);
 
   return (
     <Card className="h-[17rem]">
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>{title}</CardTitle>
+        <span className="text-sm font-normal text-muted-foreground">
+          Average: {formatAverageValue(average, dataKey)} {unit}
+        </span>
       </CardHeader>
       <CardContent>
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-              <YAxis hide domain={[0, "dataMax"]} />
+              <YAxis hide domain={[0, chartMax || 1]} />
               <Tooltip
                 content={<TrendTooltip unit={unit} label={config.label} />}
                 cursor={{ fill: "var(--color-muted)" }}
               />
-              <ReferenceLine
-                y={average}
-                stroke="#ef4444"
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                label={({ viewBox }) => {
-                  const { x, y } = viewBox as { x?: number; y?: number };
-                  return (
-                    <text
-                      x={x ?? 0}
-                      y={(y ?? 0) - 6}
-                      fill="#ef4444"
-                      fontFamily="var(--font-sans)"
-                      fontSize={12}
-                      fontWeight={600}
-                      textAnchor="start"
-                    >
-                      {`${formatAverageValue(average, dataKey)} ${unit}`}
-                    </text>
-                  );
-                }}
-              />
+              {target !== undefined && (
+                <ReferenceLine
+                  y={target}
+                  stroke="#ef4444"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  label={{ value: "Goal", fill: "#ef4444", fontSize: 12, position: "insideTopRight" }}
+                />
+              )}
               <Bar
                 dataKey={dataKey}
                 fill="var(--color-border)"
@@ -158,6 +150,10 @@ export default function TrendsPage() {
   const { data: macros, isLoading } = useQuery({
     queryKey: ["getDailyMacrosTrend", startDay],
     queryFn: () => getDailyMacrosTrend(startDay),
+  });
+  const { data: goal } = useQuery({
+    queryKey: ["getCurrentGoal"],
+    queryFn: getCurrentGoal,
   });
 
   const data = days.map(({ key, label }) => {
@@ -183,7 +179,7 @@ export default function TrendsPage() {
     bodyClassName="gap-6"
   >
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           {Object.entries(chartConfig).map(([key, config]) => (
             <Card className="h-[17rem]" key={key}>
               <CardHeader>
@@ -196,11 +192,11 @@ export default function TrendsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          <TrendCard title="Calories" dataKey="calories" data={data} unit="kcal" />
-          <TrendCard title="Protein" dataKey="protein" data={data} unit="g" />
-          <TrendCard title="Carbs" dataKey="carbs" data={data} unit="g" />
-          <TrendCard title="Fat" dataKey="fat" data={data} unit="g" />
+        <div className="grid gap-4">
+          <TrendCard title="Calories" dataKey="calories" data={data} unit="kcal" target={goal?.calories_kcal} />
+          <TrendCard title="Protein" dataKey="protein" data={data} unit="g" target={goal?.protein_g} />
+          <TrendCard title="Carbs" dataKey="carbs" data={data} unit="g" target={goal?.carbs_g} />
+          <TrendCard title="Fat" dataKey="fat" data={data} unit="g" target={goal?.fat_g} />
         </div>
       )}
     </DashboardPage>
