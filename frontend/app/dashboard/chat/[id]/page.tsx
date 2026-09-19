@@ -314,7 +314,7 @@ export default function Home() {
   const handleRecordingStop = useCallback(async () => {
     const attachment = await stopRecording();
     if (!attachment) return;
-    const file = new File([attachment.blob], "voice.wav", {
+    const file = new File([attachment.blob], "voice", {
       type: attachment.mime_type,
     });
     setIsTranscribing(true);

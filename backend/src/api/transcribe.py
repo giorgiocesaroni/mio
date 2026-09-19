@@ -15,7 +15,7 @@ from openai import (
 from src.agent.providers import get_client
 from src.agent.utils import get_openrouter_cost
 
-MODEL_ID = "openai/gpt-transcribe"
+MODEL_ID = "meta/muse-voice-transcribe-1.0"
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ _MIME_TO_FILENAME = {
     "audio/flac": "voice.flac",
     "audio/x-m4a": "voice.m4a",
     "audio/m4a": "voice.m4a",
+    "audio/mp4": "voice.mp4",
 }
 
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}

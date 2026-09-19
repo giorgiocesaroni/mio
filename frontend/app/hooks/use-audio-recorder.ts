@@ -2,43 +2,33 @@
 
 import { useCallback, useRef, useState } from "react";
 
-// NOTE: extendable-media-recorder touches `Worker` at module scope, which
-// crashes server-side prerendering. It is dynamically imported on first
-// recording so this module stays SSR-safe.
-
 interface AudioAttachment {
   blob: Blob;
   mime_type: string;
 }
 
-let registered = false;
-
-async function ensureWavEncoder() {
-  if (!registered) {
-    const { connect } = await import("extendable-media-recorder-wav-encoder");
-    const { register } = await import("extendable-media-recorder");
-    await register(await connect());
-    registered = true;
-  }
-}
-
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
-  const mediaRecorderRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
   const startRecording = useCallback(async () => {
     if (mediaRecorderRef.current?.state === "recording") return;
-    await ensureWavEncoder();
+    if (typeof MediaRecorder === "undefined") {
+      throw new Error("Audio recording is not supported by this browser.");
+    }
+
     chunksRef.current = [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
-    const { MediaRecorder: ExtMediaRecorder } = await import(
-      "extendable-media-recorder"
-    );
-    const mediaRecorder = new ExtMediaRecorder(stream, { mimeType: "audio/wav" });
-    mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+
+    // Let the browser choose its native audio format. The backend normalizes
+    // it with ffmpeg before sending it to the transcription API.
+    const mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunksRef.current.push(event.data);
+    };
     mediaRecorderRef.current = mediaRecorder;
     mediaRecorder.start();
     setIsRecording(true);
@@ -51,11 +41,13 @@ export function useAudioRecorder() {
         resolve(null);
         return;
       }
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/wav" });
-        streamRef.current?.getTracks().forEach((t) => t.stop());
+
+      mediaRecorder.onstop = () => {
+        const mime_type = mediaRecorder.mimeType || chunksRef.current[0]?.type || "audio/mp4";
+        const blob = new Blob(chunksRef.current, { type: mime_type });
+        streamRef.current?.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
-        resolve({ blob, mime_type: "audio/wav" });
+        resolve({ blob, mime_type });
       };
       mediaRecorder.stop();
       setIsRecording(false);
