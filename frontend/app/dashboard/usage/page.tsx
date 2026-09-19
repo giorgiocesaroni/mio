@@ -14,9 +14,11 @@ import {
 import {
   Bar,
   BarChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  YAxis,
 } from "recharts";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
@@ -62,6 +64,8 @@ export default function UsagePage() {
     label,
     cost: usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
   }));
+  const averageSpend = dailyData.reduce((sum, point) => sum + point.cost, 0) / dailyData.length;
+  const chartMax = Math.max(...dailyData.map((point) => point.cost), averageSpend, 0.0001);
   const labeledModels = (usage?.models ?? []).filter(
     (model) => Boolean(modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id]),
   );
@@ -120,9 +124,23 @@ export default function UsagePage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dailyData} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
                   <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                  <YAxis
+                    width={48}
+                    axisLine={false}
+                    tickLine={false}
+                    domain={[0, chartMax]}
+                    tickFormatter={(value) => `$${Number(value).toFixed(2)}`}
+                  />
                   <Tooltip
                     formatter={(value) => [formatCost(Number(value)), "Spend"]}
                     cursor={{ fill: "var(--color-muted)" }}
+                  />
+                  <ReferenceLine
+                    y={averageSpend}
+                    stroke="#ef4444"
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    label={{ value: "Average", fill: "#ef4444", fontSize: 12, position: "insideTopRight" }}
                   />
                   <Bar dataKey="cost" fill="var(--color-border)" radius={[4, 4, 0, 0]} />
                 </BarChart>
