@@ -38,6 +38,7 @@ export default function RootLayout({
           type="image/png"
           sizes="32x32"
         />
+        <meta name="theme-color" content="#ffffff" />
       </head>
       <body className="antialiased min-w-97.5 bg-background">
         <Providers>{children}</Providers>
