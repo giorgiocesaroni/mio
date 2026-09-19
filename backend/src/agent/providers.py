@@ -12,49 +12,19 @@ PROVIDERS = {
 # Curated models, each mapped to the provider that serves it.
 AVAILABLE_MODELS = [
     {
-        "id": "google/gemini-3.8-flash",
-        "provider": "openrouter",
-        "name": "Gemini 3.8 Flash",
-    },
-    {
         "id": "openai/gpt-5.6-luna",
         "provider": "openrouter",
         "name": "GPT-5.6 Luna",
     },
     {
-        "id": "xiaomi/mimo-v2.5",
+        "id": "google/gemini-3.8-flash",
         "provider": "openrouter",
-        "name": "MiMo-V2.5",
+        "name": "Gemini 3.8 Flash",
     },
     {
-        "id": "qwen/qwen3.8-flash",
+        "id": "deepseek/deepseek-v4.1-flash",
         "provider": "openrouter",
-        "name": "Qwen3.8 Flash",
-    },
-    {
-        "id": "stepfun/step-3.7-flash",
-        "provider": "openrouter",
-        "name": "Step 3.7 Flash",
-    },
-    {
-        "id": "minimax/minimax-m3",
-        "provider": "openrouter",
-        "name": "MiniMax M3",
-    },
-    {
-        "id": "bytedance-seed/seed-2-1-turbo",
-        "provider": "openrouter",
-        "name": "Seed 2.1 Turbo",
-    },
-    {
-        "id": "meta/muse-spark-1.3-contributor",
-        "provider": "openrouter",
-        "name": "Muse Spark 1.3",
-    },
-    {
-        "id": "deepseek/deepseek-v4-flash-vision-exp",
-        "provider": "openrouter",
-        "name": "DeepSeek V4 Flash",
+        "name": "DeepSeek V4.1 Flash",
     },
     {
         "id": "z-ai/glm-5.3-flash",
