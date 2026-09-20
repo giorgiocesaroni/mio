@@ -4,6 +4,16 @@ import { queryClient } from "@/app/providers";
 
 const BACKEND_BASE_PATH = "/backend";
 
+// Direct backend URL (bypasses the Next.js proxy). Used for multipart uploads
+// (transcription, file uploads): the browser POSTs straight to FastAPI.
+// Falls back to the proxy path when the public env var is not configured.
+function directBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
+    BACKEND_BASE_PATH
+  );
+}
+
 export type {
   ToolCallStep,
   ToolCallStartStep,
@@ -43,12 +53,17 @@ export async function uploadFile(file: File): Promise<{ url: string; mime_type: 
   const headers = await getAuthHeaders();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${BACKEND_BASE_PATH}/upload`, {
+  const res = await fetch(`${directBaseUrl()}/upload`, {
     method: "POST",
     headers,
     body: formData,
   });
-  if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(
+      `Upload failed: HTTP ${res.status}${detail ? ` ${detail}` : ""}`,
+    );
+  }
   return res.json();
 }
 
@@ -56,12 +71,17 @@ export async function transcribeAudio(file: File): Promise<{ text: string }> {
   const headers = await getAuthHeaders();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${BACKEND_BASE_PATH}/transcribe`, {
+  const res = await fetch(`${directBaseUrl()}/transcribe`, {
     method: "POST",
     headers,
     body: formData,
   });
-  if (!res.ok) throw new Error(`Transcription failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(
+      `Transcription failed: HTTP ${res.status}${detail ? ` ${detail}` : ""}`,
+    );
+  }
   return res.json();
 }
 
