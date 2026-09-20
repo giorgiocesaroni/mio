@@ -136,10 +136,16 @@ export default function UsagePage() {
                   margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
                 >
                   <XAxis
-                    dataKey="label"
+                    dataKey="key"
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(value: string) =>
+                      String(
+                        dailyData.find((point) => point.key === value)?.label ??
+                          value,
+                      )
+                    }
                   />
                   {/* <YAxis
                     orientation="right"

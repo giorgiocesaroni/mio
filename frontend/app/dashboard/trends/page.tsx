@@ -82,7 +82,17 @@ function TrendCard({ title, dataKey, data, unit, target }: TrendCardProps) {
         <div className="h-48 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
-              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+              <XAxis
+                dataKey="key"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value: string) =>
+                  String(
+                    data.find((point) => point.key === value)?.label ?? value,
+                  )
+                }
+              />
               <YAxis hide domain={[0, chartMax || 1]} />
               <Tooltip
                 content={<ChartTooltip unit={unit} />}
