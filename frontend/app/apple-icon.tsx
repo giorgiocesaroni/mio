@@ -1,8 +1,8 @@
 import { renderAppIcon } from "@/app/lib/app-icon";
 
-export const size = { width: 32, height: 32 };
+export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-export default function Icon() {
+export default function AppleIcon() {
   return renderAppIcon(size.width);
 }
