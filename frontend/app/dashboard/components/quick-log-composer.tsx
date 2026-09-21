@@ -13,7 +13,7 @@ import {
   uploadFile,
 } from "@/repository/backend/queries";
 import { toast } from "sonner";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function QuickLogComposer({ day }: { day: string }) {
@@ -28,6 +28,7 @@ export function QuickLogComposer({ day }: { day: string }) {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem("model");
   });
+  const queryClient = useQueryClient();
   const { data: modelsData } = useQuery({
     queryKey: ["models"],
     queryFn: getModels,
@@ -127,6 +128,15 @@ export function QuickLogComposer({ day }: { day: string }) {
         setIsSent(true);
         if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
         sentTimeoutRef.current = setTimeout(() => setIsSent(false), 10000);
+        // The agent writes the logs; refresh every day's food list and
+        // macros so the dashboard reflects them without a reload.
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["getDailyFoodLogsWithFoodsView"],
+          }),
+          queryClient.invalidateQueries({ queryKey: ["getDailyMacrosView"] }),
+          queryClient.invalidateQueries({ queryKey: ["getDailyMacrosTrend"] }),
+        ]);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
