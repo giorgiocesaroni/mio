@@ -5,13 +5,19 @@ from tinyfish import TinyFish
 
 web_search_declaration = models.FunctionDeclaration(
     name="web_search",
-    description="Searches the web for information using TinyFish. Use this to research nutrition facts, find sources, or verify data online.",
+    description=(
+        "Searches the web for information using TinyFish. Use this to research "
+        "nutrition facts, find sources, or verify data online. Pass every query "
+        "you need in one call (a `queries` array) instead of one call per query; "
+        "results come back grouped by query."
+    ),
     parameters_json_schema={
         "type": "object",
         "properties": {
-            "query": {
-                "type": "string",
-                "description": "The web search query.",
+            "queries": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "The web search queries to run.",
             },
             "location": {
                 "type": "string",
@@ -22,19 +28,27 @@ web_search_declaration = models.FunctionDeclaration(
                 "description": "Optional language code (e.g. \"en\").",
             },
         },
-        "required": ["query"],
+        "required": ["queries"],
     },
 )
 
 
 def web_search_tool(
-    query: str,
+    queries: list[str],
     location: str | None = None,
     language: str | None = None,
 ) -> dict:
     client = TinyFish()
-    response = client.search.query(query=query, location=location, language=language)
-    return response.model_dump()
+    results = []
+    for query in queries:
+        try:
+            response = client.search.query(
+                query=query, location=location, language=language
+            )
+            results.append(response.model_dump())
+        except Exception as e:
+            results.append({"query": query, "error": str(e)})
+    return {"results": results}
 
 
 web_fetch_declaration = models.FunctionDeclaration(

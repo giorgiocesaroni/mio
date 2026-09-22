@@ -222,6 +222,14 @@ async def _convert_history(contents: list[dict]) -> list[dict]:
     return messages
 
 
+def _as_queries(args: dict) -> dict:
+    """Accept a single `query` (older history or a misparse) as a one-item batch."""
+    if "queries" not in args and isinstance(args.get("query"), str):
+        args = {**args, "queries": [args["query"]]}
+        args.pop("query")
+    return args
+
+
 def _get_tool_response(tool_call: dict, user_id: str) -> dict:
     try:
         args = json.loads(tool_call["function"]["arguments"])
@@ -232,9 +240,9 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
     try:
         match name:
             case "search":
-                response = tools.search_tool(user_id=user_id, **args)
+                response = tools.search_tool(user_id=user_id, **_as_queries(args))
             case "web_search":
-                response = tools.web_search_tool(**args)
+                response = tools.web_search_tool(**_as_queries(args))
             case "web_fetch":
                 response = {"results": tools.web_fetch_tool(**args)}
             # Ingredients
