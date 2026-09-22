@@ -49,10 +49,9 @@ TOOL_DECLARATIONS = [
     tools.update_recipe_declaration,
     tools.delete_recipe_declaration,
     tools.get_daily_summary_declaration,
-    tools.log_ingredient_declaration,
-    tools.log_recipe_declaration,
-    tools.update_log_declaration,
-    tools.delete_log_declaration,
+    tools.log_entries_declaration,
+    tools.update_logs_declaration,
+    tools.delete_logs_declaration,
     tools.get_current_goal_declaration,
     tools.insert_goal_declaration,
     tools.get_latest_measurements_declaration,
@@ -301,18 +300,22 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                 response = tools.get_daily_summary_tool(
                     user_id=user_id, day=args["day"]
                 )
-            case "log_ingredient":
-                tools.log_ingredient_tool(user_id=user_id, **args)
-                response = {"success": True}
-            case "log_recipe":
-                tools.log_recipe_tool(user_id=user_id, **args)
-                response = {"success": True}
+            case "log_entries":
+                response = tools.log_entries_tool(user_id=user_id, **args)
+            case "update_logs":
+                response = tools.update_logs_tool(user_id=user_id, **args)
+            case "delete_logs":
+                response = tools.delete_logs_tool(user_id=user_id, **args)
+            # Legacy singular names, still present in stored conversation
+            # history, mapped onto the batched tools.
+            case "log_ingredient" | "log_recipe":
+                response = tools.log_entries_tool(user_id=user_id, entries=[args])
             case "update_log":
-                tools.update_log_tool(user_id=user_id, **args)
-                response = {"success": True}
+                response = tools.update_logs_tool(user_id=user_id, updates=[args])
             case "delete_log":
-                tools.delete_log_tool(user_id=user_id, log_id=args["log_id"])
-                response = {"success": True}
+                response = tools.delete_logs_tool(
+                    user_id=user_id, log_ids=[args["log_id"]]
+                )
             # Goals
             case "get_current_goal":
                 response = {"goal": tools.get_current_goal_tool(user_id=user_id)}

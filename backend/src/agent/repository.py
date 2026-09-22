@@ -838,6 +838,28 @@ def log_recipe_by_proportion(
                 )
 
 
+def get_log_days(log_ids: list[UUID], user_id: str) -> list[str]:
+    """Local calendar days (YYYY-MM-DD) currently occupied by the given logs.
+
+    Used to recalculate daily totals after a batch of updates or deletes: the
+    affected days are the ones the entries live on *before* they move.
+    """
+    if not log_ids:
+        return []
+    tz = get_user_timezone(user_id)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT DATE(log_for AT TIME ZONE %s)
+                FROM logs
+                WHERE id = ANY(%s::uuid[]) AND user_id = %s
+                """,
+                (tz, [str(log_id) for log_id in log_ids], user_id),
+            )
+            return [row[0].isoformat() for row in cur.fetchall() if row[0]]
+
+
 def delete_log(log_id: UUID, user_id: str) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
