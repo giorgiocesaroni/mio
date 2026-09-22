@@ -65,6 +65,25 @@ async def _preprocess_message(
     return type(message)(parts=new_parts)
 
 
+def _compact_log(log: models.LogWithEntry) -> dict:
+    """Minimal log view for the quick-log prompt (keeps the prompt small)."""
+    name = None
+    if log.ingredient is not None:
+        name = log.ingredient.name
+    elif log.recipe is not None:
+        name = log.recipe.name
+    return {
+        "id": str(log.id),
+        "name": name,
+        "quantity_g": log.quantity_g,
+        "serving_quantity": log.quantity,
+        "meal_type": log.meal_type,
+        "log_for_local": log.log_for_local or log.log_for.isoformat(),
+        "calories_kcal": log.calculated_calories_kcal,
+        "from_recipe": log.recipe_id is not None,
+    }
+
+
 async def run_quick_log(
     input: models.QuickLogInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
@@ -81,12 +100,14 @@ async def run_quick_log(
     )
     daily_macros = repository.get_daily_macros(today, input.user_id)
     current_goal = repository.get_current_goal(input.user_id)
+    daily_logs = repository.get_logs_by_day(today, input.user_id)
     system_prompt = prompts.get_quick_log_prompt(
         mode=input.mode,
         day=today,
         daily_macros=daily_macros,
         current_goal=current_goal.model_dump(mode="json") if current_goal else None,
         timezone=timezone,
+        daily_logs=[_compact_log(log) for log in daily_logs],
     )
     agent_input = models.AgentInput(
         conversation_id=None,
