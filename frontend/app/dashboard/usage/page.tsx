@@ -166,7 +166,7 @@ export default function UsagePage() {
             </span>
           </CardHeader>
           <CardContent>
-            <div className="h-48 w-full">
+            <div className="h-48 w-full overflow-visible">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={dailyData}
@@ -194,8 +194,6 @@ export default function UsagePage() {
                     minTickGap={24}
                   /> */}
                   <Tooltip
-                    allowEscapeViewBox={{ x: true, y: true }}
-                    wrapperStyle={{ zIndex: 10 }}
                     content={
                       <ChartTooltip formatValue={formatCost} showBreakdown />
                     }
