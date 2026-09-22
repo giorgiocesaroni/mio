@@ -31,6 +31,16 @@ AVAILABLE_MODELS = [
         "provider": "openrouter",
         "name": "GLM 5.3 Flash",
     },
+    {
+        "id": "xiaomi/mimo-v2.6-pro",
+        "provider": "openrouter",
+        "name": "Mimo 2.6 Pro",
+    },
+    {
+        "id": "xiaomi/mimo-v2.6-flash",
+        "provider": "openrouter",
+        "name": "Mimo 2.6 Flash",
+    },
 ]
 
 MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]

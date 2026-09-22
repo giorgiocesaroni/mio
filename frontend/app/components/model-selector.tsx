@@ -8,6 +8,8 @@ const MODEL_ABBREVIATIONS: Record<string, string> = {
   "Gemini 3.8 Flash": "Gemini",
   "DeepSeek V4.1 Flash": "DeepSeek",
   "GLM 5.3 Flash": "GLM",
+  "Mimo 2.6 Pro": "Mimo Pro",
+  "Mimo 2.6 Flash": "Mimo Flash",
 };
 
 function abbreviatedModelName(name: string): string {
