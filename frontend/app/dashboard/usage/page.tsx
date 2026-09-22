@@ -2,7 +2,6 @@
 
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
-import { useTheme } from "next-themes";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { ChartTooltip } from "@/app/dashboard/components/chart";
 import { CompactNumber } from "./components/compact-number";
@@ -19,6 +18,7 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  type BarShapeProps,
 } from "recharts";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
@@ -32,12 +32,39 @@ function formatCost(cost: number): string {
 }
 
 const CHART_COLORS = [
-  "var(--chart-5)",
-  "var(--chart-4)",
-  "var(--chart-3)",
-  "var(--chart-2)",
-  "var(--chart-1)",
+  "#2563eb",
+  "#7c3aed",
+  "#0d9488",
+  "#d97706",
+  "#db2777",
 ];
+
+type StackedBarShapeProps = BarShapeProps;
+
+function createStackedBarShape(modelKeys: string[], currentKey: string) {
+  return function StackedBarShape({
+    x,
+    y,
+    width,
+    height,
+    fill,
+    fillOpacity,
+    payload,
+  }: StackedBarShapeProps) {
+    if (width <= 0 || height <= 0) return null;
+    const topKey = [...modelKeys]
+      .reverse()
+      .find((key) => Number(payload?.[key] ?? 0) > 0);
+    const radius = Math.min(4, width / 2, height / 2);
+    const right = x + width;
+    const bottom = y + height;
+    const path =
+      currentKey === topKey && radius > 0
+        ? `M ${x} ${bottom} V ${y + radius} Q ${x} ${y} ${x + radius} ${y} H ${right - radius} Q ${right} ${y} ${right} ${y + radius} V ${bottom} Z`
+        : `M ${x} ${y} H ${right} V ${bottom} H ${x} Z`;
+    return <path d={path} fill={fill} fillOpacity={fillOpacity} />;
+  };
+}
 
 function getLastSevenDays() {
   const today = new Date();
@@ -53,7 +80,6 @@ function getLastSevenDays() {
 }
 
 export default function UsagePage() {
-  const { resolvedTheme } = useTheme();
   const { data: usage } = useQuery({
     queryKey: ["usage"],
     queryFn: getUsage,
@@ -83,18 +109,14 @@ export default function UsagePage() {
       );
     }
   }
-  // The chart ramp is darkest-first on light and lightest-first on dark, so the
-  // biggest spender always gets the most contrast.
-  const chartColors =
-    resolvedTheme === "dark" ? [...CHART_COLORS].reverse() : CHART_COLORS;
   const chartModels = [...modelTotals.entries()]
     .filter(([, cost]) => cost > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([modelId], index) => ({
       modelId,
       dataKey: `model${index}`,
-      color: chartColors[index % chartColors.length],
-      opacity: index < chartColors.length ? 1 : 0.5,
+      color: CHART_COLORS[index % CHART_COLORS.length],
+      opacity: index < CHART_COLORS.length ? 1 : 0.5,
       name: modelNames.get(modelId) ?? EXTRA_MODEL_NAMES[modelId] ?? modelId,
     }));
 
@@ -104,6 +126,7 @@ export default function UsagePage() {
       key,
       label,
       cost: entry?.total_cost ?? 0,
+      total: entry?.total_cost ?? 0,
     };
     for (const model of chartModels) point[model.dataKey] = 0;
     for (const logged of entry?.models ?? []) {
@@ -198,13 +221,15 @@ export default function UsagePage() {
                     minTickGap={24}
                   /> */}
                   <Tooltip
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    wrapperStyle={{ zIndex: 10 }}
                     content={
                       <ChartTooltip formatValue={formatCost} showBreakdown />
                     }
                     cursor={{ fill: "var(--color-muted)" }}
                   />
                   {chartModels.length > 0 ? (
-                    chartModels.map((model, index) => (
+                    chartModels.map((model) => (
                       <Bar
                         key={model.dataKey}
                         dataKey={model.dataKey}
@@ -212,15 +237,16 @@ export default function UsagePage() {
                         stackId="spend"
                         fill={model.color}
                         fillOpacity={model.opacity}
-                        radius={
-                          index === chartModels.length - 1 ? [4, 4, 0, 0] : 0
-                        }
+                        shape={createStackedBarShape(
+                          chartModels.map((item) => item.dataKey),
+                          model.dataKey,
+                        )}
                       />
                     ))
                   ) : (
                     <Bar
                       dataKey="cost"
-                      fill="var(--color-border)"
+                      fill="#94a3b8"
                       radius={[4, 4, 0, 0]}
                     />
                   )}

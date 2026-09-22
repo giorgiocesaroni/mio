@@ -9,6 +9,7 @@ type ChartTooltipProps = {
     value?: number;
     name?: string;
     color?: string;
+    dataKey?: string;
     payload?: { key?: string };
   }>;
   unit?: string;
@@ -29,7 +30,10 @@ export function ChartTooltip({
   const date = point?.key ? new Date(`${point.key}T12:00:00`) : undefined;
   const value = Number(payload[0].value ?? 0);
   const segments = showBreakdown
-    ? payload.filter((entry) => Number(entry.value ?? 0) > 0)
+    ? payload.filter(
+        (entry) =>
+          entry.dataKey !== "total" && Number(entry.value ?? 0) > 0,
+      )
     : [];
   const total = segments.reduce(
     (sum, entry) => sum + Number(entry.value ?? 0),
@@ -37,7 +41,7 @@ export function ChartTooltip({
   );
 
   return (
-    <div className="rounded-lg border bg-background px-3 py-2 text-sm shadow-lg">
+    <div className="max-w-[18rem] rounded-lg border bg-background px-3 py-2 text-sm shadow-lg">
       <p className="font-medium text-foreground">
         {date?.toLocaleDateString(undefined, {
           weekday: "long",
@@ -56,7 +60,7 @@ export function ChartTooltip({
                 className="size-2 shrink-0 rounded-full"
                 style={{ backgroundColor: entry.color }}
               />
-              <span className="truncate">{entry.name}</span>
+              <span className="min-w-0 max-w-[11rem] truncate">{entry.name}</span>
               <span className="ml-auto pl-3 tabular-nums text-foreground">
                 {formatValue(Number(entry.value ?? 0))}
               </span>
