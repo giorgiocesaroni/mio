@@ -15,10 +15,10 @@ import {
 import {
   Bar,
   BarChart,
+  BarStack,
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  type BarShapeProps,
 } from "recharts";
 
 const EXTRA_MODEL_NAMES: Record<string, string> = {
@@ -38,33 +38,6 @@ const CHART_COLORS = [
   "#d97706",
   "#db2777",
 ];
-
-type StackedBarShapeProps = BarShapeProps;
-
-function createStackedBarShape(modelKeys: string[], currentKey: string) {
-  return function StackedBarShape({
-    x,
-    y,
-    width,
-    height,
-    fill,
-    fillOpacity,
-    payload,
-  }: StackedBarShapeProps) {
-    if (width <= 0 || height <= 0) return null;
-    const topKey = [...modelKeys]
-      .reverse()
-      .find((key) => Number(payload?.[key] ?? 0) > 0);
-    const radius = Math.min(4, width / 2, height / 2);
-    const right = x + width;
-    const bottom = y + height;
-    const path =
-      currentKey === topKey && radius > 0
-        ? `M ${x} ${bottom} V ${y + radius} Q ${x} ${y} ${x + radius} ${y} H ${right - radius} Q ${right} ${y} ${right} ${y + radius} V ${bottom} Z`
-        : `M ${x} ${y} H ${right} V ${bottom} H ${x} Z`;
-    return <path d={path} fill={fill} fillOpacity={fillOpacity} />;
-  };
-}
 
 function getLastSevenDays() {
   const today = new Date();
@@ -229,20 +202,17 @@ export default function UsagePage() {
                     cursor={{ fill: "var(--color-muted)" }}
                   />
                   {chartModels.length > 0 ? (
-                    chartModels.map((model) => (
-                      <Bar
-                        key={model.dataKey}
-                        dataKey={model.dataKey}
-                        name={model.name}
-                        stackId="spend"
-                        fill={model.color}
-                        fillOpacity={model.opacity}
-                        shape={createStackedBarShape(
-                          chartModels.map((item) => item.dataKey),
-                          model.dataKey,
-                        )}
-                      />
-                    ))
+                    <BarStack stackId="spend" radius={[4, 4, 0, 0]}>
+                      {chartModels.map((model) => (
+                        <Bar
+                          key={model.dataKey}
+                          dataKey={model.dataKey}
+                          name={model.name}
+                          fill={model.color}
+                          fillOpacity={model.opacity}
+                        />
+                      ))}
+                    </BarStack>
                   ) : (
                     <Bar
                       dataKey="cost"
