@@ -179,17 +179,24 @@ def get_daily_llm_usage() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT created_at::date AS day, COALESCE(SUM(total_cost), 0) AS total_cost
+                SELECT
+                    created_at::date AS day,
+                    COALESCE(model_id, 'unknown') AS model_id,
+                    COALESCE(SUM(total_cost), 0) AS total_cost
                 FROM llm_invocations
                 WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
-                GROUP BY created_at::date
-                ORDER BY day
+                GROUP BY created_at::date, model_id
+                ORDER BY day, total_cost DESC
                 """
             )
-            return [
-                {"day": row[0].isoformat(), "total_cost": float(row[1])}
-                for row in cur.fetchall()
-            ]
+            days: dict[str, dict] = {}
+            for day, model_id, total_cost in cur.fetchall():
+                key = day.isoformat()
+                entry = days.setdefault(key, {"day": key, "total_cost": 0.0, "models": []})
+                cost = float(total_cost)
+                entry["total_cost"] += cost
+                entry["models"].append({"model_id": model_id, "cost": cost})
+            return list(days.values())
 
 
 def get_conversation_llm_usage(conversation_id: UUID) -> dict:

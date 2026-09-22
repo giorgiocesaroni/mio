@@ -7,10 +7,13 @@ type ChartTooltipProps = {
   active?: boolean;
   payload?: Array<{
     value?: number;
+    name?: string;
+    color?: string;
     payload?: { key?: string };
   }>;
   unit?: string;
   formatValue?: (value: number) => string;
+  showBreakdown?: boolean;
 };
 
 export function ChartTooltip({
@@ -18,12 +21,20 @@ export function ChartTooltip({
   payload,
   unit,
   formatValue = defaultFormatValue,
+  showBreakdown = false,
 }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
 
   const point = payload[0].payload;
   const date = point?.key ? new Date(`${point.key}T12:00:00`) : undefined;
   const value = Number(payload[0].value ?? 0);
+  const segments = showBreakdown
+    ? payload.filter((entry) => Number(entry.value ?? 0) > 0)
+    : [];
+  const total = segments.reduce(
+    (sum, entry) => sum + Number(entry.value ?? 0),
+    0,
+  );
 
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-sm shadow-lg">
@@ -34,10 +45,36 @@ export function ChartTooltip({
           day: "numeric",
         })}
       </p>
-      <p className="text-muted-foreground">
-        {formatValue(value)}
-        {unit ? ` ${unit}` : ""}
-      </p>
+      {segments.length > 0 ? (
+        <div className="mt-1 grid gap-0.5">
+          {segments.map((entry) => (
+            <p
+              key={entry.name ?? entry.color}
+              className="flex items-center gap-2 text-muted-foreground"
+            >
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <span className="truncate">{entry.name}</span>
+              <span className="ml-auto pl-3 tabular-nums text-foreground">
+                {formatValue(Number(entry.value ?? 0))}
+              </span>
+            </p>
+          ))}
+          <p className="mt-1 flex items-center border-t pt-1 font-medium text-foreground">
+            <span>Total</span>
+            <span className="ml-auto pl-3 tabular-nums">
+              {formatValue(total)}
+            </span>
+          </p>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">
+          {formatValue(value)}
+          {unit ? ` ${unit}` : ""}
+        </p>
+      )}
     </div>
   );
 }
