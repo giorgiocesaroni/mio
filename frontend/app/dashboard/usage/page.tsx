@@ -2,6 +2,7 @@
 
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
+import { useTheme } from "next-themes";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { ChartTooltip } from "@/app/dashboard/components/chart";
 import { CompactNumber } from "./components/compact-number";
@@ -31,14 +32,11 @@ function formatCost(cost: number): string {
 }
 
 const CHART_COLORS = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#14b8a6",
-  "#f59e0b",
-  "#ec4899",
-  "#64748b",
-  "#84cc16",
-  "#06b6d4",
+  "var(--chart-5)",
+  "var(--chart-4)",
+  "var(--chart-3)",
+  "var(--chart-2)",
+  "var(--chart-1)",
 ];
 
 function getLastSevenDays() {
@@ -55,6 +53,7 @@ function getLastSevenDays() {
 }
 
 export default function UsagePage() {
+  const { resolvedTheme } = useTheme();
   const { data: usage } = useQuery({
     queryKey: ["usage"],
     queryFn: getUsage,
@@ -84,13 +83,18 @@ export default function UsagePage() {
       );
     }
   }
+  // The chart ramp is darkest-first on light and lightest-first on dark, so the
+  // biggest spender always gets the most contrast.
+  const chartColors =
+    resolvedTheme === "dark" ? [...CHART_COLORS].reverse() : CHART_COLORS;
   const chartModels = [...modelTotals.entries()]
     .filter(([, cost]) => cost > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([modelId], index) => ({
       modelId,
       dataKey: `model${index}`,
-      color: CHART_COLORS[index % CHART_COLORS.length],
+      color: chartColors[index % chartColors.length],
+      opacity: index < chartColors.length ? 1 : 0.5,
       name: modelNames.get(modelId) ?? EXTRA_MODEL_NAMES[modelId] ?? modelId,
     }));
 
@@ -207,6 +211,7 @@ export default function UsagePage() {
                         name={model.name}
                         stackId="spend"
                         fill={model.color}
+                        fillOpacity={model.opacity}
                         radius={
                           index === chartModels.length - 1 ? [4, 4, 0, 0] : 0
                         }
