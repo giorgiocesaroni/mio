@@ -2,8 +2,9 @@
 
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
+import { useTheme } from "next-themes";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
-import { ChartLineLabel, ChartTooltip } from "@/app/dashboard/components/chart";
+import { ChartTooltip } from "@/app/dashboard/components/chart";
 import { CompactNumber } from "./components/compact-number";
 import {
   Card,
@@ -15,7 +16,6 @@ import {
 import {
   Bar,
   BarChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -31,6 +31,14 @@ function formatCost(cost: number): string {
   return `$${cost.toFixed(4)}`;
 }
 
+const CHART_COLORS = [
+  "var(--chart-5)",
+  "var(--chart-4)",
+  "var(--chart-3)",
+  "var(--chart-2)",
+  "var(--chart-1)",
+];
+
 function getLastSevenDays() {
   const today = new Date();
   return Array.from({ length: 7 }, (_, index) => {
@@ -45,6 +53,7 @@ function getLastSevenDays() {
 }
 
 export default function UsagePage() {
+  const { resolvedTheme } = useTheme();
   const { data: usage } = useQuery({
     queryKey: ["usage"],
     queryFn: getUsage,
@@ -59,18 +68,50 @@ export default function UsagePage() {
     (modelsData?.models ?? []).map((m) => [m.id, m.name]),
   );
   const days = getLastSevenDays();
-  const dailyData = days.map(({ key, label }) => ({
-    key,
-    label,
-    cost: usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
-  }));
-  const averageSpend =
-    dailyData.reduce((sum, point) => sum + point.cost, 0) / dailyData.length;
-  const chartMax = Math.max(
-    ...dailyData.map((point) => point.cost),
-    averageSpend,
-    0.0001,
+  const dailyTotals = days.map(
+    ({ key }) => usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
   );
+  const averageSpend =
+    dailyTotals.reduce((sum, cost) => sum + cost, 0) / dailyTotals.length;
+
+  const modelTotals = new Map<string, number>();
+  for (const entry of usage?.daily ?? []) {
+    for (const model of entry.models ?? []) {
+      modelTotals.set(
+        model.model_id,
+        (modelTotals.get(model.model_id) ?? 0) + model.cost,
+      );
+    }
+  }
+  // The chart ramp is darkest-first on light and lightest-first on dark, so the
+  // biggest spender always gets the most contrast.
+  const chartColors =
+    resolvedTheme === "dark" ? [...CHART_COLORS].reverse() : CHART_COLORS;
+  const chartModels = [...modelTotals.entries()]
+    .filter(([, cost]) => cost > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([modelId], index) => ({
+      modelId,
+      dataKey: `model${index}`,
+      color: chartColors[index % chartColors.length],
+      opacity: index < chartColors.length ? 1 : 0.5,
+      name: modelNames.get(modelId) ?? EXTRA_MODEL_NAMES[modelId] ?? modelId,
+    }));
+
+  const dailyData = days.map(({ key, label }) => {
+    const entry = usage?.daily.find((day) => day.day === key);
+    const point: Record<string, number | string> = {
+      key,
+      label,
+      cost: entry?.total_cost ?? 0,
+    };
+    for (const model of chartModels) point[model.dataKey] = 0;
+    for (const logged of entry?.models ?? []) {
+      const model = chartModels.find((c) => c.modelId === logged.model_id);
+      if (model) point[model.dataKey] = logged.cost;
+    }
+    return point;
+  });
   const labeledModels = (usage?.models ?? []).filter((model) =>
     Boolean(
       modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id],
@@ -157,27 +198,32 @@ export default function UsagePage() {
                     minTickGap={24}
                   /> */}
                   <Tooltip
-                    content={<ChartTooltip formatValue={formatCost} />}
+                    content={
+                      <ChartTooltip formatValue={formatCost} showBreakdown />
+                    }
                     cursor={{ fill: "var(--color-muted)" }}
                   />
-                  <ReferenceLine
-                    y={averageSpend}
-                    stroke="#ef4444"
-                    strokeWidth={2.5}
-                    strokeLinecap="round"
-                    label={
-                      <ChartLineLabel
-                        value={averageSpend}
-                        chartMax={chartMax}
-                        formatValue={formatCost}
+                  {chartModels.length > 0 ? (
+                    chartModels.map((model, index) => (
+                      <Bar
+                        key={model.dataKey}
+                        dataKey={model.dataKey}
+                        name={model.name}
+                        stackId="spend"
+                        fill={model.color}
+                        fillOpacity={model.opacity}
+                        radius={
+                          index === chartModels.length - 1 ? [4, 4, 0, 0] : 0
+                        }
                       />
-                    }
-                  />
-                  <Bar
-                    dataKey="cost"
-                    fill="var(--color-border)"
-                    radius={[4, 4, 0, 0]}
-                  />
+                    ))
+                  ) : (
+                    <Bar
+                      dataKey="cost"
+                      fill="var(--color-border)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
