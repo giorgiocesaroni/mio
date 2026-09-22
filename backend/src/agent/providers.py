@@ -34,12 +34,12 @@ AVAILABLE_MODELS = [
     {
         "id": "xiaomi/mimo-v2.6-pro",
         "provider": "openrouter",
-        "name": "Mimo 2.6 Pro",
+        "name": "MiMo-V2.6-Pro",
     },
     {
         "id": "xiaomi/mimo-v2.6-flash",
         "provider": "openrouter",
-        "name": "Mimo 2.6 Flash",
+        "name": "MiMo-V2.6-Flash",
     },
 ]
 
