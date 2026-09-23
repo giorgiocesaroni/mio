@@ -12,9 +12,9 @@ PROVIDERS = {
 # Curated models, each mapped to the provider that serves it.
 AVAILABLE_MODELS = [
     {
-        "id": "openai/gpt-5.6-luna",
+        "id": "openai/gpt-6-luna",
         "provider": "openrouter",
-        "name": "GPT-5.6 Luna",
+        "name": "GPT-6 Luna",
     },
     {
         "id": "google/gemini-3.8-flash",
@@ -45,7 +45,7 @@ AVAILABLE_MODELS = [
 
 MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]
 
-DEFAULT_MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-5.6-luna")
+DEFAULT_MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-6-luna")
 
 _clients: dict[str, AsyncOpenAI] = {}
 
