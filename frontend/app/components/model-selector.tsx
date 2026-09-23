@@ -4,7 +4,7 @@ type Model = {
 };
 
 const MODEL_ABBREVIATIONS: Record<string, string> = {
-  "GPT-5.6 Luna": "GPT",
+  "GPT-6 Luna": "GPT",
   "Gemini 3.8 Flash": "Gemini",
   "DeepSeek V4.1 Flash": "DeepSeek",
   "GLM 5.3 Flash": "GLM",
