@@ -15,7 +15,7 @@ import {
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Cog, Loader2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -23,6 +23,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
 import { MessageContent } from "../components/message-content";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
+import { dayEntriesQueryKey } from "@/app/dashboard/components/day-entries";
+import { ChatDraft } from "@/app/dashboard/components/draft-card";
+import type { DayEntries, LogDraft } from "@/repository/backend/queries";
 import { useChatLoading } from "../layout";
 
 function getGreeting() {
@@ -93,8 +96,7 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       </Alert>
     );
   }
-  // Drafts only come from quick log; chat never receives them.
-  if (step.type === "draft") return null;
+  if (step.type === "draft") return <ChatDraft draft={step.draft} />;
   return (
     <div className="min-w-0">
       <MessageContent text={step.text} />
@@ -111,6 +113,20 @@ export default function Home() {
   );
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<RunAgentStep[]>([]);
+  const queryClient = useQueryClient();
+  // A new draft joins its day's entries right away, so the chat and the
+  // dashboard show the same pending cards without waiting for a refetch.
+  const showDraft = useCallback(
+    (draft: LogDraft) =>
+      queryClient.setQueryData<DayEntries>(
+        dayEntriesQueryKey(draft.day),
+        (prev) =>
+          prev && !prev.drafts.some((d) => d.id === draft.id)
+            ? { ...prev, drafts: [draft, ...prev.drafts] }
+            : prev,
+      ),
+    [queryClient],
+  );
   const { isLoading, setIsLoading } = useChatLoading();
   const bottomRef = useRef<HTMLDivElement>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
@@ -197,6 +213,7 @@ export default function Home() {
               streamingContentRef.current = "";
               streamingTokenCountRef.current = 0;
             } else {
+              if (step.type === "draft") showDraft(step.draft);
               setSteps((prev) => [...prev, step]);
             }
           },
@@ -213,7 +230,7 @@ export default function Home() {
         streamingTokenCountRef.current = 0;
       }
     },
-    [setIsLoading, resolvedModel],
+    [setIsLoading, resolvedModel, showDraft],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({

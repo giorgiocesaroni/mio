@@ -4,6 +4,8 @@ import src.agent.models as models
 import src.agent.providers as providers
 import src.agent.repository as repository
 import src.agent.tools as tools
+import src.pipeline.logic as pipeline_logic
+import src.pipeline.service as pipeline
 from src.agent.utils import (
     extract_tokens,
     get_openrouter_cost,
@@ -49,7 +51,7 @@ TOOL_DECLARATIONS = [
     tools.update_recipe_declaration,
     tools.delete_recipe_declaration,
     tools.get_daily_summary_declaration,
-    tools.log_entries_declaration,
+    tools.log_food_declaration,
     tools.update_logs_declaration,
     tools.delete_logs_declaration,
     tools.get_current_goal_declaration,
@@ -308,16 +310,16 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
                 response = tools.get_daily_summary_tool(
                     user_id=user_id, day=args["day"]
                 )
-            case "log_entries":
-                response = tools.log_entries_tool(user_id=user_id, **args)
             case "update_logs":
                 response = tools.update_logs_tool(user_id=user_id, **args)
             case "delete_logs":
                 response = tools.delete_logs_tool(user_id=user_id, **args)
+            # Logging always goes through a draft (`log_food`), including for
+            # older tool names still present in stored conversation history.
+            case "log_entries" | "log_ingredient" | "log_recipe":
+                response = {"error": "Log foods with `log_food`."}
             # Legacy singular names, still present in stored conversation
             # history, mapped onto the batched tools.
-            case "log_ingredient" | "log_recipe":
-                response = tools.log_entries_tool(user_id=user_id, entries=[args])
             case "update_log":
                 response = tools.update_logs_tool(user_id=user_id, updates=[args])
             case "delete_log":
@@ -349,9 +351,66 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
     }
 
 
+def _latest_image_urls(contents: list[dict]) -> list[str]:
+    """Image URLs of the user's latest message, which `log_food` drafts from too."""
+    for msg in reversed(contents):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return []
+        return [
+            part["image_url"]["url"]
+            for part in content
+            if part.get("type") == "image_url" and part.get("image_url", {}).get("url")
+        ]
+    return []
+
+
+async def _log_food(
+    tool_call: dict, input: models.AgentInput
+) -> tuple[dict, dict | None]:
+    """Run `log_food` through the logging pipeline; returns (tool result, draft)."""
+    try:
+        args = json.loads(tool_call["function"]["arguments"])
+    except json.JSONDecodeError:
+        args = {}
+    draft = None
+    try:
+        draft = await pipeline.draft_food(
+            input.user_id,
+            args.get("description", ""),
+            _latest_image_urls(input.contents),
+            args.get("day"),
+        )
+        response = {
+            "draft_id": draft["id"],
+            "day": draft["day"],
+            "status": "awaiting_user_confirmation",
+            "entries": [
+                {
+                    "food": pipeline_logic.row_label(row),
+                    "meal_type": row["meal_type"],
+                    "log_for": row["log_for"],
+                    "note": row["note"],
+                }
+                for row in draft["rows"]
+            ],
+        }
+    except Exception as e:
+        response = {"error": str(e)}
+    return {
+        "tool_call_id": tool_call["id"],
+        "role": "tool",
+        "content": json.dumps(response),
+    }, draft
+
+
 async def agent(
     input: models.AgentInput,
-) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
+) -> AsyncGenerator[
+    dict | models.ContentTokenStep | models.ToolCallStartStep | models.DraftStep, None
+]:
     messages: list[dict] = [
         {"role": "system", "content": input.system_prompt},
         *await _convert_history(input.contents),
@@ -383,7 +442,12 @@ async def agent(
                 if not tool_calls:
                     return
                 for tc in tool_calls:
-                    tool_result = _get_tool_response(tc, input.user_id)
+                    if tc["function"]["name"] == "log_food":
+                        tool_result, draft = await _log_food(tc, input)
+                        if draft:
+                            yield models.DraftStep(draft=draft)
+                    else:
+                        tool_result = _get_tool_response(tc, input.user_id)
                     messages.append(tool_result)
                     yield tool_result
             else:

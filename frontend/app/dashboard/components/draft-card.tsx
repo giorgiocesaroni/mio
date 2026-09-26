@@ -172,6 +172,32 @@ function DraftEntryCard({ draft, row }: { draft: LogDraft; row: DraftRow }) {
   );
 }
 
+/**
+ * A draft inside a conversation: the same entries as on the day's list while
+ * it's pending, then a one-line outcome once it has been reviewed.
+ */
+export function ChatDraft({ draft }: { draft: LogDraft }) {
+  const { data } = useDayEntries(draft.day);
+  const live = data
+    ? data.drafts.find((d) => d.id === draft.id)
+    : draft.status === "pending"
+      ? draft
+      : undefined;
+  if (live)
+    return (
+      <div className="grid gap-4">
+        {live.rows.map((row) => (
+          <DraftEntryCard key={`${live.id}-${row.id}`} draft={live} row={row} />
+        ))}
+      </div>
+    );
+  return (
+    <p className="text-sm text-muted-foreground">
+      {draft.status === "discarded" ? "Draft discarded." : "Draft reviewed."}
+    </p>
+  );
+}
+
 /** Pending log drafts for a day, one entry per food, awaiting confirmation. */
 export function PendingDrafts({ day }: { day: string }) {
   const { data } = useDayEntries(day);

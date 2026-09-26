@@ -146,6 +146,17 @@ def get_day_entries(user_id: str, day: str) -> tuple[list[dict], list[dict]]:
     return drafts, logs
 
 
+def get_draft(user_id: str, draft_id: UUID) -> dict | None:
+    """A draft in any status."""
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                f"SELECT {_COLUMNS} FROM log_drafts WHERE id = %s AND user_id = %s",
+                (draft_id, user_id),
+            )
+            return cur.fetchone()
+
+
 def get_pending_draft(user_id: str, draft_id: UUID) -> dict:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=dict_row) as cur:

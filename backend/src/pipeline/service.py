@@ -88,7 +88,9 @@ async def _normalize(message: agent_models.MessageType) -> tuple[str, list[str],
     for part in message.parts:
         mime = part.mime_type or ""
         if part.url and not mime.startswith("audio/"):
-            images.append(await inline_image_url(part.url))
+            images.append(
+                part.url if part.url.startswith("data:") else await inline_image_url(part.url)
+            )
             displayable.append(part.url)
         elif part.data and mime.startswith("image/"):
             images.append(f"data:{mime};base64,{base64.b64encode(part.data).decode()}")
@@ -275,7 +277,10 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 2. Route
         stage = "route"
         t = time.perf_counter()
-        decision, cost = await _route(input.user_id, session_id, text, len(images))
+        if input.skip_route:
+            decision, cost = {"route": "pipeline", "reason": "Requested by the agent."}, 0.0
+        else:
+            decision, cost = await _route(input.user_id, session_id, text, len(images))
         total_cost += cost
         yield StageStep(
             name=stage,
@@ -391,6 +396,33 @@ def _serialize(draft: dict) -> dict:
 
 def create_draft(user_id: str, day: str, message: str, rows: list[dict]) -> dict:
     return _serialize(repository.insert_draft(user_id, day, message, rows))
+
+
+def get_draft(user_id: str, draft_id: UUID) -> dict | None:
+    draft = repository.get_draft(user_id, draft_id)
+    return _serialize(draft) if draft else None
+
+
+async def draft_food(
+    user_id: str, description: str, image_urls: list[str], day: str | None
+) -> dict:
+    """Draft a food log from the agent's description, skipping the router.
+
+    This is how the agent logs food, so every log, from quick log or chat,
+    is the same kind of draft the user confirms.
+    """
+    parts = [agent_models.UserMessagePart(text=description)] + [
+        agent_models.UserMessagePart(url=url, mime_type="image/*") for url in image_urls
+    ]
+    message = agent_models.RunAgentUserMessage(parts=parts)
+    async for step in run(
+        PipelineInput(user_id=user_id, message=message, day=day, skip_route=True)
+    ):
+        if step.type == "done":
+            if step.outcome == "drafted" and step.draft:
+                return step.draft
+            raise DraftError(step.message)
+    raise DraftError("The pipeline ended without a result.")
 
 
 def list_day_entries(user_id: str, day: str) -> dict:

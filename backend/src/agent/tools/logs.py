@@ -235,6 +235,38 @@ def _apply_log_entry(user_id: str, entry: dict) -> str:
     return log_for[:10]
 
 
+log_food_declaration = models.FunctionDeclaration(
+    name="log_food",
+    description=(
+        "Logs foods the user ate by drafting them: the system matches each food "
+        "to the database (creating it when missing), estimates amounts, and shows "
+        "the user a draft to confirm or correct. Nothing is logged until they "
+        "confirm. Photos in the user's latest message are included automatically. "
+        "Returns the drafted entries."
+    ),
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "description": {
+                "type": "string",
+                "description": (
+                    "Every food to log with its amount, meal, and time when known, in "
+                    "the user's words (e.g. 'pasta al pomodoro 80 g and an apple for "
+                    "lunch at 13:00'). Name each food explicitly: resolve references "
+                    "like 'same as yesterday' from the logs first."
+                ),
+            },
+            "day": {
+                "type": "string",
+                "description": "Day of the meal as YYYY-MM-DD in the user's local time. Defaults to today.",
+            },
+        },
+        "required": ["description"],
+    },
+)
+
+
+# Not given to the agent: confirming a draft writes its rows through this.
 log_entries_declaration = models.FunctionDeclaration(
     name="log_entries",
     description=(

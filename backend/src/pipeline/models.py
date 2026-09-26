@@ -101,6 +101,8 @@ class PipelineInput(BaseModel):
     message: agent_models.MessageType
     day: str | None = None  # YYYY-MM-DD in the user's timezone; defaults to today
     model: str | None = None  # Extraction and resolution model override
+    # The agent's `log_food` tool has already decided the message is a food log.
+    skip_route: bool = False
 
 
 StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "draft"]

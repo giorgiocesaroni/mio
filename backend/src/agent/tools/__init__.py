@@ -55,6 +55,7 @@ from .logs import (
     get_daily_summary_tool,
     log_entries_declaration,
     log_entries_tool,
+    log_food_declaration,
     update_logs_declaration,
     update_logs_tool,
 )

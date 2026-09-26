@@ -73,9 +73,10 @@ async def run_quick_log(
     """One-shot log/edit without a conversation.
 
     New food logs go through the structured pipeline and come back as a draft
-    for the user to confirm. Everything else (corrections, references to past
-    meals, questions) and any pipeline failure falls back to the agent, which
-    always mutates logs and never asks.
+    for the user to confirm. Everything else the router hands off (corrections,
+    references to past meals, questions) goes to the agent, which never asks;
+    it logs food through the same pipeline, so new foods are drafts there too.
+    A pipeline failure is reported, never retried by the agent.
     """
     # Transcribe audio parts (no conversation row; invocations logged with NULL conversation_id).
     preprocessed_message = await preprocess_message(input.message, input.user_id, None)
@@ -89,7 +90,12 @@ async def run_quick_log(
         if step.outcome == "drafted" and step.draft:
             yield models.DraftStep(draft=step.draft)
             return
-        print(f"[INFO] Quick log falls back to the agent ({step.outcome}): {step.message}")
+        if step.outcome == "nothing":
+            yield models.MessageStep(text="No food found in the message.")
+            return
+        if step.outcome == "error":
+            raise Exception(step.message)
+        print(f"[INFO] Quick log hands off to the agent: {step.message}")
 
     user_input = _convert_input(preprocessed_message)
     contents = [user_input]
@@ -116,9 +122,10 @@ async def run_quick_log(
         model=input.model,
     )
     async for chunk in agent(agent_input):
-        if isinstance(chunk, models.ContentTokenStep):
-            yield chunk
-        elif isinstance(chunk, models.ToolCallStartStep):
+        if isinstance(
+            chunk,
+            (models.ContentTokenStep, models.ToolCallStartStep, models.DraftStep),
+        ):
             yield chunk
         elif isinstance(chunk, dict):
             role = chunk.get("role")
@@ -252,9 +259,10 @@ async def run_agent(
         model=input.model,
     )
     async for chunk in agent(agent_input):
-        if isinstance(chunk, models.ContentTokenStep):
-            yield chunk
-        elif isinstance(chunk, models.ToolCallStartStep):
+        if isinstance(
+            chunk,
+            (models.ContentTokenStep, models.ToolCallStartStep, models.DraftStep),
+        ):
             yield chunk
         elif isinstance(chunk, dict):
             repository.insert_conversation_message(
@@ -311,6 +319,17 @@ def get_conversations(user_id: str) -> list[models.Conversation]:
 
 def _mime_type_from_url(url: str) -> str | None:
     return mimetypes.guess_type(url.split("?", 1)[0])[0]
+
+
+def _drafted(tool_message: dict, user_id: str) -> dict | None:
+    """The draft a `log_food` result created, as it is now."""
+    try:
+        result = json.loads(tool_message.get("content") or "")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(result, dict) or not result.get("draft_id"):
+        return None
+    return pipeline.get_draft(user_id, UUID(result["draft_id"]))
 
 
 def get_conversation_history(
@@ -377,6 +396,10 @@ def get_conversation_history(
                                 ),
                             )
                         )
+        elif role == "tool":
+            draft = _drafted(msg, user_id)
+            if draft:
+                steps.append(models.DraftStep(draft=draft))
         elif role == "assistant":
             content = msg.get("content")
             if content:
