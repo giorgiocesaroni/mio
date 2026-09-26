@@ -40,15 +40,15 @@ export function FoodBadges({
       <span>{macros.calories.toFixed()} Kcal</span>
       <MacroBadge
         letter="P"
-        color="bg-red-500"
+        color="bg-protein"
         value={macros.protein.toFixed()}
       />
       <MacroBadge
         letter="C"
-        color="bg-yellow-500"
+        color="bg-carbs"
         value={macros.carbs.toFixed()}
       />
-      <MacroBadge letter="F" color="bg-blue-500" value={macros.fat.toFixed()} />
+      <MacroBadge letter="F" color="bg-fat" value={macros.fat.toFixed()} />
     </div>
   );
 }

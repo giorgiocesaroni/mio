@@ -32,10 +32,10 @@ export function DashboardHeader({
         className,
       )}
     >
-      <div className="mx-auto w-full max-w-3xl px-6 py-3">
+      <div className="w-full px-6 py-3">
         <div className="flex items-center gap-1">
           <SidebarTrigger className="-ml-2 text-muted-foreground md:hidden" />
-          <h1 className="font-sans text-xl font-medium tracking-tight">
+          <h1 className="font-sans text-lg font-medium tracking-tight">
             {title}
           </h1>
           {actions ? (
@@ -60,7 +60,7 @@ export function DashboardBody({
   return (
     <div
       className={cn(
-        "mx-auto flex w-full max-w-3xl flex-1 flex-col content-start p-6",
+        "mx-auto flex w-full max-w-xl flex-1 flex-col content-start p-6",
         className,
       )}
     >

@@ -32,7 +32,7 @@ export function MessageContent({ text }: { text: string }) {
         code: ({ className, children, ...props }) => {
           return (
             <code
-              className="text-sm bg-muted-background border border-border rounded-md px-1 text-red-700"
+              className="text-sm bg-muted-background border border-border rounded-md px-1 text-brand"
               {...props}
             >
               {children}

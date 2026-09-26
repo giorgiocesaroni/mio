@@ -154,7 +154,7 @@ export const ChatEditor = ({
           size="icon"
           className={cn(
             "rounded-full select-none",
-            isRecording && "animate-pulse bg-red-500 text-white hover:bg-red-600",
+            isRecording && "animate-pulse bg-brand text-brand-foreground hover:bg-brand/90",
           )}
           disabled={disabled}
           title={
@@ -181,10 +181,10 @@ export const ChatEditor = ({
             pendingAttachments.some((a) => a.isLoading)
           }
           className={cn(
-            "rounded-full text-white",
+            "rounded-full text-brand-foreground",
             isSent
-              ? "bg-green-500 hover:bg-green-600"
-              : "bg-red-500 hover:bg-red-600",
+              ? "bg-success hover:bg-success/90"
+              : "bg-brand hover:bg-brand/90",
           )}
           onClick={() => onSend?.(text)}
         >

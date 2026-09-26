@@ -185,7 +185,7 @@ export function ChatDraft({ draft }: { draft: LogDraft }) {
       : undefined;
   if (live)
     return (
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {live.rows.map((row) => (
           <DraftEntryCard key={`${live.id}-${row.id}`} draft={live} row={row} />
         ))}

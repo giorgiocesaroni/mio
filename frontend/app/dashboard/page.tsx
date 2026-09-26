@@ -1,20 +1,9 @@
 "use client";
 
-import {
-  getCurrentGoal,
-  getDailyMacrosView,
-} from "@/repository/supabase/queries";
 import type { DayLog } from "@/repository/backend/queries";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Plus } from "lucide-react";
-import { ChatThread } from "./chat/components/chat-thread";
-import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
 function dayKey(date: Date): string {
@@ -42,7 +31,7 @@ function DayPicker({
   const today = days[days.length - 1].key;
 
   return (
-    <div className="grid grid-cols-7 gap-2">
+    <div className="grid grid-cols-7 gap-3">
       {days.map(({ date, key }) => {
         const isToday = key === today;
         return (
@@ -54,9 +43,9 @@ function DayPicker({
             className={cn(
               "grid gap-1 rounded-xl border py-2 text-center text-sm transition-colors",
               selectedDay === key
-                ? "border-red-500 bg-red-500 text-white hover:bg-red-600"
+                ? "border-brand bg-brand text-brand-foreground hover:bg-brand/90"
                 : isToday
-                  ? "border-red-500 text-red-500 hover:bg-red-50"
+                  ? "border-brand text-brand hover:bg-brand/10"
                   : "border-border text-foreground hover:bg-muted",
             )}
           >
@@ -69,7 +58,7 @@ function DayPicker({
                 selectedDay === key
                   ? "text-white/80"
                   : isToday
-                    ? "text-red-500"
+                    ? "text-brand"
                     : "text-muted-foreground",
               )}
             >
@@ -81,16 +70,11 @@ function DayPicker({
     </div>
   );
 }
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { getElapsedTime } from "../utils";
+import { DailyMacros } from "./components/daily-macros";
 import { DashboardPage } from "./components/dashboard-page";
 import { useDayEntries } from "./components/day-entries";
 import { PendingDrafts } from "./components/draft-card";
@@ -102,103 +86,6 @@ import {
   useLogEntryActions,
 } from "./components/entry-actions";
 import { FoodBadges, type Macros } from "./components/food-badges";
-
-function MacroCard({
-  label,
-  unit,
-  current,
-  target,
-  showDifference,
-  onClick,
-}: {
-  label: string;
-  unit: string;
-  current: number;
-  target: number | undefined;
-  showDifference: boolean;
-  onClick: () => void;
-}) {
-  const remaining = target !== undefined ? target - current : undefined;
-
-  const value = showDifference ? remaining : current;
-  const displayValue = value !== undefined ? Math.abs(value).toFixed() : "0";
-
-  let suffix: string | undefined;
-  if (showDifference && remaining !== undefined) {
-    suffix = remaining >= 0 ? "left" : "over";
-  }
-
-  return (
-    <Card
-      onClick={target === undefined ? undefined : onClick}
-      className={
-        target === undefined ? undefined : "cursor-pointer hover:bg-muted/50"
-      }
-    >
-      <CardHeader className="gap-0">
-        <CardDescription>
-          {label} {suffix && ` ${suffix}`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <CardTitle>
-          {displayValue} {unit}
-        </CardTitle>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DailyMacros({ day }: { day: string }) {
-  const [showDifference, setShowDifference] = useState(false);
-
-  const { data: macros } = useQuery({
-    queryKey: ["getDailyMacrosView", day],
-    queryFn: () => getDailyMacrosView(day),
-  });
-
-  const { data: goal } = useQuery({
-    queryKey: ["getCurrentGoal"],
-    queryFn: getCurrentGoal,
-  });
-
-  return (
-    <div className="grid grid-cols-2 items-center gap-4 md:grid-cols-4">
-      <MacroCard
-        label="Calories"
-        unit="Kcal"
-        current={macros?.total_calories_kcal ?? 0}
-        target={goal?.calories_kcal}
-        showDifference={showDifference}
-        onClick={() => setShowDifference((v) => !v)}
-      />
-      <MacroCard
-        label="Protein"
-        unit="g"
-        current={macros?.total_protein_g ?? 0}
-        target={goal?.protein_g}
-        showDifference={showDifference}
-        onClick={() => setShowDifference((v) => !v)}
-      />
-      <MacroCard
-        label="Carbs"
-        unit="g"
-        current={macros?.total_carbs_g ?? 0}
-        target={goal?.carbs_g}
-        showDifference={showDifference}
-        onClick={() => setShowDifference((v) => !v)}
-      />
-      <MacroCard
-        label="Fat"
-        unit="g"
-        current={macros?.total_fat_g ?? 0}
-        target={goal?.fat_g}
-        showDifference={showDifference}
-        onClick={() => setShowDifference((v) => !v)}
-      />
-    </div>
-  );
-}
 
 type FoodLog = DayLog;
 
@@ -424,7 +311,7 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
   const blocks = buildBlocks(entries?.logs ?? []);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       <PendingDrafts day={day} />
       {blocks.map((block, index) =>
         block.kind === "food" ? (
@@ -441,39 +328,6 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
   );
 }
 
-/** Opens a new conversation in a sheet; a food log there becomes a draft. */
-function NewEntrySheet({ day }: { day: string }) {
-  const [open, setOpen] = useState(false);
-  // Every opening starts a fresh conversation.
-  const [session, setSession] = useState(0);
-
-  return (
-    <>
-      <Button
-        size="icon-sm"
-        aria-label="New entry"
-        onClick={() => {
-          setSession((n) => n + 1);
-          setOpen(true);
-        }}
-        className="rounded-full bg-red-500 text-white hover:bg-red-600"
-      >
-        <Plus className="size-4" />
-      </Button>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Mio</SheetTitle>
-          </SheetHeader>
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 text-sm">
-            <ChatThread key={session} conversationId={null} day={day} />
-          </div>
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
 export default function DashboardHomePage() {
   const [selectedDay, setSelectedDay] = useState(dayKey(new Date()));
 
@@ -481,7 +335,17 @@ export default function DashboardHomePage() {
     <DashboardPage
       title="Mio"
       bodyClassName="gap-12"
-      actions={<NewEntrySheet day={selectedDay} />}
+      actions={
+        <Button
+          size="icon-sm"
+          asChild
+          className="rounded-full bg-brand text-brand-foreground hover:bg-brand/90"
+        >
+          <Link href="/dashboard/chat/new" aria-label="New chat">
+            <Plus className="size-4" />
+          </Link>
+        </Button>
+      }
     >
       <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
       <DailyMacros day={selectedDay} />

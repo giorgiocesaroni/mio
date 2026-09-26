@@ -16,7 +16,7 @@ export default function Home() {
   return (
     <div className="mx-auto grid min-h-screen max-w-5xl content-center gap-16 p-6 font-sans md:p-12">
       <section className="flex flex-col items-center gap-8 text-center">
-        <Logo className="bg-red-500" />
+        <Logo className="bg-brand" />
         <h1 className="font-sans text-4xl font-medium tracking-tight md:text-6xl">
           Effortless food tracking.
         </h1>
@@ -36,11 +36,11 @@ export default function Home() {
           }}
         >
           <ChatChip className="hidden sm:inline-flex">
-            <Brain className="size-4 shrink-0 text-blue-500" />
+            <Brain className="size-4 shrink-0 text-brand" />
             <span className="truncate">MiMo v2.5</span>
           </ChatChip>
           <ChatChip>
-            <Globe className="size-4 shrink-0 text-blue-500" />
+            <Globe className="size-4 shrink-0 text-brand" />
             <span className="truncate">Search</span>
           </ChatChip>
         </ChatEditor>
@@ -79,7 +79,7 @@ export default function Home() {
       <section>
         <a href="https://www.giorgiocesaroni.com" target="_blank">
           <p className="flex items-center justify-center gap-1 font-sans text-sm text-muted-foreground">
-            Crafted with <Heart className="size-4 fill-red-500 stroke-0" /> by
+            Crafted with <Heart className="size-4 fill-brand stroke-0" /> by
             Giorgio
           </p>
         </a>

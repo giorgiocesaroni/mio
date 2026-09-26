@@ -4,7 +4,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex aspect-square size-14 items-center justify-center rounded-2xl border bg-red-500 text-white md:size-18",
+        "flex aspect-square size-14 items-center justify-center rounded-2xl border bg-brand text-brand-foreground md:size-18",
         className,
       )}
     >

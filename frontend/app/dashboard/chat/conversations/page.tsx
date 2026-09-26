@@ -28,7 +28,7 @@ export default function ConversationsPage() {
       <Button
         size="icon-sm"
         onClick={startNew}
-        className="rounded-full bg-red-500 text-white hover:bg-red-600"
+        className="rounded-full bg-brand text-brand-foreground hover:bg-brand/90"
       >
         <Plus className="size-4" />
       </Button>

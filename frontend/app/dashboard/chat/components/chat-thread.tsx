@@ -20,17 +20,11 @@ import { AlertCircle, Cog, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 } from "uuid";
+import { DailyMacros } from "@/app/dashboard/components/daily-macros";
 import { MessageContent } from "./message-content";
 import { dayEntriesQueryKey } from "@/app/dashboard/components/day-entries";
 import { ChatDraft } from "@/app/dashboard/components/draft-card";
 import type { DayEntries, LogDraft } from "@/repository/backend/queries";
-
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return "What's for breakfast?";
-  if (hour < 18) return "Any foods for the day?";
-  return "What did you eat today?";
-}
 
 // Logging food shows up as its draft, so the tool that made it stays hidden.
 const HIDDEN_TOOLS = new Set(["log_food"]);
@@ -115,15 +109,10 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
  */
 export function ChatThread({
   conversationId: initialId,
-  day,
   onStart,
-  greeting = getGreeting(),
 }: {
   conversationId: string | null;
-  /** The day the user is looking at; foods are logged there by default. */
-  day?: string;
   onStart?: (id: string) => void;
-  greeting?: string;
 }) {
   const isNew = initialId === null;
   const [conversationId, setConversationId] = useState(initialId);
@@ -189,7 +178,6 @@ export function ChatThread({
           id,
           payload,
           resolvedModel,
-          day,
           controller.signal,
           (step) => {
             if (step.type === "content_token") {
@@ -247,7 +235,7 @@ export function ChatThread({
         streamingTokenCountRef.current = 0;
       }
     },
-    [resolvedModel, day, showDraft],
+    [setIsLoading, resolvedModel, showDraft],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
@@ -402,16 +390,17 @@ export function ChatThread({
   return (
     <>
       <div
-        className={`flex-1 ${steps.length === 0 ? "flex items-center justify-center" : "grid content-start gap-4"}`}
+        className={`flex-1 ${steps.length === 0 ? "flex flex-col gap-8" : "grid content-start gap-4"}`}
       >
-        {steps.length === 0 && (
-          <h1 className="text-2xl text-muted-foreground md:text-2xl">
-            {isFetchingHistory
-              ? "Loading..."
-              : historyData
-                ? null
-                : greeting}
-          </h1>
+        {steps.length === 0 && isNew && (
+          <DailyMacros day={new Date().toLocaleDateString("en-CA")} />
+        )}
+        {steps.length === 0 && isFetchingHistory && (
+          <div className="flex flex-1 items-center justify-center">
+            <h1 className="text-2xl text-muted-foreground md:text-2xl">
+              Loading...
+            </h1>
+          </div>
         )}
         {steps.map((step, i) => (
           <StepDisplay key={i} step={step} />
@@ -421,7 +410,7 @@ export function ChatThread({
             ref={bottomRef}
             className={
               "flex size-4 rounded-full transition-colors duration-200" +
-              (isLoading ? " animate-pulse bg-red-500" : " animate-none bg-border")
+              (isLoading ? " animate-pulse bg-brand" : " animate-none bg-border")
             }
           ></div>
         )}
@@ -429,6 +418,7 @@ export function ChatThread({
 
       <div className="sticky bottom-0 pt-4">
         <ChatEditor
+          placeholder="What did you eat today?"
           disabled={isLoading || (!isNew && isFetchingHistory) || isTranscribing}
           text={input}
           onTextChange={(text) => setInput(text)}
