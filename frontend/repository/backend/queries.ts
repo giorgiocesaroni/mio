@@ -1,5 +1,13 @@
 import { supabase } from "@/repository/supabase/queries";
-import type { ModelsResponse, RunAgentStep, UsageOverview } from "./types";
+import type {
+  ConfirmDraftResult,
+  DraftRowEdit,
+  LogDraft,
+  ModelsResponse,
+  RunAgentStep,
+  SandboxStep,
+  UsageOverview,
+} from "./types";
 import { queryClient } from "@/app/providers";
 
 const BACKEND_BASE_PATH = "/backend";
@@ -15,6 +23,7 @@ function directBaseUrl(): string {
 }
 
 export type {
+  DraftStep,
   ToolCallStep,
   ToolCallStartStep,
   ContentTokenStep,
@@ -24,6 +33,18 @@ export type {
   Model,
   ModelsResponse,
   UsageOverview,
+  SandboxStep,
+  SandboxStageStep,
+  SandboxDoneStep,
+  SandboxStageName,
+  LogDraft,
+  DraftRow,
+  DraftRowEdit,
+  DraftAlternative,
+  DraftServingSize,
+  DraftUnit,
+  MealType,
+  ConfirmDraftResult,
 } from "./types";
 
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -35,7 +56,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
     : {};
 }
 
-function parseStep(data: unknown): RunAgentStep | null {
+function parseStep<T extends { type: string }>(data: unknown): T | null {
   if (typeof data === "string") {
     try {
       return JSON.parse(data);
@@ -44,7 +65,7 @@ function parseStep(data: unknown): RunAgentStep | null {
     }
   }
   if (typeof data === "object" && data !== null && "type" in data) {
-    return data as RunAgentStep;
+    return data as T;
   }
   return null;
 }
@@ -115,11 +136,11 @@ export async function getUsage(): Promise<UsageOverview> {
   return res.json();
 }
 
-async function streamSSE(
+async function streamSSE<T extends { type: string } = RunAgentStep>(
   path: string,
   body: object,
   signal: AbortSignal,
-  onStep: (step: RunAgentStep) => void,
+  onStep: (step: T) => void,
 ): Promise<void> {
   const authHeaders = await getAuthHeaders();
   const response = await fetch(`${BACKEND_BASE_PATH}${path}`, {
@@ -146,7 +167,7 @@ async function streamSSE(
     for (const part of parts) {
       if (!part.startsWith("data: ")) continue;
       try {
-        const step = parseStep(JSON.parse(part.slice(6)));
+        const step = parseStep<T>(JSON.parse(part.slice(6)));
         if (step && step.type !== "user_message") onStep(step);
       } catch {
         // Skip malformed events
@@ -197,4 +218,61 @@ export async function streamChat(
     signal,
     onStep,
   );
+}
+
+export async function streamSandboxLog(
+  payload: object,
+  options: { day: string; model?: string },
+  signal: AbortSignal,
+  onStep: (step: SandboxStep) => void,
+): Promise<void> {
+  return streamSSE<SandboxStep>(
+    "/sandbox/log",
+    {
+      message: payload,
+      day: options.day,
+      ...(options.model ? { model: options.model } : {}),
+    },
+    signal,
+    onStep,
+  );
+}
+
+async function requestJSON<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${BACKEND_BASE_PATH}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...headers },
+  });
+  if (!res.ok) {
+    // FastAPI puts the reason in `detail`.
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export function getDrafts(day: string): Promise<LogDraft[]> {
+  return requestJSON(`/drafts?day=${encodeURIComponent(day)}`);
+}
+
+export function updateDraft(
+  id: string,
+  rows: DraftRowEdit[],
+): Promise<LogDraft> {
+  return requestJSON(`/drafts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ rows }),
+  });
+}
+
+export function confirmDraft(id: string): Promise<ConfirmDraftResult> {
+  return requestJSON(`/drafts/${id}/confirm`, { method: "POST" });
+}
+
+export function discardDraft(id: string): Promise<{ success: true }> {
+  return requestJSON(`/drafts/${id}/discard`, { method: "POST" });
 }

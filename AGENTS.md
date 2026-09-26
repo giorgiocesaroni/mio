@@ -8,7 +8,7 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 | ----------- | --------------------------------------- | ------------------ |
 | `frontend/` | The frontend of the application.        | Next.js            |
 | `backend/`  | The backend of the application.         | Python             |
-| `database/` | Database schema, views, and migrations. | Postgres, Supabase |
+| `supabase/` | Database schema, views, and migrations. | Postgres, Supabase |
 
 ## `backend/`
 
@@ -16,9 +16,9 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 
 | Directory   | Notes                           | Core Technologies            |
 | ----------- | ------------------------------- | ---------------------------- |
-| `adapters/` | The platform-specific adapters. | Telegram                     |
 | `agent/`    | The agent's core logic.         | MiMo API (OpenAI-compatible) |
 | `api/`      | The API of the application.     | FastAPI                      |
+| `pipeline/` | The structured food-logging pipeline and its log drafts, used by quick log. | Jev (TypeSafe), Gemini |
 
 ### Module Structure
 

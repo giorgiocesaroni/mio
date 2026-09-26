@@ -9,6 +9,8 @@ import src.agent.models as models
 import src.agent.repository as repository
 from src.agent.agent import agent
 import src.agent.prompts as prompts
+import src.pipeline.service as pipeline
+from src.pipeline.models import PipelineInput
 from src.agent.utils import extract_tokens
 from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
 
@@ -23,7 +25,7 @@ async def _fetch_audio_from_url(url: str) -> tuple[bytes, str]:
         return response.content, mime_type
 
 
-async def _preprocess_message(
+async def preprocess_message(
     message: models.MessageType,
     user_id: str,
     conversation_id: UUID | None,
@@ -68,9 +70,27 @@ async def _preprocess_message(
 async def run_quick_log(
     input: models.QuickLogInput,
 ) -> AsyncGenerator[models.RunAgentStep, None]:
-    """One-shot log/edit without a conversation. Always mutates logs, never asks."""
+    """One-shot log/edit without a conversation.
+
+    New food logs go through the structured pipeline and come back as a draft
+    for the user to confirm. Everything else (corrections, references to past
+    meals, questions) and any pipeline failure falls back to the agent, which
+    always mutates logs and never asks.
+    """
     # Transcribe audio parts (no conversation row; invocations logged with NULL conversation_id).
-    preprocessed_message = await _preprocess_message(input.message, input.user_id, None)
+    preprocessed_message = await preprocess_message(input.message, input.user_id, None)
+
+    pipeline_input = PipelineInput(
+        user_id=input.user_id, message=preprocessed_message, day=input.day
+    )
+    async for step in pipeline.run(pipeline_input):
+        if step.type != "done":
+            continue
+        if step.outcome == "drafted" and step.draft:
+            yield models.DraftStep(draft=step.draft)
+            return
+        print(f"[INFO] Quick log falls back to the agent ({step.outcome}): {step.message}")
+
     user_input = _convert_input(preprocessed_message)
     contents = [user_input]
 
@@ -194,7 +214,7 @@ async def run_agent(
     )
 
     # Preprocess message (transcribes audio)
-    preprocessed_message = await _preprocess_message(
+    preprocessed_message = await preprocess_message(
         input.message, input.user_id, input.conversation_id
     )
 
@@ -222,8 +242,6 @@ async def run_agent(
         current_goal=current_goal.model_dump(mode="json") if current_goal else None,
         timezone=timezone,
     )
-    if input.channel_instructions:
-        system_prompt = f"{system_prompt}\n\n{input.channel_instructions}"
 
     agent_input = models.AgentInput(
         conversation_id=input.conversation_id,

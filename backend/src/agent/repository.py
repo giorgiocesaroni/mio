@@ -346,8 +346,14 @@ _SERVING_SIZES_AGG = """
 """
 
 
-def search_ingredients(query: str, limit: int = 10, user_id: str = "") -> list[models.Ingredient]:
-    embedding = embeddings.generate_embedding(query)
+def search_ingredients(
+    query: str,
+    limit: int = 10,
+    user_id: str = "",
+    embedding: list[float] | None = None,
+) -> list[models.Ingredient]:
+    """`embedding` lets callers searching several tables embed the query once."""
+    embedding = embedding or embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -502,8 +508,14 @@ _RECIPE_ITEMS_AGG = """
 """
 
 
-def search_recipes(query: str, limit: int = 10, user_id: str = "") -> list[models.Recipe]:
-    embedding = embeddings.generate_embedding(query)
+def search_recipes(
+    query: str,
+    limit: int = 10,
+    user_id: str = "",
+    embedding: list[float] | None = None,
+) -> list[models.Recipe]:
+    """`embedding` lets callers searching several tables embed the query once."""
+    embedding = embedding or embeddings.generate_embedding(query)
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor() as cur:
             cur.execute(

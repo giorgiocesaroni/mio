@@ -51,7 +51,14 @@ class MessageStep(BaseModel):
     text: str
 
 
-RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep, ContentTokenStep, ToolCallStartStep]
+class DraftStep(BaseModel):
+    """Quick log produced a log draft awaiting the user's confirmation."""
+
+    type: Literal["draft"] = "draft"
+    draft: dict
+
+
+RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep, ContentTokenStep, ToolCallStartStep, DraftStep]
 
 
 class UserMessagePart(BaseModel):
@@ -73,7 +80,6 @@ class RunAgentInput(BaseModel):
     conversation_id: UUID
     user_id: str
     message: MessageType
-    channel_instructions: Optional[str] = None
     thinking: bool = True
     model: Optional[str] = None
 

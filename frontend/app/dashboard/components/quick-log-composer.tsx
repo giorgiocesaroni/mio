@@ -45,7 +45,11 @@ export function QuickLogComposer({ day }: { day: string }) {
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const abortRef = useRef<AbortController | null>(null);
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const resultRef = useRef<{ message?: string; error?: string }>({});
+  const resultRef = useRef<{
+    message?: string;
+    error?: string;
+    drafted?: boolean;
+  }>({});
 
   const handleRecordingStart = useCallback(async () => {
     try {
@@ -112,25 +116,29 @@ export function QuickLogComposer({ day }: { day: string }) {
         resolvedModel,
         controller.signal,
         (step) => {
-          // No conversation view: ignore tokens/tool calls, keep only the
-          // single final message (or error) to show at the end.
-          if (step.type === "message") resultRef.current.message = step.text;
+          // No conversation view: ignore tokens/tool calls. New food logs
+          // come back as a draft (shown above the logs for confirmation);
+          // everything the agent handles ends with a message (or error).
+          if (step.type === "draft") resultRef.current.drafted = true;
+          else if (step.type === "message") resultRef.current.message = step.text;
           else if (step.type === "error") resultRef.current.error = step.text;
         },
       );
-      const { message, error } = resultRef.current;
+      const { message, error, drafted } = resultRef.current;
       if (error) {
         toast.error(error);
       } else {
         setInput("");
         setPendingAttachments([]);
-        toast.success(message ?? "Done.");
+        // A draft shows up as a card above the logs, so it needs no toast.
+        if (!drafted) toast.success(message ?? "Done.");
         setIsSent(true);
         if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current);
         sentTimeoutRef.current = setTimeout(() => setIsSent(false), 10000);
         // The agent writes the logs; refresh every day's food list and
         // macros so the dashboard reflects them without a reload.
         await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["drafts"] }),
           queryClient.invalidateQueries({
             queryKey: ["getDailyFoodLogsWithFoodsView"],
           }),

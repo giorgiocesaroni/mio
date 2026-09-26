@@ -29,11 +29,13 @@ import {
 import { getConversations, supabase } from "@/repository/supabase/queries";
 import {
   ChartNoAxesCombined,
+  FlaskConical,
   LayoutDashboard,
   MessageCircle,
   MoreVertical,
   PanelLeftIcon,
   Receipt,
+  SunMoon,
   User,
 } from "lucide-react";
 
@@ -171,8 +173,20 @@ export function AppSidebar() {
                   <Receipt className="size-4 shrink-0" />
                   <span>Usage</span>
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    closeMobile();
+                    router.push("/dashboard/sandbox");
+                  }}
+                >
+                  <FlaskConical className="size-4 shrink-0" />
+                  <span>Sandbox</span>
+                </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
+                  <DropdownMenuSubTrigger>
+                    <SunMoon className="size-4 shrink-0" />
+                    <span>Theme</span>
+                  </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuItem onSelect={() => setTheme("system")}>
                       System

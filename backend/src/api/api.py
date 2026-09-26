@@ -2,6 +2,7 @@ import dotenv
 
 dotenv.load_dotenv()
 
+import asyncio
 import base64
 import json
 import logging
@@ -15,6 +16,8 @@ import src.agent.models as models
 import src.agent.providers as providers
 import src.agent.repository as repository
 import src.api.media as media
+import src.pipeline.service as pipeline
+from src.pipeline.models import DraftError, PipelineInput
 from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
 from src.agent.utils import extract_tokens
 import supabase
@@ -190,6 +193,86 @@ async def quick_log_endpoint(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/sandbox/log")
+async def sandbox_log_endpoint(
+    request: Request,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """Runs the logging pipeline and streams every stage, for debugging."""
+    body = await request.json()
+    message = await service.preprocess_message(
+        _parse_message(body["message"]), user_id, None
+    )
+    inp = PipelineInput(
+        user_id=user_id,
+        message=message,
+        day=body.get("day"),
+        model=body.get("model"),
+    )
+
+    async def event_stream():
+        async for step in pipeline.run(inp):
+            yield f"data: {step.model_dump_json()}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/drafts")
+async def list_drafts_endpoint(
+    day: str,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """Pending log drafts for a day."""
+    return await asyncio.to_thread(pipeline.list_drafts, user_id, day)
+
+
+@app.patch("/drafts/{draft_id}")
+async def update_draft_endpoint(
+    draft_id: UUID,
+    request: Request,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """Replace the draft's rows with the edited ones; omitted rows are removed."""
+    body = await request.json()
+    try:
+        return await asyncio.to_thread(
+            pipeline.update_draft, user_id, draft_id, body.get("rows", [])
+        )
+    except DraftError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/drafts/{draft_id}/confirm")
+async def confirm_draft_endpoint(
+    draft_id: UUID,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    try:
+        return await asyncio.to_thread(pipeline.confirm_draft, user_id, draft_id)
+    except DraftError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/drafts/{draft_id}/discard")
+async def discard_draft_endpoint(
+    draft_id: UUID,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    try:
+        await asyncio.to_thread(pipeline.discard_draft, user_id, draft_id)
+    except DraftError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True}
 
 
 @app.post("/upload")

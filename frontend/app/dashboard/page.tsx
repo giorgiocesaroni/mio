@@ -85,6 +85,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { getElapsedTime } from "../utils";
 import { DashboardPage } from "./components/dashboard-page";
+import { PendingDrafts } from "./components/draft-card";
 import { QuickLogComposer } from "./components/quick-log-composer";
 
 function MacroCard({
@@ -387,6 +388,7 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
 
   return (
     <div className="grid gap-4">
+      <PendingDrafts day={day} />
       {blocks.map((block, index) =>
         block.kind === "food" ? (
           <IngredientLogCard key={block.log.log_id} log={block.log} />

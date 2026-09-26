@@ -4,3 +4,4 @@
 *.code-workspace
 .env
 .venv
+supabase/.temp/

@@ -93,6 +93,8 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       </Alert>
     );
   }
+  // Drafts only come from quick log; chat never receives them.
+  if (step.type === "draft") return null;
   return (
     <div className="min-w-0">
       <MessageContent text={step.text} />
