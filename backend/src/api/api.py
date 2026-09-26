@@ -227,13 +227,13 @@ async def sandbox_log_endpoint(
     )
 
 
-@app.get("/drafts")
-async def list_drafts_endpoint(
+@app.get("/entries")
+async def list_entries_endpoint(
     day: str,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
-    """Pending log drafts for a day."""
-    return await asyncio.to_thread(pipeline.list_drafts, user_id, day)
+    """Pending log drafts and logs for a day, read together."""
+    return await asyncio.to_thread(pipeline.list_day_entries, user_id, day)
 
 
 @app.post("/drafts/{draft_id}/rows/{row_id}/revise")

@@ -86,8 +86,16 @@ def insert_draft(user_id: str, day: str, message: str, rows: list[dict]) -> dict
             return cur.fetchone()
 
 
-def get_pending_drafts(user_id: str, day: str) -> list[dict]:
+def get_day_entries(user_id: str, day: str) -> tuple[list[dict], list[dict]]:
+    """A day's pending drafts and logs, read from one snapshot.
+
+    Confirming takes a draft's rows before it writes their logs, so within one
+    snapshot a row is either still a draft or already a log, never both.
+    The logs have the columns of `v_daily_food_logs_with_foods`.
+    """
     with psycopg.connect(**db_connection_params) as conn:
+        conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+        conn.read_only = True
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 f"""
@@ -97,7 +105,45 @@ def get_pending_drafts(user_id: str, day: str) -> list[dict]:
                 """,
                 (user_id, day),
             )
-            return cur.fetchall()
+            drafts = cur.fetchall()
+            cur.execute(
+                """
+                WITH profile AS (
+                    SELECT COALESCE(
+                        (SELECT timezone FROM profiles WHERE user_id = %(user_id)s),
+                        'UTC'
+                    ) AS timezone
+                )
+                SELECT
+                    l.id::text AS log_id,
+                    l.log_for,
+                    COALESCE(l.log_for, l.created_at) AS log_created_at,
+                    l.food_id::text AS log_food_id,
+                    l.recipe_id::text AS log_recipe_id,
+                    COALESCE(ss.grams * l.quantity, l.quantity_g)::float AS log_quantity_g,
+                    l.serving_size_id::text AS log_serving_size_id,
+                    l.quantity::float AS log_quantity,
+                    ss.label AS log_serving_size_label,
+                    ss.label_plural AS log_serving_size_label_plural,
+                    ss.grams::float AS log_serving_size_grams,
+                    i.name AS food_name,
+                    i.protein_g::float AS food_protein_g,
+                    i.carbs_g::float AS food_carbs_g,
+                    i.fat_g::float AS food_fat_g,
+                    i.calories_kcal::float AS food_calories_kcal,
+                    r.name AS recipe_name
+                FROM logs l
+                JOIN ingredients i ON i.id = l.food_id
+                LEFT JOIN serving_sizes ss ON ss.id = l.serving_size_id
+                LEFT JOIN recipes r ON r.id = l.recipe_id
+                WHERE l.user_id = %(user_id)s
+                  AND (COALESCE(l.log_for, l.created_at) AT TIME ZONE (SELECT timezone FROM profile))::date = %(day)s
+                ORDER BY log_created_at DESC
+                """,
+                {"user_id": user_id, "day": day},
+            )
+            logs = cur.fetchall()
+    return drafts, logs
 
 
 def get_pending_draft(user_id: str, draft_id: UUID) -> dict:

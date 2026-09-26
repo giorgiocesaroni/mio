@@ -9,14 +9,14 @@ import {
 import {
   confirmDraft,
   deleteDraftRow,
-  getDrafts,
   reviseDraftRow,
+  type DayEntries,
   type DraftAlternative,
   type DraftRow,
   type LogDraft,
   type Per100g,
 } from "@/repository/backend/queries";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,11 +29,8 @@ import {
   useInvalidateLogs,
   type EntryDialog,
 } from "./entry-actions";
+import { dayEntriesQueryKey, useDayEntries } from "./day-entries";
 import { FoodBadges, type Macros } from "./food-badges";
-
-export function draftsQueryKey(day: string) {
-  return ["drafts", day] as const;
-}
 
 function targetOf(row: DraftRow): DraftAlternative {
   return row.alternatives.find((a) => a.key === row.target)!;
@@ -63,12 +60,16 @@ function amountOf(row: DraftRow, target: DraftAlternative): string {
 function useDraftRowMutations(draft: LogDraft) {
   const queryClient = useQueryClient();
   const invalidateLogs = useInvalidateLogs();
-  const queryKey = draftsQueryKey(draft.day);
   const setDraft = (updated: LogDraft | null) =>
-    queryClient.setQueryData<LogDraft[]>(queryKey, (prev) =>
-      (prev ?? []).flatMap((d) =>
-        d.id !== draft.id ? [d] : updated ? [updated] : [],
-      ),
+    queryClient.setQueryData<DayEntries>(
+      dayEntriesQueryKey(draft.day),
+      (prev) =>
+        prev && {
+          ...prev,
+          drafts: prev.drafts.flatMap((d) =>
+            d.id !== draft.id ? [d] : updated ? [updated] : [],
+          ),
+        },
     );
 
   const revise = useMutation({
@@ -93,10 +94,9 @@ function useDraftRowMutations(draft: LogDraft) {
       const failed = result.results.filter((r) => !r.success);
       if (failed.length)
         toast.error(`Logging failed: ${failed.map((f) => f.error).join("; ")}`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey }),
-        invalidateLogs(),
-      ]);
+      // The day's drafts and logs are one query, so the draft row and its new
+      // log swap in a single update.
+      await invalidateLogs();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -174,10 +174,8 @@ function DraftEntryCard({ draft, row }: { draft: LogDraft; row: DraftRow }) {
 
 /** Pending log drafts for a day, one entry per food, awaiting confirmation. */
 export function PendingDrafts({ day }: { day: string }) {
-  const { data: drafts } = useQuery({
-    queryKey: draftsQueryKey(day),
-    queryFn: () => getDrafts(day),
-  });
+  const { data } = useDayEntries(day);
+  const drafts = data?.drafts;
   if (!drafts?.length) return null;
   return drafts.flatMap((draft) =>
     draft.rows.map((row) => (

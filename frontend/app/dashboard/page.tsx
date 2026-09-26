@@ -2,10 +2,9 @@
 
 import {
   getCurrentGoal,
-  getDailyFoodLogsWithFoodsView,
   getDailyMacrosView,
 } from "@/repository/supabase/queries";
-import { Database } from "@/repository/supabase/types";
+import type { DayLog } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -84,6 +83,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { getElapsedTime } from "../utils";
 import { DashboardPage } from "./components/dashboard-page";
+import { useDayEntries } from "./components/day-entries";
 import { PendingDrafts } from "./components/draft-card";
 import {
   DeleteDialog,
@@ -192,8 +192,7 @@ function DailyMacros({ day }: { day: string }) {
   );
 }
 
-type FoodLog =
-  Database["public"]["Views"]["v_daily_food_logs_with_foods"]["Row"];
+type FoodLog = DayLog;
 
 function macrosOf(log: FoodLog): Macros {
   const q = log.log_quantity_g ?? 0;
@@ -412,12 +411,9 @@ function RecipeLogCard({
 }
 
 function DailyFoodLogsWithFoods({ day }: { day: string }) {
-  const { data: dailyFoodLogsView } = useQuery({
-    queryKey: ["getDailyFoodLogsWithFoodsView", day],
-    queryFn: () => getDailyFoodLogsWithFoodsView(day),
-  });
+  const { data: entries } = useDayEntries(day);
 
-  const blocks = buildBlocks(dailyFoodLogsView ?? []);
+  const blocks = buildBlocks(entries?.logs ?? []);
 
   return (
     <div className="grid gap-4">

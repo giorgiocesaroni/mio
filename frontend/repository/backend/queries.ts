@@ -1,6 +1,7 @@
 import { supabase } from "@/repository/supabase/queries";
 import type {
   ConfirmDraftResult,
+  DayEntries,
   LogDraft,
   ModelsResponse,
   RunAgentStep,
@@ -37,6 +38,8 @@ export type {
   SandboxDoneStep,
   SandboxStageName,
   LogDraft,
+  DayLog,
+  DayEntries,
   DraftRow,
   DraftAlternative,
   DraftServingSize,
@@ -254,8 +257,8 @@ async function requestJSON<T>(
   return res.json();
 }
 
-export function getDrafts(day: string): Promise<LogDraft[]> {
-  return requestJSON(`/drafts?day=${encodeURIComponent(day)}`);
+export function getDayEntries(day: string): Promise<DayEntries> {
+  return requestJSON(`/entries?day=${encodeURIComponent(day)}`);
 }
 
 /** Applies a correction in the user's words to one draft entry. */

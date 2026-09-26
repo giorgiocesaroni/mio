@@ -19,6 +19,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DAY_ENTRIES_QUERY_KEY } from "@/app/dashboard/components/day-entries";
 import { PendingDrafts } from "@/app/dashboard/components/draft-card";
 import { PipelineRun, formatCost, type Run } from "./components/pipeline-run";
 
@@ -115,7 +116,7 @@ export default function SandboxPage() {
       updateRun(run.id, (r) => ({ ...r, error: message }));
     } finally {
       abortRef.current = null;
-      await queryClient.invalidateQueries({ queryKey: ["drafts"] });
+      await queryClient.invalidateQueries({ queryKey: DAY_ENTRIES_QUERY_KEY });
       // A stream that closed without a final event would otherwise spin forever.
       updateRun(run.id, (r) =>
         r.done || r.error ? r : { ...r, error: "Stream ended unexpectedly." },

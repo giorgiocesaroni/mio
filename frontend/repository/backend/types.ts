@@ -164,6 +164,33 @@ export type LogDraft = {
   rows: DraftRow[];
 };
 
+/** A logged food, with the columns of `v_daily_food_logs_with_foods`. */
+export type DayLog = {
+  log_id: string;
+  log_for: string;
+  log_created_at: string;
+  log_food_id: string;
+  log_recipe_id: string | null;
+  log_quantity_g: number | null;
+  log_serving_size_id: string | null;
+  log_quantity: number | null;
+  log_serving_size_label: string | null;
+  log_serving_size_label_plural: string | null;
+  log_serving_size_grams: number | null;
+  food_name: string;
+  food_protein_g: number | null;
+  food_carbs_g: number | null;
+  food_fat_g: number | null;
+  food_calories_kcal: number | null;
+  recipe_name: string | null;
+};
+
+/** A day's pending drafts and logs, read together so they never overlap. */
+export type DayEntries = {
+  drafts: LogDraft[];
+  logs: DayLog[];
+};
+
 export type ConfirmDraftResult = {
   created_ingredients: { id: string; name: string }[];
   results: { index: number; success: boolean; error?: string }[];

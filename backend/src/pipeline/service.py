@@ -393,8 +393,10 @@ def create_draft(user_id: str, day: str, message: str, rows: list[dict]) -> dict
     return _serialize(repository.insert_draft(user_id, day, message, rows))
 
 
-def list_drafts(user_id: str, day: str) -> list[dict]:
-    return [_serialize(d) for d in repository.get_pending_drafts(user_id, day)]
+def list_day_entries(user_id: str, day: str) -> dict:
+    """A day's pending drafts and logs, in one response so they update together."""
+    drafts, logs = repository.get_day_entries(user_id, day)
+    return {"drafts": [_serialize(d) for d in drafts], "logs": logs}
 
 
 async def _revise(

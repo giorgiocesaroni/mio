@@ -29,17 +29,6 @@ export const getDailyMacrosTrend = async (startDay: string) => {
   return data;
 };
 
-export const getDailyFoodLogsWithFoodsView = async (day: string) => {
-  const { data, error } = await supabase
-    .from("v_daily_food_logs_with_foods")
-    .select("*")
-    .gte("day", day)
-    .lt("day", nextDay(day))
-    .order("log_created_at", { ascending: false });
-  if (error) throw error;
-  return data;
-};
-
 export const getTotalLlmCost = async () => {
   const { data, error } = await supabase
     .from("v_total_llm_cost")
