@@ -27,7 +27,7 @@ export function DashboardHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-10 border-b bg-background/80 backdrop-blur-md transition-colors",
+        "sticky top-0 z-20 border-b bg-background/80 backdrop-blur-md transition-colors",
         scrolled ? "border-border" : "border-transparent",
         className,
       )}
