@@ -184,7 +184,6 @@ export async function streamChat(
   conversationId: string,
   payload: object,
   model: string | undefined,
-  day: string | undefined,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
@@ -194,7 +193,6 @@ export async function streamChat(
       conversation_id: conversationId,
       message: payload,
       ...(model ? { model } : {}),
-      ...(day ? { day } : {}),
     },
     signal,
     onStep,
