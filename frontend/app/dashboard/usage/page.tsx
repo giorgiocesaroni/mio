@@ -3,7 +3,7 @@
 import { getModels, getUsage } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
-import { ChartLineLabel, ChartTooltip } from "@/app/dashboard/components/chart";
+import { ChartTooltip } from "@/app/dashboard/components/chart";
 import { CompactNumber } from "./components/compact-number";
 import {
   Card,
@@ -15,7 +15,7 @@ import {
 import {
   Bar,
   BarChart,
-  ReferenceLine,
+  BarStack,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -30,6 +30,14 @@ const EXTRA_MODEL_NAMES: Record<string, string> = {
 function formatCost(cost: number): string {
   return `$${cost.toFixed(4)}`;
 }
+
+const CHART_COLORS = [
+  "#2563eb",
+  "#7c3aed",
+  "#0d9488",
+  "#d97706",
+  "#db2777",
+];
 
 function getLastSevenDays() {
   const today = new Date();
@@ -59,18 +67,47 @@ export default function UsagePage() {
     (modelsData?.models ?? []).map((m) => [m.id, m.name]),
   );
   const days = getLastSevenDays();
-  const dailyData = days.map(({ key, label }) => ({
-    key,
-    label,
-    cost: usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
-  }));
-  const averageSpend =
-    dailyData.reduce((sum, point) => sum + point.cost, 0) / dailyData.length;
-  const chartMax = Math.max(
-    ...dailyData.map((point) => point.cost),
-    averageSpend,
-    0.0001,
+  const dailyTotals = days.map(
+    ({ key }) => usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
   );
+  const averageSpend =
+    dailyTotals.reduce((sum, cost) => sum + cost, 0) / dailyTotals.length;
+
+  const modelTotals = new Map<string, number>();
+  for (const entry of usage?.daily ?? []) {
+    for (const model of entry.models ?? []) {
+      modelTotals.set(
+        model.model_id,
+        (modelTotals.get(model.model_id) ?? 0) + model.cost,
+      );
+    }
+  }
+  const chartModels = [...modelTotals.entries()]
+    .filter(([, cost]) => cost > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([modelId], index) => ({
+      modelId,
+      dataKey: `model${index}`,
+      color: CHART_COLORS[index % CHART_COLORS.length],
+      opacity: index < CHART_COLORS.length ? 1 : 0.5,
+      name: modelNames.get(modelId) ?? EXTRA_MODEL_NAMES[modelId] ?? modelId,
+    }));
+
+  const dailyData = days.map(({ key, label }) => {
+    const entry = usage?.daily.find((day) => day.day === key);
+    const point: Record<string, number | string> = {
+      key,
+      label,
+      cost: entry?.total_cost ?? 0,
+      total: entry?.total_cost ?? 0,
+    };
+    for (const model of chartModels) point[model.dataKey] = 0;
+    for (const logged of entry?.models ?? []) {
+      const model = chartModels.find((c) => c.modelId === logged.model_id);
+      if (model) point[model.dataKey] = logged.cost;
+    }
+    return point;
+  });
   const labeledModels = (usage?.models ?? []).filter((model) =>
     Boolean(
       modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id],
@@ -129,17 +166,23 @@ export default function UsagePage() {
             </span>
           </CardHeader>
           <CardContent>
-            <div className="h-48 w-full">
+            <div className="h-48 w-full overflow-visible">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={dailyData}
                   margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
                 >
                   <XAxis
-                    dataKey="label"
+                    dataKey="key"
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(value: string) =>
+                      String(
+                        dailyData.find((point) => point.key === value)?.label ??
+                          value,
+                      )
+                    }
                   />
                   {/* <YAxis
                     orientation="right"
@@ -151,27 +194,30 @@ export default function UsagePage() {
                     minTickGap={24}
                   /> */}
                   <Tooltip
-                    content={<ChartTooltip formatValue={formatCost} />}
+                    content={
+                      <ChartTooltip formatValue={formatCost} showBreakdown />
+                    }
                     cursor={{ fill: "var(--color-muted)" }}
                   />
-                  <ReferenceLine
-                    y={averageSpend}
-                    stroke="#ef4444"
-                    strokeWidth={2.5}
-                    strokeLinecap="round"
-                    label={
-                      <ChartLineLabel
-                        value={averageSpend}
-                        chartMax={chartMax}
-                        formatValue={formatCost}
-                      />
-                    }
-                  />
-                  <Bar
-                    dataKey="cost"
-                    fill="var(--color-border)"
-                    radius={[4, 4, 0, 0]}
-                  />
+                  {chartModels.length > 0 ? (
+                    <BarStack stackId="spend" radius={[4, 4, 0, 0]}>
+                      {chartModels.map((model) => (
+                        <Bar
+                          key={model.dataKey}
+                          dataKey={model.dataKey}
+                          name={model.name}
+                          fill={model.color}
+                          fillOpacity={model.opacity}
+                        />
+                      ))}
+                    </BarStack>
+                  ) : (
+                    <Bar
+                      dataKey="cost"
+                      fill="#94a3b8"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>

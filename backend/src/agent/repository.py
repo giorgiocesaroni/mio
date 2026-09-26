@@ -179,17 +179,24 @@ def get_daily_llm_usage() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT created_at::date AS day, COALESCE(SUM(total_cost), 0) AS total_cost
+                SELECT
+                    created_at::date AS day,
+                    COALESCE(model_id, 'unknown') AS model_id,
+                    COALESCE(SUM(total_cost), 0) AS total_cost
                 FROM llm_invocations
                 WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
-                GROUP BY created_at::date
-                ORDER BY day
+                GROUP BY created_at::date, model_id
+                ORDER BY day, total_cost DESC
                 """
             )
-            return [
-                {"day": row[0].isoformat(), "total_cost": float(row[1])}
-                for row in cur.fetchall()
-            ]
+            days: dict[str, dict] = {}
+            for day, model_id, total_cost in cur.fetchall():
+                key = day.isoformat()
+                entry = days.setdefault(key, {"day": key, "total_cost": 0.0, "models": []})
+                cost = float(total_cost)
+                entry["total_cost"] += cost
+                entry["models"].append({"model_id": model_id, "cost": cost})
+            return list(days.values())
 
 
 def get_conversation_llm_usage(conversation_id: UUID) -> dict:
@@ -836,6 +843,28 @@ def log_recipe_by_proportion(
                     """,
                     (str(food_id), scaled_grams, str(recipe_id), meal_type, log_for_dt, user_id),
                 )
+
+
+def get_log_days(log_ids: list[UUID], user_id: str) -> list[str]:
+    """Local calendar days (YYYY-MM-DD) currently occupied by the given logs.
+
+    Used to recalculate daily totals after a batch of updates or deletes: the
+    affected days are the ones the entries live on *before* they move.
+    """
+    if not log_ids:
+        return []
+    tz = get_user_timezone(user_id)
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT DATE(log_for AT TIME ZONE %s)
+                FROM logs
+                WHERE id = ANY(%s::uuid[]) AND user_id = %s
+                """,
+                (tz, [str(log_id) for log_id in log_ids], user_id),
+            )
+            return [row[0].isoformat() for row in cur.fetchall() if row[0]]
 
 
 def delete_log(log_id: UUID, user_id: str) -> None:

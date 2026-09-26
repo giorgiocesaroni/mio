@@ -1,6 +1,5 @@
 """Food logging tools."""
 
-from typing import Optional
 from uuid import UUID
 
 import src.agent.models as models
@@ -98,54 +97,7 @@ _LOG_INGREDIENT_SERVING = {
     "required": ["food_id", "quantity", "unit", "serving_size_id", "meal_type", "log_for"],
 }
 
-log_ingredient_declaration = models.FunctionDeclaration(
-    name="log_ingredient",
-    description="Logs an ingredient. Use unit='grams' for weight, or unit='serving' with a serving_size_id for servings.",
-    parameters_json_schema={
-        "type": "object",
-        "anyOf": [_LOG_INGREDIENT_GRAMS, _LOG_INGREDIENT_SERVING],
-    },
-)
-
-
-def log_ingredient_tool(
-    user_id: str,
-    quantity: float,
-    unit: str,
-    meal_type: str,
-    log_for: str,
-    food_id: str | None = None,
-    serving_size_id: str | None = None,
-) -> dict:
-    fid = UUID(food_id) if food_id else None
-    if unit == "grams":
-        repository.insert_log_by_grams(
-            models.InsertLogByGramsInput(
-                food_id=fid,
-                quantity_g=quantity,
-                recipe_id=None,
-                meal_type=meal_type,  # type: ignore
-                log_for=log_for,
-            ),
-            user_id,
-        )
-    elif unit == "serving":
-        repository.insert_log_by_serving_size(
-            models.InsertLogByServingSizeInput(
-                food_id=fid,
-                serving_size_id=UUID(serving_size_id) if serving_size_id else None,
-                quantity=quantity,
-                meal_type=meal_type,  # type: ignore
-                log_for=log_for,
-            ),
-            user_id,
-        )
-    else:
-        raise ValueError(f"Invalid unit: {unit}. Must be 'grams' or 'serving'.")
-    return {"success": True}
-
-
-# ── Recipe logging ────────────────────────────────────────────────────────────
+# ── Entry schemas (assembled into `log_entries`) ──────────────────────────────
 
 _LOG_RECIPE_PROPORTION = {
     "type": "object",
@@ -205,43 +157,122 @@ _LOG_RECIPE_GRAMS = {
     "required": ["recipe_id", "quantity", "unit", "meal_type", "log_for"],
 }
 
-log_recipe_declaration = models.FunctionDeclaration(
-    name="log_recipe",
-    description="Logs a recipe. Use unit='recipe' for a proportion (e.g. quantity=0.5 for half), or unit='grams' for absolute weight. The system expands it into per-ingredient logs.",
+# ── Batch logging ─────────────────────────────────────────────────────────────
+
+
+def _updated_totals(user_id: str, days: set[str]) -> dict:
+    """Recalculated daily macros for every day a mutation touched."""
+    totals = {}
+    for day in sorted(days):
+        try:
+            totals[day] = repository.get_daily_macros(day, user_id)
+        except Exception as e:
+            totals[day] = {"error": str(e)}
+    return totals
+
+
+def _apply_log_entry(user_id: str, entry: dict) -> str:
+    """Apply a single `log_entries` item and return the local day it hit.
+
+    An item is either an ingredient (``food_id``) or a recipe (``recipe_id``);
+    ``unit`` then picks the measurement path.
+    """
+    unit = entry.get("unit")
+    quantity = float(entry["quantity"])
+    meal_type = entry["meal_type"]
+    log_for = entry["log_for"]
+    if entry.get("recipe_id"):
+        recipe_id = UUID(entry["recipe_id"])
+        if unit == "recipe":
+            repository.log_recipe_by_proportion(
+                recipe_id, quantity, meal_type, log_for, user_id
+            )
+        elif unit == "grams":
+            repository.insert_log_by_grams(
+                models.InsertLogByGramsInput(
+                    food_id=None,
+                    quantity_g=quantity,
+                    recipe_id=recipe_id,
+                    meal_type=meal_type,  # type: ignore
+                    log_for=log_for,
+                ),
+                user_id,
+            )
+        else:
+            raise ValueError(f"Invalid unit: {unit}. Must be 'recipe' or 'grams'.")
+    else:
+        if not entry.get("food_id"):
+            raise ValueError(
+                "Entry needs a food_id (ingredient) or a recipe_id (recipe)."
+            )
+        food_id = UUID(entry["food_id"])
+        if unit == "grams":
+            repository.insert_log_by_grams(
+                models.InsertLogByGramsInput(
+                    food_id=food_id,
+                    quantity_g=quantity,
+                    recipe_id=None,
+                    meal_type=meal_type,  # type: ignore
+                    log_for=log_for,
+                ),
+                user_id,
+            )
+        elif unit == "serving":
+            if not entry.get("serving_size_id"):
+                raise ValueError("unit='serving' requires a serving_size_id.")
+            repository.insert_log_by_serving_size(
+                models.InsertLogByServingSizeInput(
+                    food_id=food_id,
+                    serving_size_id=UUID(entry["serving_size_id"]),
+                    quantity=quantity,
+                    meal_type=meal_type,  # type: ignore
+                    log_for=log_for,
+                ),
+                user_id,
+            )
+        else:
+            raise ValueError(f"Invalid unit: {unit}. Must be 'grams' or 'serving'.")
+    return log_for[:10]
+
+
+log_entries_declaration = models.FunctionDeclaration(
+    name="log_entries",
+    description=(
+        "Logs one or more foods (ingredients or recipes) in a single call. "
+        "Returns a per-entry result plus the recalculated daily totals for "
+        "every day touched, so no separate summary call is needed afterwards."
+    ),
     parameters_json_schema={
         "type": "object",
-        "anyOf": [_LOG_RECIPE_PROPORTION, _LOG_RECIPE_GRAMS],
+        "properties": {
+            "entries": {
+                "type": "array",
+                "description": "The foods to log, in one batch.",
+                "items": {
+                    "anyOf": [
+                        _LOG_INGREDIENT_GRAMS,
+                        _LOG_INGREDIENT_SERVING,
+                        _LOG_RECIPE_PROPORTION,
+                        _LOG_RECIPE_GRAMS,
+                    ],
+                },
+            },
+        },
+        "required": ["entries"],
     },
 )
 
 
-def log_recipe_tool(
-    user_id: str,
-    recipe_id: str,
-    quantity: float,
-    unit: str,
-    meal_type: str,
-    log_for: str,
-) -> dict:
-    rid = UUID(recipe_id)
-    if unit == "recipe":
-        repository.log_recipe_by_proportion(
-            rid, quantity, meal_type, log_for, user_id
-        )
-    elif unit == "grams":
-        repository.insert_log_by_grams(
-            models.InsertLogByGramsInput(
-                food_id=None,
-                quantity_g=quantity,
-                recipe_id=rid,
-                meal_type=meal_type,  # type: ignore
-                log_for=log_for,
-            ),
-            user_id,
-        )
-    else:
-        raise ValueError(f"Invalid unit: {unit}. Must be 'recipe' or 'grams'.")
-    return {"success": True}
+def log_entries_tool(user_id: str, entries: list[dict]) -> dict:
+    results = []
+    days: set[str] = set()
+    for index, entry in enumerate(entries):
+        try:
+            days.add(_apply_log_entry(user_id, entry))
+            results.append({"index": index, "success": True})
+        except Exception as e:
+            results.append({"index": index, "success": False, "error": str(e)})
+    return {"results": results, "updated_totals": _updated_totals(user_id, days)}
 
 
 _UPDATE_LOG_INGREDIENT = {
@@ -298,49 +329,89 @@ _UPDATE_LOG_RECIPE = {
     "required": ["id"],
 }
 
-update_log_declaration = models.FunctionDeclaration(
-    name="update_log",
-    description="Updates an existing log entry. Provide food_id to update an ingredient log, or recipe_id to update a recipe log. Only provided fields are changed.",
-    parameters_json_schema={
-        "type": "object",
-        "anyOf": [_UPDATE_LOG_INGREDIENT, _UPDATE_LOG_RECIPE],
-    },
-)
-
-
-def update_log_tool(
-    user_id: str,
-    id: UUID,
-    food_id: Optional[UUID] = None,
-    quantity_g: float | None = None,
-    recipe_id: Optional[UUID] = None,
-    meal_type: str | None = None,
-    log_for: str | None = None,
-) -> None:
-    repository.update_log(
-        models.UpdateLogInput(
-            id=id, food_id=food_id, quantity_g=quantity_g, recipe_id=recipe_id, meal_type=meal_type, log_for=log_for,  # type: ignore
-        ),
-        user_id,
-    )
-
-
-delete_log_declaration = models.FunctionDeclaration(
-    name="delete_log",
-    description="Deletes a log entry by its ID.",
+update_logs_declaration = models.FunctionDeclaration(
+    name="update_logs",
+    description=(
+        "Updates one or more existing log entries in a single call. Provide "
+        "food_id to update an ingredient log, or recipe_id to update a recipe "
+        "log. Only provided fields are changed. Returns a per-entry result "
+        "plus the recalculated daily totals for every day touched."
+    ),
     parameters_json_schema={
         "type": "object",
         "properties": {
-            "log_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "UUID of the log entry to delete.",
-            }
+            "updates": {
+                "type": "array",
+                "description": "The log updates to apply, in one batch.",
+                "items": {
+                    "anyOf": [_UPDATE_LOG_INGREDIENT, _UPDATE_LOG_RECIPE],
+                },
+            },
         },
-        "required": ["log_id"],
+        "required": ["updates"],
     },
 )
 
 
-def delete_log_tool(user_id: str, log_id: UUID) -> None:
-    repository.delete_log(log_id, user_id)
+def update_logs_tool(user_id: str, updates: list[dict]) -> dict:
+    ids: list[UUID] = []
+    for update in updates:
+        try:
+            ids.append(UUID(str(update["id"])))
+        except Exception:
+            continue
+    days: set[str] = set(repository.get_log_days(ids, user_id))
+    results = []
+    for index, update in enumerate(updates):
+        try:
+            kwargs = dict(update)
+            kwargs["id"] = UUID(str(kwargs["id"]))
+            repository.update_log(models.UpdateLogInput(**kwargs), user_id)  # type: ignore
+            if update.get("log_for"):
+                days.add(str(update["log_for"])[:10])
+            results.append({"index": index, "success": True})
+        except Exception as e:
+            results.append({"index": index, "success": False, "error": str(e)})
+    return {"results": results, "updated_totals": _updated_totals(user_id, days)}
+
+
+delete_logs_declaration = models.FunctionDeclaration(
+    name="delete_logs",
+    description=(
+        "Deletes one or more log entries in a single call. Returns a per-entry "
+        "result plus the recalculated daily totals for every day touched."
+    ),
+    parameters_json_schema={
+        "type": "object",
+        "properties": {
+            "log_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "description": "UUIDs of the log entries to delete.",
+            },
+        },
+        "required": ["log_ids"],
+    },
+)
+
+
+def delete_logs_tool(user_id: str, log_ids: list[str]) -> dict:
+    parsed: list[tuple[str, UUID]] = []
+    results = []
+    for raw in log_ids:
+        try:
+            parsed.append((raw, UUID(str(raw))))
+        except Exception:
+            results.append(
+                {"log_id": raw, "success": False, "error": "Invalid log id."}
+            )
+    days: set[str] = set(
+        repository.get_log_days([uid for _, uid in parsed], user_id)
+    )
+    for raw, uid in parsed:
+        try:
+            repository.delete_log(uid, user_id)
+            results.append({"log_id": raw, "success": True})
+        except Exception as e:
+            results.append({"log_id": raw, "success": False, "error": str(e)})
+    return {"results": results, "updated_totals": _updated_totals(user_id, days)}

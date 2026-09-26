@@ -49,16 +49,14 @@ from .recipes import (
     update_recipe_tool,
 )
 from .logs import (
-    delete_log_declaration,
-    delete_log_tool,
+    delete_logs_declaration,
+    delete_logs_tool,
     get_daily_summary_declaration,
     get_daily_summary_tool,
-    log_ingredient_declaration,
-    log_ingredient_tool,
-    log_recipe_declaration,
-    log_recipe_tool,
-    update_log_declaration,
-    update_log_tool,
+    log_entries_declaration,
+    log_entries_tool,
+    update_logs_declaration,
+    update_logs_tool,
 )
 from .tracking import (
     get_current_goal_declaration,
