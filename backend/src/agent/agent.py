@@ -351,6 +351,24 @@ def _get_tool_response(tool_call: dict, user_id: str) -> dict:
     }
 
 
+def log_food_result(draft: dict) -> dict:
+    """What the agent sees of a draft `log_food` created."""
+    return {
+        "draft_id": draft["id"],
+        "day": draft["day"],
+        "status": "awaiting_user_confirmation",
+        "entries": [
+            {
+                "food": pipeline_logic.row_label(row),
+                "meal_type": row["meal_type"],
+                "log_for": row["log_for"],
+                "note": row["note"],
+            }
+            for row in draft["rows"]
+        ],
+    }
+
+
 def _latest_image_urls(contents: list[dict]) -> list[str]:
     """Image URLs of the user's latest message, which `log_food` drafts from too."""
     for msg in reversed(contents):
@@ -383,20 +401,7 @@ async def _log_food(
             _latest_image_urls(input.contents),
             args.get("day"),
         )
-        response = {
-            "draft_id": draft["id"],
-            "day": draft["day"],
-            "status": "awaiting_user_confirmation",
-            "entries": [
-                {
-                    "food": pipeline_logic.row_label(row),
-                    "meal_type": row["meal_type"],
-                    "log_for": row["log_for"],
-                    "note": row["note"],
-                }
-                for row in draft["rows"]
-            ],
-        }
+        response = log_food_result(draft)
     except Exception as e:
         response = {"error": str(e)}
     return {

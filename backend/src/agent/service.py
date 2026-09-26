@@ -2,12 +2,13 @@ import base64
 import datetime
 import json
 import mimetypes
+import uuid
 from typing import AsyncGenerator
 from uuid import UUID
 from zoneinfo import ZoneInfo
 import src.agent.models as models
 import src.agent.repository as repository
-from src.agent.agent import agent
+from src.agent.agent import agent, log_food_result
 import src.agent.prompts as prompts
 import src.pipeline.service as pipeline
 from src.pipeline.models import PipelineInput
@@ -65,85 +66,6 @@ async def preprocess_message(
         else:
             new_parts.append(part)
     return type(message)(parts=new_parts)
-
-
-async def run_quick_log(
-    input: models.QuickLogInput,
-) -> AsyncGenerator[models.RunAgentStep, None]:
-    """One-shot log/edit without a conversation.
-
-    New food logs go through the structured pipeline and come back as a draft
-    for the user to confirm. Everything else the router hands off (corrections,
-    references to past meals, questions) goes to the agent, which never asks;
-    it logs food through the same pipeline, so new foods are drafts there too.
-    A pipeline failure is reported, never retried by the agent.
-    """
-    # Transcribe audio parts (no conversation row; invocations logged with NULL conversation_id).
-    preprocessed_message = await preprocess_message(input.message, input.user_id, None)
-
-    pipeline_input = PipelineInput(
-        user_id=input.user_id, message=preprocessed_message, day=input.day
-    )
-    async for step in pipeline.run(pipeline_input):
-        if step.type != "done":
-            continue
-        if step.outcome == "drafted" and step.draft:
-            yield models.DraftStep(draft=step.draft)
-            return
-        if step.outcome == "nothing":
-            yield models.MessageStep(text="No food found in the message.")
-            return
-        if step.outcome == "error":
-            raise Exception(step.message)
-        print(f"[INFO] Quick log hands off to the agent: {step.message}")
-
-    user_input = _convert_input(preprocessed_message)
-    contents = [user_input]
-
-    timezone = repository.get_user_timezone(input.user_id)
-    today = (
-        input.day
-        or datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
-    )
-    daily_macros = repository.get_daily_macros(today, input.user_id)
-    current_goal = repository.get_current_goal(input.user_id)
-    system_prompt = prompts.get_quick_log_prompt(
-        mode=input.mode,
-        day=today,
-        daily_macros=daily_macros,
-        current_goal=current_goal.model_dump(mode="json") if current_goal else None,
-        timezone=timezone,
-    )
-    agent_input = models.AgentInput(
-        conversation_id=None,
-        user_id=input.user_id,
-        system_prompt=system_prompt,
-        contents=contents,
-        model=input.model,
-    )
-    async for chunk in agent(agent_input):
-        if isinstance(
-            chunk,
-            (models.ContentTokenStep, models.ToolCallStartStep, models.DraftStep),
-        ):
-            yield chunk
-        elif isinstance(chunk, dict):
-            role = chunk.get("role")
-            if role == "assistant":
-                content = chunk.get("content")
-                if content:
-                    yield models.MessageStep(type="message", text=content)
-                for tc in chunk.get("tool_calls") or []:
-                    func = tc["function"]
-                    try:
-                        args = json.loads(func["arguments"])
-                    except json.JSONDecodeError:
-                        args = {}
-                    yield models.ToolCallStep(
-                        type="tool_call",
-                        name=func["name"],
-                        args=args,
-                    )
 
 
 def _convert_input(message: models.MessageType) -> dict:
@@ -240,6 +162,14 @@ async def run_agent(
     contents = repository.get_messages_by_conversation_id(
         input.conversation_id, input.user_id
     )
+    # A conversation that opens with a food log is drafted by the pipeline
+    # directly, which is faster and cheaper than the agent; anything else, and
+    # every later message, goes to the agent.
+    if len(contents) == 1:
+        draft = await _draft_opening_message(input, preprocessed_message)
+        if draft:
+            yield models.DraftStep(draft=draft)
+            return
     timezone = repository.get_user_timezone(input.user_id)
     today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
     daily_macros = repository.get_daily_macros(today, input.user_id)
@@ -248,6 +178,7 @@ async def run_agent(
         daily_macros=daily_macros,
         current_goal=current_goal.model_dump(mode="json") if current_goal else None,
         timezone=timezone,
+        day=input.day,
     )
 
     agent_input = models.AgentInput(
@@ -319,6 +250,58 @@ def get_conversations(user_id: str) -> list[models.Conversation]:
 
 def _mime_type_from_url(url: str) -> str | None:
     return mimetypes.guess_type(url.split("?", 1)[0])[0]
+
+
+async def _draft_opening_message(
+    input: models.RunAgentInput, message: models.MessageType
+) -> dict | None:
+    """Draft the conversation's first message when it's a new food log.
+
+    The draft is stored as a `log_food` call, so the agent sees it in the
+    history and the conversation reloads the same way as when it drafts.
+    """
+    async for step in pipeline.run(
+        PipelineInput(user_id=input.user_id, message=message, day=input.day)
+    ):
+        if step.type != "done":
+            continue
+        if step.outcome == "error":
+            raise Exception(step.message)
+        if step.outcome != "drafted" or not step.draft:
+            return None
+        call_id = f"call_{uuid.uuid4().hex}"
+        text = "\n".join(p.text for p in message.parts if p.text)
+        repository.insert_conversation_message(
+            input.conversation_id,
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": "log_food",
+                            "arguments": json.dumps(
+                                {"description": text, "day": step.draft["day"]}
+                            ),
+                        },
+                    }
+                ],
+            },
+            input.user_id,
+        )
+        repository.insert_conversation_message(
+            input.conversation_id,
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": json.dumps(log_food_result(step.draft)),
+            },
+            input.user_id,
+        )
+        return step.draft
+    return None
 
 
 def _drafted(tool_message: dict, user_id: str) -> dict | None:

@@ -82,21 +82,12 @@ class RunAgentInput(BaseModel):
     message: MessageType
     thinking: bool = True
     model: Optional[str] = None
+    # The day the user is viewing (YYYY-MM-DD, their timezone); defaults to today.
+    day: Optional[str] = None
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
         return str(conversation_id)
-
-
-QuickLogMode = Literal["log", "edit"]
-
-
-class QuickLogInput(BaseModel):
-    user_id: str
-    message: MessageType
-    mode: QuickLogMode = "log"
-    day: Optional[str] = None  # YYYY-MM-DD in the user's timezone; defaults to today
-    model: Optional[str] = None
 
 
 # ── Ingredient ────────────────────────────────────────────────────────────────

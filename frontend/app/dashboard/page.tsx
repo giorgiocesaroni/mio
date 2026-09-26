@@ -5,6 +5,15 @@ import {
   getDailyMacrosView,
 } from "@/repository/supabase/queries";
 import type { DayLog } from "@/repository/backend/queries";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Plus } from "lucide-react";
+import { ChatThread } from "./chat/components/chat-thread";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -93,7 +102,6 @@ import {
   useLogEntryActions,
 } from "./components/entry-actions";
 import { FoodBadges, type Macros } from "./components/food-badges";
-import { QuickLogComposer } from "./components/quick-log-composer";
 
 function MacroCard({
   label,
@@ -433,16 +441,50 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
   );
 }
 
+/** Opens a new conversation in a sheet; a food log there becomes a draft. */
+function NewEntrySheet({ day }: { day: string }) {
+  const [open, setOpen] = useState(false);
+  // Every opening starts a fresh conversation.
+  const [session, setSession] = useState(0);
+
+  return (
+    <>
+      <Button
+        size="icon-sm"
+        aria-label="New entry"
+        onClick={() => {
+          setSession((n) => n + 1);
+          setOpen(true);
+        }}
+        className="rounded-full bg-red-500 text-white hover:bg-red-600"
+      >
+        <Plus className="size-4" />
+      </Button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Mio</SheetTitle>
+          </SheetHeader>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 text-sm">
+            <ChatThread key={session} conversationId={null} day={day} />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
 export default function DashboardHomePage() {
   const [selectedDay, setSelectedDay] = useState(dayKey(new Date()));
 
   return (
-    <DashboardPage title="Mio" bodyClassName="gap-12">
+    <DashboardPage
+      title="Mio"
+      bodyClassName="gap-12"
+      actions={<NewEntrySheet day={selectedDay} />}
+    >
       <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
       <DailyMacros day={selectedDay} />
-      <div className="sticky bottom-6 z-10 w-full self-start">
-        <QuickLogComposer day={selectedDay} />
-      </div>
       <DailyFoodLogsWithFoods day={selectedDay} />
     </DashboardPage>
   );

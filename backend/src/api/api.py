@@ -139,47 +139,12 @@ async def chat_endpoint(
         message=_parse_message(body["message"]),
         thinking=body.get("thinking", True),
         model=body.get("model"),
+        day=body.get("day"),
     )
 
     async def event_stream():
         try:
             async for step in service.run_agent(inp):
-                yield f"data: {step.model_dump_json()}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.post("/quick-log")
-async def quick_log_endpoint(
-    request: Request,
-    user_id: str = Depends(_get_user_id_from_jwt),
-):
-    """One-shot quick add / edit. No conversation is created; the agent must log, never ask."""
-    body = await request.json()
-    mode = body.get("mode", "log")
-    if mode not in ("log", "edit"):
-        raise HTTPException(status_code=400, detail="mode must be 'log' or 'edit'")
-    inp = models.QuickLogInput(
-        user_id=user_id,
-        message=_parse_message(body["message"]),
-        mode=mode,
-        day=body.get("day"),
-        model=body.get("model"),
-    )
-
-    async def event_stream():
-        try:
-            async for step in service.run_quick_log(inp):
                 yield f"data: {step.model_dump_json()}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
