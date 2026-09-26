@@ -4,7 +4,7 @@ Replaces the quick-log agent loop with a fixed sequence of steps, where each
 model only makes the decision it is good at:
 
     normalize → route (Jev) → extract (LLM) → retrieve (code)
-              → resolve (Jev) → plan (code) → draft (persisted)
+              → resolve (LLM) → draft (persisted)
 
 Nothing is logged directly: the result is a draft the user reviews, edits, and
 confirms. Whatever the router doesn't recognize as a new food log is handed
@@ -14,9 +14,10 @@ back to the caller, which falls back to the agent.
 import asyncio
 import base64
 import datetime
+import json
 import time
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, TypeVar
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -31,21 +32,25 @@ import src.pipeline.jev as jev
 import src.pipeline.logic as logic
 import src.pipeline.repository as repository
 from src.agent.utils import extract_tokens, get_openrouter_cost, inline_image_url
+from pydantic import BaseModel
+
 from src.pipeline.models import (
     DoneStep,
+    DraftError,
     ExtractedItem,
     Extraction,
+    Resolution,
     PipelineInput,
     PipelineStep,
     StageName,
     StageStep,
 )
 
-# Cheapest model with good vision at this price point; reasoning kept low since
-# extraction is perception + lookup, not multi-step reasoning.
-EXTRACT_MODEL_ID = "google/gemini-3.8-flash"
-EXTRACT_REASONING_EFFORT = "low"
-EXTRACT_MAX_COMPLETION_TOKENS = 4096
+# Cheapest model with good vision at this price point, for both LLM steps;
+# reasoning kept low since both are perception + lookup, not multi-step work.
+LLM_MODEL_ID = "google/gemini-3.8-flash"
+LLM_REASONING_EFFORT = "low"
+LLM_MAX_COMPLETION_TOKENS = 4096
 
 EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured items for a nutrition tracker. The user's local time is {now}.
 
@@ -53,6 +58,19 @@ EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into struct
 - Keep the user's quantities. When they give none, assume a typical single portion.
 - Fill every field following its description. `per_100g` must be realistic for the food in the given `state`.
 - If the message does not describe anything eaten or drunk, return an empty `items` list."""
+
+RESOLVE_PROMPT = """You decide how foods a user ate are logged in their nutrition tracker. The user's local time is {now}; the log is for {day}. Their message was: {message}
+
+For each food in `foods` (by index), return exactly one row:
+- `target`: the key of the candidate that is the same food, or "new" when none is. The user's own entries come first: a matching brand is strong evidence, and raw vs cooked entries of the same food are still the same food. A saved recipe matches when the user names that dish.
+- `unit` and `quantity`: when the user stated a weight, "grams" with exactly that weight. Otherwise "serving" with the target's `serving` key when they counted units the entry defines (slices, pieces, cutlets...); "recipe" with a fraction when they ate part of a saved recipe (half = 0.5, a portion of a multi-portion dish is a fraction); otherwise "grams" with the eaten weight, starting from `estimated_grams`.
+- `weight_state`: whether the logged amount is raw or cooked weight. If the target is raw but the user ate it cooked (or the reverse), convert the grams to the target's state and set `weight_state` to it.
+- `meal_type` and `time` (HH:MM): as stated in the message; otherwise infer them sensibly from the local time.
+- `confidence`: "high" when the match and amount are clear; "medium" when you had to assume something; "low" when unsure.
+- `note`: when confidence isn't high, one short sentence for the user, in the language of their message, saying what you assumed (e.g. which variant, or an estimated weight). Otherwise null."""
+
+
+_Output = TypeVar("_Output", bound=BaseModel)
 
 
 def _ms(start: float) -> int:
@@ -107,6 +125,33 @@ async def _route(
     }, cost
 
 
+async def _complete(
+    user_id: str, model_id: str, messages: list[dict], output: type[_Output]
+) -> tuple[_Output, float, dict]:
+    """One structured-output completion, validated into `output`."""
+    client = providers.get_client(providers.get_provider(model_id))
+    response = await client.chat.completions.create(
+        model=model_id,
+        messages=messages,  # type: ignore[arg-type]
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": output.__name__.lower(),
+                "strict": True,
+                "schema": logic.inline_refs(output.model_json_schema()),
+            },
+        },
+        max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
+        extra_body={"reasoning": {"effort": LLM_REASONING_EFFORT}},
+    )
+    usage = response.usage.model_dump() if response.usage else {}
+    cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
+    if usage:
+        repository.record_invocation(user_id, model_id, cost, usage, extract_tokens(usage))
+    raw = response.choices[0].message.content or ""
+    return output.model_validate(logic.parse_json(raw)), cost, usage
+
+
 async def _extract(
     user_id: str, model_id: str, text: str, images: list[str], now: str
 ) -> tuple[Extraction, float, dict]:
@@ -119,27 +164,7 @@ async def _extract(
         {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
         {"role": "user", "content": content},
     ]
-    client = providers.get_client(providers.get_provider(model_id))
-    response = await client.chat.completions.create(
-        model=model_id,
-        messages=messages,  # type: ignore[arg-type]
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "extraction",
-                "strict": True,
-                "schema": logic.inline_refs(Extraction.model_json_schema()),
-            },
-        },
-        max_completion_tokens=EXTRACT_MAX_COMPLETION_TOKENS,
-        extra_body={"reasoning": {"effort": EXTRACT_REASONING_EFFORT}},
-    )
-    usage = response.usage.model_dump() if response.usage else {}
-    cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
-    if usage:
-        repository.record_invocation(user_id, model_id, cost, usage, extract_tokens(usage))
-    raw = response.choices[0].message.content or ""
-    return Extraction.model_validate(logic.parse_json(raw)), cost, usage
+    return await _complete(user_id, model_id, messages, Extraction)
 
 
 async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]]:
@@ -178,54 +203,26 @@ async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]
 
 async def _resolve(
     user_id: str,
-    session_id: str,
+    model_id: str,
     text: str,
     items: list[ExtractedItem],
     candidates: list[list[dict]],
-) -> tuple[list[dict], float, dict | None]:
-    """Pick one candidate per item and, speculatively, a serving size per candidate."""
-    state = {
-        "message": text or "(photo only)",
-        "foods": [
-            {
-                "said": item.said or None,
-                "name": item.name,
-                "brand": item.brand,
-                "amount": logic.amount(item),
-            }
-            for item in items
-        ],
-    }
-    questions: dict[str, jev.Question] = {}
-    for i, (item, cands) in enumerate(zip(items, candidates)):
-        if not cands:
-            continue
-        questions[f"match_{i}"] = Choice(
-            instructions=f"Which database entry is the same food as `foods[{i}]`?",
-            criteria={
-                **{c["key"]: logic.describe_candidate(c) for c in cands},
-                "none": "None of these entries is the same food",
-            },
-        )
-        # Speculative fan-out: ask the serving question for every candidate in
-        # the same request, and only read the one for the chosen candidate.
-        if item.unit in ("piece", "serving"):
-            for c in cands:
-                if c["kind"] != "ingredient" or not c["serving_sizes"]:
-                    continue
-                questions[f"serving_{i}_{c['key']}"] = Choice(
-                    instructions=f"Which serving size of '{c['name']}' is the unit used in `foods[{i}].amount`?",
-                    criteria={
-                        **{f"s{n}": ss["label"] for n, ss in enumerate(c["serving_sizes"])},
-                        "none": "None of these serving sizes is that unit",
-                    },
-                )
-
-    if not questions:
-        return logic.resolve_answers({}, candidates), 0.0, None
-    response, cost = await jev.ask(user_id, session_id, state, questions)
-    resolutions = logic.resolve_answers(response.choices, candidates)
-    return resolutions, cost, jev.debug(state, questions, response)
+    day: str,
+    now: str,
+) -> tuple[Resolution, float, dict]:
+    """Match each food to a candidate and decide how to log it, in one call."""
+    foods = logic.resolver_foods(items, candidates)
+    messages = [
+        {
+            "role": "system",
+            "content": RESOLVE_PROMPT.format(
+                now=now, day=day, message=json.dumps(text or "(photo only)")
+            ),
+        },
+        {"role": "user", "content": json.dumps({"foods": foods}, ensure_ascii=False)},
+    ]
+    resolution, cost, usage = await _complete(user_id, model_id, messages, Resolution)
+    return resolution, cost, {"foods": foods, "usage": usage}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -252,7 +249,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         now = datetime.datetime.now(tz=ZoneInfo(timezone))
         today = now.strftime("%Y-%m-%d")
         day = input.day or today
-        model_id = input.model or EXTRACT_MODEL_ID
+        model_id = input.model or LLM_MODEL_ID
 
         # 1. Normalize
         t = time.perf_counter()
@@ -333,45 +330,33 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
-        resolutions, cost, jev_debug = await _resolve(
-            input.user_id, session_id, text, items, candidates
+        resolution, cost, debug = await _resolve(
+            input.user_id,
+            model_id,
+            text,
+            items,
+            candidates,
+            day,
+            now.strftime("%Y-%m-%d %H:%M"),
         )
         total_cost += cost
-        yield StageStep(
-            name=stage,
-            status="ok" if jev_debug else "skipped",
-            summary=", ".join(
-                f"{item.name} → {r['candidate']['name'] if r['candidate'] else 'new'} ({r['status']})"
-                for item, r in zip(items, resolutions)
-            ),
-            ms=_ms(t),
-            cost=cost,
-            model="jev" if jev_debug else None,
-            data={
-                "resolutions": [
-                    {"item": item.name, **r} for item, r in zip(items, resolutions)
-                ],
-                "jev": jev_debug,
-            },
-        )
-
-        # 6. Plan
-        stage = "plan"
-        t = time.perf_counter()
         rows = logic.draft_rows(
-            items, resolutions, candidates, day, now.strftime("%H:%M"), day == today
+            items, candidates, resolution, day, now.strftime("%H:%M"), day == today
         )
         enriched = [logic.enrich_row(row) for row in rows]
-        flagged = sum(1 for row in enriched if row["flags"])
         yield StageStep(
             name=stage,
             status="ok",
-            summary=f"{len(rows)} row(s), {flagged} flagged for review",
+            summary=", ".join(
+                f"{logic.row_label(row)} ({row['confidence']})" for row in rows
+            ),
             ms=_ms(t),
-            data=enriched,
+            cost=cost,
+            model=model_id,
+            data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
         )
 
-        # 7. Draft
+        # 6. Draft
         stage = "draft"
         t = time.perf_counter()
         draft = await asyncio.to_thread(
@@ -412,51 +397,146 @@ def list_drafts(user_id: str, day: str) -> list[dict]:
     return [_serialize(d) for d in repository.get_pending_drafts(user_id, day)]
 
 
-def update_draft(user_id: str, draft_id: UUID, edits: list[dict]) -> dict:
-    return _serialize(
-        repository.update_pending_rows(
-            user_id, draft_id, lambda rows: logic.apply_edits(rows, edits)
-        )
+async def _revise(
+    user_id: str, day: str, current: str, meal_type: str, hhmm: str,
+    said: str | None, instruction: str,
+) -> list[dict]:
+    """Rows for an entry after a correction in the user's words.
+
+    The entry and the correction go through the same extract → retrieve →
+    resolve steps as a new log, so the correction can switch to a food that
+    wasn't among the original matches, and foods it adds become extra rows.
+    """
+    instruction = instruction.strip()
+    if not instruction:
+        raise DraftError("Describe what should change.")
+    timezone = agent_repository.get_user_timezone(user_id)
+    now = datetime.datetime.now(tz=ZoneInfo(timezone))
+    message = logic.revision_message(current, meal_type, hhmm, said, instruction)
+    extraction, _, _ = await _extract(
+        user_id, LLM_MODEL_ID, message, [], now.strftime("%Y-%m-%d %H:%M")
     )
+    if not extraction.items:
+        raise DraftError("Couldn't tell what to change; try rephrasing.")
+    candidates = await _retrieve(user_id, extraction.items)
+    resolution, _, _ = await _resolve(
+        user_id, LLM_MODEL_ID, message, extraction.items, candidates, day,
+        now.strftime("%Y-%m-%d %H:%M"),
+    )
+    return logic.draft_rows(
+        extraction.items, candidates, resolution, day, now.strftime("%H:%M"),
+        day == now.strftime("%Y-%m-%d"),
+    )
+
+
+async def revise_draft_row(
+    user_id: str, draft_id: UUID, row_id: str, instruction: str
+) -> dict:
+    """Apply a correction in the user's words to one draft row."""
+    draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
+    row = next((r for r in draft["rows"] if r["id"] == row_id), None)
+    if row is None:
+        raise DraftError(f"Unknown row '{row_id}'.")
+    new_rows = await _revise(
+        user_id, draft["day"].isoformat(), logic.row_label(row), row["meal_type"],
+        row["log_for"][-5:], row.get("said"), instruction,
+    )
+    updated = await asyncio.to_thread(
+        repository.update_pending_rows,
+        user_id,
+        draft_id,
+        lambda rows: logic.replace_row(rows, row_id, new_rows),
+    )
+    return _serialize(updated)
+
+
+async def revise_logs(
+    user_id: str, day: str, log_ids: list[str], instruction: str
+) -> dict:
+    """Apply a correction in the user's words to logged entries (one card).
+
+    The corrected entries are written before the old ones are deleted, so a
+    failure leaves the original log in place.
+    """
+    wanted = set(log_ids)
+    logs = [
+        log
+        for log in await asyncio.to_thread(agent_repository.get_logs_by_day, day, user_id)
+        if str(log.id) in wanted
+    ]
+    if not logs or len(logs) != len(wanted):
+        raise DraftError("Entry not found; it may have been deleted.")
+    current, meal_type, hhmm = logic.describe_logs(logs)
+    new_rows = await _revise(user_id, day, current, meal_type, hhmm, None, instruction)
+    result = await asyncio.to_thread(_write_rows, user_id, new_rows)
+    if any(not r["success"] for r in result["results"]):
+        return result
+    deleted = await asyncio.to_thread(tools.delete_logs_tool, user_id, list(wanted))
+    return {**result, "deleted": deleted["results"]}
+
+
+def delete_logs(user_id: str, log_ids: list[str]) -> dict:
+    return tools.delete_logs_tool(user_id=user_id, log_ids=log_ids)
+
+
+def delete_draft_row(user_id: str, draft_id: UUID, row_id: str) -> dict | None:
+    """Remove one row; returns the draft, or None once its last row is gone."""
+    draft = repository.remove_row(user_id, draft_id, row_id)
+    return _serialize(draft) if draft else None
 
 
 def discard_draft(user_id: str, draft_id: UUID) -> None:
     repository.discard_pending(user_id, draft_id)
 
 
-def confirm_draft(user_id: str, draft_id: UUID) -> dict:
-    """Write the draft's logs, creating its new ingredients first.
+def confirm_draft(
+    user_id: str, draft_id: UUID, row_ids: list[str] | None = None
+) -> dict:
+    """Log some rows of a draft (all when `row_ids` is None).
 
-    The draft is claimed up front so a double click can't log it twice. The
-    writes reuse the existing repository functions, which open their own
-    connections, so this isn't a single transaction:
-    - if creating an ingredient fails, the draft returns to pending, keeping
+    New ingredients are created first. The writes reuse the existing
+    repository functions, which open their own connections, so this isn't a
+    single transaction:
+    - if creating an ingredient fails, the rows go back to the draft, keeping
       the ingredients already created so a retry doesn't duplicate them;
-    - once logging starts the draft stays confirmed, and entries that failed
-      are reported in the result (retrying would duplicate the others).
+    - once logging starts the rows stay taken, and entries that failed are
+      reported in the result (retrying would duplicate the others).
     """
-    rows = repository.claim_pending(user_id, draft_id)["rows"]
-    created = []
+    rows = repository.take_rows(user_id, draft_id, row_ids)
     try:
-        for row in rows:
-            target = logic.alternative(row)
-            if target["kind"] != "new" or target.get("id"):
-                continue
-            ingredient = agent_repository.insert_ingredient(
-                agent_models.InsertIngredientInput(
-                    name=target["name"],
-                    brand=target.get("brand"),
-                    state=target["state"],
-                    **{k: round(v) for k, v in target["per_100g"].items()},
-                ),
-                user_id,
-            )
-            target["id"] = str(ingredient.id)
-            created.append({"id": target["id"], "name": ingredient.name})
+        created = _create_new_ingredients(user_id, rows)
     except Exception:
-        repository.save_rows(draft_id, rows, release=True)
+        repository.put_back_rows(draft_id, rows)
         raise
-    repository.save_rows(draft_id, rows)
+    result = tools.log_entries_tool(
+        user_id=user_id, entries=[logic.log_entry(row) for row in rows]
+    )
+    return {"created_ingredients": created, **result}
+
+
+def _create_new_ingredients(user_id: str, rows: list[dict]) -> list[dict]:
+    """Create the ingredients of rows targeting "new"; ids are set on the rows."""
+    created = []
+    for row in rows:
+        target = logic.alternative(row)
+        if target["kind"] != "new" or target.get("id"):
+            continue
+        ingredient = agent_repository.insert_ingredient(
+            agent_models.InsertIngredientInput(
+                name=target["name"],
+                brand=target.get("brand"),
+                state=target["state"],
+                **{k: round(v) for k, v in target["per_100g"].items()},
+            ),
+            user_id,
+        )
+        target["id"] = str(ingredient.id)
+        created.append({"id": target["id"], "name": ingredient.name})
+    return created
+
+
+def _write_rows(user_id: str, rows: list[dict]) -> dict:
+    created = _create_new_ingredients(user_id, rows)
     result = tools.log_entries_tool(
         user_id=user_id, entries=[logic.log_entry(row) for row in rows]
     )

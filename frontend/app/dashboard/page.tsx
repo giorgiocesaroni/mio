@@ -80,12 +80,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { getElapsedTime } from "../utils";
 import { DashboardPage } from "./components/dashboard-page";
 import { PendingDrafts } from "./components/draft-card";
+import {
+  DeleteDialog,
+  EntryMenu,
+  EntryPill,
+  ReviseDialog,
+  useLogEntryActions,
+} from "./components/entry-actions";
+import { FoodBadges, type Macros } from "./components/food-badges";
 import { QuickLogComposer } from "./components/quick-log-composer";
 
 function MacroCard({
@@ -131,23 +138,6 @@ function MacroCard({
         </CardTitle>
       </CardContent>
     </Card>
-  );
-}
-
-function MacroBadge({
-  letter,
-  color,
-  value,
-}: {
-  letter: string;
-  color: string;
-  value: string;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm leading-none">
-      <Badge className={cn(color, "size-5 p-0 text-white")}>{letter}</Badge>
-      {value} g
-    </span>
   );
 }
 
@@ -205,8 +195,6 @@ function DailyMacros({ day }: { day: string }) {
 type FoodLog =
   Database["public"]["Views"]["v_daily_food_logs_with_foods"]["Row"];
 
-type Macros = { calories: number; protein: number; carbs: number; fat: number };
-
 function macrosOf(log: FoodLog): Macros {
   const q = log.log_quantity_g ?? 0;
   return {
@@ -226,28 +214,6 @@ function amountOf(log: FoodLog): string {
     }`;
   }
   return `${Math.round(log.log_quantity_g ?? 0)} g`;
-}
-
-function FoodBadges({ amount, macros }: { amount?: string; macros: Macros }) {
-  return (
-    <div className="grid grid-cols-4 items-center gap-4 whitespace-nowrap text-muted-foreground md:grid-cols-5">
-      {amount !== undefined && (
-        <span className="hidden whitespace-nowrap md:inline">{amount}</span>
-      )}
-      <span>{macros.calories.toFixed()} Kcal</span>
-      <MacroBadge
-        letter="P"
-        color="bg-red-500"
-        value={macros.protein.toFixed()}
-      />
-      <MacroBadge
-        letter="C"
-        color="bg-yellow-500"
-        value={macros.carbs.toFixed()}
-      />
-      <MacroBadge letter="F" color="bg-blue-500" value={macros.fat.toFixed()} />
-    </div>
-  );
 }
 
 type FoodBlock =
@@ -299,28 +265,91 @@ function sumMacros(logs: FoodLog[]): Macros {
   );
 }
 
-function IngredientLogCard({ log }: { log: FoodLog }) {
-  const timestamp = log.log_created_at!;
+/** Right side of an entry's first row: elapsed time and the actions menu. */
+function EntryMeta({
+  timestamp,
+  menu,
+}: {
+  timestamp: string;
+  menu: React.ReactNode;
+}) {
   return (
-    <Card>
-      <CardContent className="grid gap-2">
-        <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
-          <p className="min-w-0 truncate font-medium text-foreground">
-            {log.food_name}
-          </p>
-          <p className="shrink-0 whitespace-nowrap text-muted-foreground">
-            {getElapsedTime(timestamp)}
-          </p>
-        </div>
-        <FoodBadges amount={amountOf(log)} macros={macrosOf(log)} />
-      </CardContent>
-    </Card>
+    <div className="flex shrink-0 items-center gap-2">
+      <p className="whitespace-nowrap text-muted-foreground">
+        {getElapsedTime(timestamp)}
+      </p>
+      {menu}
+    </div>
+  );
+}
+
+/** Menu and dialogs for one logged card (a log, or a recipe's logs). */
+function useLogEntry(day: string, logs: FoodLog[], description: string) {
+  const { dialog, setDialog, revise, remove } = useLogEntryActions(
+    day,
+    logs.map((log) => log.log_id!),
+  );
+  const close = () => setDialog(null);
+  const menu = (
+    <EntryMenu
+      disabled={revise.isPending || remove.isPending}
+      onOpen={setDialog}
+    />
+  );
+  const dialogs = (
+    <>
+      {dialog === "edit" ? (
+        <ReviseDialog
+          open
+          onOpenChange={(open) => !open && close()}
+          description={description}
+          pending={revise.isPending}
+          onApply={(instruction) => revise.mutate(instruction)}
+        />
+      ) : null}
+      {dialog === "delete" ? (
+        <DeleteDialog
+          open
+          onOpenChange={(open) => !open && close()}
+          name={description}
+          pending={remove.isPending}
+          onDelete={() => remove.mutate()}
+        />
+      ) : null}
+    </>
+  );
+  return { menu, dialogs };
+}
+
+function IngredientLogCard({ day, log }: { day: string; log: FoodLog }) {
+  const { menu, dialogs } = useLogEntry(
+    day,
+    [log],
+    `${amountOf(log)} ${log.food_name}`,
+  );
+  return (
+    <>
+      <Card>
+        <CardContent className="grid gap-2">
+          <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
+            <p className="min-w-0 truncate font-medium text-foreground">
+              {log.food_name}
+            </p>
+            <EntryMeta timestamp={log.log_created_at!} menu={menu} />
+          </div>
+          <FoodBadges amount={amountOf(log)} macros={macrosOf(log)} />
+        </CardContent>
+      </Card>
+      {dialogs}
+    </>
   );
 }
 
 function RecipeLogCard({
+  day,
   block,
 }: {
+  day: string;
   block: Extract<FoodBlock, { kind: "recipe" }>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -329,52 +358,56 @@ function RecipeLogCard({
     (sum, log) => sum + (log.log_quantity_g ?? 0),
     0,
   );
+  const { menu, dialogs } = useLogEntry(
+    day,
+    block.logs,
+    `${Math.round(totalGrams)} g ${block.recipeName}`,
+  );
   return (
-    <Card
-      onClick={() => setExpanded((v) => !v)}
-      className="cursor-pointer hover:bg-muted/30"
-    >
-      <CardContent className="grid gap-2">
-        <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
-          <p className="min-w-0 truncate font-medium text-foreground">
-            <span className="mr-2 rounded-md bg-muted px-2 py-1 text-xs font-normal text-muted-foreground">
-              Recipe
-            </span>
-            {block.recipeName}
-          </p>
-          <p className="shrink-0 whitespace-nowrap text-muted-foreground">
-            {getElapsedTime(timestamp)}
-          </p>
-        </div>
-        <FoodBadges
-          amount={`${Math.round(totalGrams)} g`}
-          macros={sumMacros(block.logs)}
-        />
-        {expanded && (
-          <>
-            <Separator className="my-2" />
-            <div className="grid gap-1">
-              {block.logs.map((log) => {
-                const m = macrosOf(log);
-                return (
-                  <div
-                    key={log.log_id}
-                    className="flex items-center justify-between gap-4 px-1"
-                  >
-                    <span className="truncate text-muted-foreground">
-                      {log.food_name} <span>({amountOf(log)})</span>
-                    </span>
-                    <span className="whitespace-nowrap text-muted-foreground">
-                      {m.calories.toFixed()} Kcal
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+    <>
+      <Card
+        onClick={() => setExpanded((v) => !v)}
+        className="cursor-pointer hover:bg-muted/30"
+      >
+        <CardContent className="grid gap-2">
+          <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
+            <p className="min-w-0 truncate font-medium text-foreground">
+              <EntryPill>Recipe</EntryPill>
+              {block.recipeName}
+            </p>
+            <EntryMeta timestamp={timestamp} menu={menu} />
+          </div>
+          <FoodBadges
+            amount={`${Math.round(totalGrams)} g`}
+            macros={sumMacros(block.logs)}
+          />
+          {expanded && (
+            <>
+              <Separator className="my-2" />
+              <div className="grid gap-1">
+                {block.logs.map((log) => {
+                  const m = macrosOf(log);
+                  return (
+                    <div
+                      key={log.log_id}
+                      className="flex items-center justify-between gap-4 px-1"
+                    >
+                      <span className="truncate text-muted-foreground">
+                        {log.food_name} <span>({amountOf(log)})</span>
+                      </span>
+                      <span className="whitespace-nowrap text-muted-foreground">
+                        {m.calories.toFixed()} Kcal
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+      {dialogs}
+    </>
   );
 }
 
@@ -391,10 +424,11 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
       <PendingDrafts day={day} />
       {blocks.map((block, index) =>
         block.kind === "food" ? (
-          <IngredientLogCard key={block.log.log_id} log={block.log} />
+          <IngredientLogCard key={block.log.log_id} day={day} log={block.log} />
         ) : (
           <RecipeLogCard
             key={`recipe-${block.recipeId}-${index}`}
+            day={day}
             block={block}
           />
         ),

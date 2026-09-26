@@ -15,8 +15,7 @@ export const STAGES: { name: SandboxStageName; label: string; kind: string }[] =
     { name: "route", label: "Route", kind: "Jev" },
     { name: "extract", label: "Extract", kind: "LLM" },
     { name: "retrieve", label: "Retrieve", kind: "code" },
-    { name: "resolve", label: "Resolve", kind: "Jev" },
-    { name: "plan", label: "Plan", kind: "code" },
+    { name: "resolve", label: "Resolve", kind: "LLM" },
     { name: "draft", label: "Draft", kind: "database" },
   ];
 

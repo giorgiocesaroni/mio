@@ -13,24 +13,25 @@ A draft row looks like:
       ],
       "target": "c0",                        # chosen alternative
       "auto_target": "c0",                   # what the pipeline chose
-      "confidence": 0.96,
+      "confidence": "high",                  # the resolver's: high/medium/low
+      "note": null,                          # the resolver's assumption, if any
       "quantity": 2, "unit": "serving", "serving_size_id": "…",
       "meal_type": "dinner", "log_for": "2026-09-26 20:15",
       "item_state": "cooked",                # state the amount refers to
       "grams_estimated": false,
-      "user_edited": false,
     }
 
-`enrich_row` adds the derived `grams`, `macros`, and `flags`. Edits are
-validated against the row's stored alternatives, so a client can never
-introduce an id the pipeline didn't retrieve for this user.
+`enrich_row` adds the derived `grams`, `macros`, and `flags`. Rows only
+change through the pipeline (a revision re-runs it), and alternatives are
+always what retrieval found for this user, so a client can never introduce
+an id of its own.
 """
 
 import json
 import math
 import re
 
-from src.pipeline.models import DraftError, ExtractedItem
+from src.pipeline.models import DraftError, ExtractedItem, Resolution, ResolvedRow
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -39,8 +40,8 @@ CANDIDATES_PER_KIND = 4
 # Confidence gates (tune against QA data).
 ROUTE_MIN_CONFIDENCE = 0.5
 PAST_REFERENCE_MAX_NOUL = 0.5
-MATCH_MIN_CONFIDENCE = 0.6
-SERVING_MIN_CONFIDENCE = 0.6
+# Drafts created by the earlier Jev resolver store a numeric confidence.
+LEGACY_MATCH_MIN_CONFIDENCE = 0.6
 
 MEAL_TYPES = ("breakfast", "lunch", "dinner", "snack")
 
@@ -184,128 +185,170 @@ def recipe_candidate(key: str, r, nutrition: dict | None) -> dict:
     }
 
 
-def describe_candidate(c: dict) -> str:
-    if c["kind"] == "recipe":
-        return f"Saved recipe: {c['name']}"
-    # Raw/cooked is left out on purpose: it describes the nutrition facts, not
-    # the food, and Jev reads a mismatch as "different food". Flags handle it.
-    return f"{c['name']} ({c['brand']})" if c.get("brand") else c["name"]
-
-
-def resolve_answers(choices: dict, candidates: list[list[dict]]) -> list[dict]:
-    """Read Jev's `match_i` / `serving_i_cN` answers into one resolution per item."""
-    resolutions = []
-    for i, cands in enumerate(candidates):
-        match = choices.get(f"match_{i}")
-        if match is None or match.choice == "none":
-            resolutions.append(
-                {
-                    "status": "new",
-                    "candidate": None,
-                    "confidence": match.confidence if match else None,
-                    "probabilities": match.probabilities if match else {},
-                    "serving_size": None,
-                }
-            )
-            continue
-        candidate = next(c for c in cands if c["key"] == match.choice)
-        serving_size = None
-        serving = choices.get(f"serving_{i}_{candidate['key']}")
-        if (
-            serving
-            and serving.choice != "none"
-            and serving.confidence >= SERVING_MIN_CONFIDENCE
-        ):
-            serving_size = candidate["serving_sizes"][int(serving.choice[1:])]
-        resolutions.append(
+def resolver_foods(
+    items: list[ExtractedItem], candidates: list[list[dict]]
+) -> list[dict]:
+    """What the resolver sees: each food with its candidates, ids replaced by keys."""
+    foods = []
+    for item, cands in zip(items, candidates):
+        foods.append(
             {
-                "status": (
-                    "matched" if match.confidence >= MATCH_MIN_CONFIDENCE else "uncertain"
-                ),
-                "candidate": candidate,
-                "confidence": match.confidence,
-                "probabilities": match.probabilities,
-                "serving_size": serving_size,
+                "said": item.said or None,
+                "name": item.name,
+                "brand": item.brand,
+                "amount": amount(item),
+                "estimated_grams": item.grams,
+                "estimated_state": item.state,
+                "meal_type": item.meal_type,
+                "time": item.time,
+                "candidates": [_resolver_candidate(c) for c in cands],
             }
         )
-    return resolutions
+    return foods
 
 
-# ── Draft rows ────────────────────────────────────────────────────────────────
+def _resolver_candidate(c: dict) -> dict:
+    if c["kind"] == "recipe":
+        return {
+            "key": c["key"],
+            "kind": "saved recipe",
+            "name": c["name"],
+            "total_grams": round(c["total_g"]),
+            "kcal_per_100g": round(c["per_100g"]["calories_kcal"]),
+        }
+    return {
+        "key": c["key"],
+        "kind": "ingredient",
+        "name": c["name"],
+        "brand": c.get("brand"),
+        "state": c.get("state"),
+        "kcal_per_100g": round(c["per_100g"]["calories_kcal"]),
+        "serving_sizes": [
+            {"key": f"s{n}", "label": ss["label"], "grams": round(ss["grams"], 1)}
+            for n, ss in enumerate(c.get("serving_sizes", []))
+        ],
+    }
+
 
 _ALTERNATIVE_FIELDS = (
     "key", "kind", "id", "name", "brand", "state", "per_100g", "serving_sizes", "total_g"
 )
 
 
+def _new_alternative(item: ExtractedItem) -> dict:
+    # Creating a new ingredient from the extraction's estimate is always an
+    # option, so the user can reject every database match.
+    return {
+        "key": "new",
+        "kind": "new",
+        "id": None,
+        "name": item.name.capitalize(),
+        "brand": item.brand,
+        "state": item.state,
+        "per_100g": item.per_100g.model_dump(),
+        "serving_sizes": [],
+    }
+
+
+def _validated(
+    resolved: ResolvedRow | None, item: ExtractedItem, alternatives: list[dict]
+) -> tuple[dict, list[str]]:
+    """Check the resolver's row against what exists; repair what doesn't.
+
+    Returns the row fields and notes about any repairs, so an invalid answer
+    degrades to a flagged, editable row instead of failing the draft.
+    """
+    fallback = {
+        "target": "new",
+        "unit": "grams",
+        "serving_size_id": None,
+        "quantity": item.quantity if item.unit == "g" else item.grams,
+        "item_state": item.state,
+    }
+    if resolved is None:
+        return fallback, ["The resolver skipped this food"]
+    target = next((a for a in alternatives if a["key"] == resolved.target), None)
+    if target is None:
+        return fallback, [f"Unknown match '{resolved.target}'"]
+
+    fields = {
+        "target": target["key"],
+        "unit": resolved.unit,
+        "serving_size_id": None,
+        "quantity": resolved.quantity,
+        "item_state": resolved.weight_state,
+    }
+    repairs = []
+    allowed = {"ingredient": ("grams", "serving"), "new": ("grams",), "recipe": ("grams", "recipe")}
+    if resolved.unit not in allowed[target["kind"]]:
+        repairs.append(f"Unit '{resolved.unit}' doesn't apply")
+    elif resolved.unit == "serving":
+        sizes = target.get("serving_sizes", [])
+        index = (
+            int(resolved.serving[1:])
+            if resolved.serving and resolved.serving[1:].isdigit()
+            else -1
+        )
+        if 0 <= index < len(sizes):
+            fields["serving_size_id"] = sizes[index]["id"]
+        else:
+            repairs.append("Unknown serving size")
+    if not math.isfinite(resolved.quantity) or resolved.quantity <= 0:
+        repairs.append("Invalid quantity")
+    if repairs:
+        fields.update(
+            unit="grams",
+            serving_size_id=None,
+            quantity=item.quantity if item.unit == "g" else item.grams,
+            item_state=item.state,
+        )
+    elif item.unit == "g" and fields["unit"] != "grams":
+        # A weight the user stated is logged as that weight, even when the
+        # resolver re-expressed it as servings or a recipe fraction.
+        fields.update(unit="grams", serving_size_id=None, quantity=item.quantity)
+    return fields, repairs
+
+
 def draft_rows(
     items: list[ExtractedItem],
-    resolutions: list[dict],
     candidates: list[list[dict]],
+    resolution: Resolution,
     day: str,
     now_hhmm: str,
     is_today: bool,
 ) -> list[dict]:
+    by_item = {r.item: r for r in resolution.rows}
     rows = []
-    for i, (item, res, cands) in enumerate(zip(items, resolutions, candidates)):
-        if stated := parse_hhmm(item.time):
-            hhmm = stated
-        elif item.meal_type and not is_today:
-            hhmm = MEAL_DEFAULT_TIMES[item.meal_type]
-        else:
-            hhmm = now_hhmm if is_today else "12:00"
-
-        probabilities = res["probabilities"]
+    for i, (item, cands) in enumerate(zip(items, candidates)):
         alternatives = [
-            {
-                **{k: c[k] for k in _ALTERNATIVE_FIELDS if k in c},
-                "probability": probabilities.get(c["key"]),
-            }
-            for c in cands
-        ]
-        # Creating a new ingredient from the extraction's estimate is always
-        # an option, so the user can reject every database match.
-        alternatives.append(
-            {
-                "key": "new",
-                "kind": "new",
-                "id": None,
-                "name": item.name.capitalize(),
-                "brand": item.brand,
-                "state": item.state,
-                "per_100g": item.per_100g.model_dump(),
-                "serving_sizes": [],
-                "probability": probabilities.get("none"),
-            }
+            {k: c[k] for k in _ALTERNATIVE_FIELDS if k in c} for c in cands
+        ] + [_new_alternative(item)]
+        resolved = by_item.get(i)
+        fields, repairs = _validated(resolved, item, alternatives)
+
+        hhmm = parse_hhmm(resolved.time if resolved else None) or parse_hhmm(item.time)
+        if not hhmm:
+            meal = item.meal_type
+            hhmm = now_hhmm if is_today else (MEAL_DEFAULT_TIMES[meal] if meal else "12:00")
+        meal_type = (
+            resolved.meal_type if resolved and resolved.meal_type in MEAL_TYPES
+            else item.meal_type or infer_meal_type(hhmm)
         )
-        alternatives.sort(key=lambda a: -(a["probability"] or 0))
 
-        candidate = res["candidate"]
-        if candidate and candidate["kind"] == "recipe" and item.unit == "recipe":
-            unit, quantity, serving_size_id = "recipe", item.quantity, None
-        elif candidate and res["serving_size"]:
-            unit, quantity, serving_size_id = "serving", item.quantity, res["serving_size"]["id"]
-        else:
-            quantity = item.quantity if item.unit == "g" else item.grams
-            unit, serving_size_id = "grams", None
-
-        target = candidate["key"] if candidate else "new"
+        # The chosen match first, then the other candidates in retrieval order.
+        alternatives.sort(key=lambda a: a["key"] != fields["target"])
         rows.append(
             {
                 "id": f"r{i}",
                 "said": item.said,
                 "alternatives": alternatives,
-                "target": target,
-                "auto_target": target,
-                "confidence": res["confidence"],
-                "quantity": quantity,
-                "unit": unit,
-                "serving_size_id": serving_size_id,
-                "meal_type": item.meal_type or infer_meal_type(hhmm),
+                "auto_target": fields["target"],
+                **fields,
+                "confidence": "low" if repairs else (resolved.confidence if resolved else "low"),
+                "note": "; ".join(repairs) + "." if repairs else (resolved.note if resolved else None),
+                "meal_type": meal_type,
                 "log_for": f"{day} {hhmm}",
-                "item_state": item.state,
-                "grams_estimated": unit == "grams" and item.unit != "g",
-                "user_edited": False,
+                "grams_estimated": fields["unit"] == "grams" and item.unit != "g",
             }
         )
     return rows
@@ -337,14 +380,18 @@ def row_grams(row: dict) -> float:
 def row_flags(row: dict) -> list[str]:
     target = alternative(row)
     flags = []
+    untouched = not row.get("user_edited") and row["target"] == row["auto_target"]
+    confidence = row.get("confidence")
     if target["kind"] == "new":
         flags.append("New ingredient: nutrition facts are estimated")
-    elif (
-        not row["user_edited"]
-        and row["target"] == row["auto_target"]
-        and (row["confidence"] or 0) < MATCH_MIN_CONFIDENCE
-    ):
-        flags.append(f"Uncertain match ({row['confidence']:.2f})")
+    if untouched and row.get("note"):
+        flags.append(row["note"])
+    elif untouched and target["kind"] != "new":
+        if isinstance(confidence, (int, float)):
+            if confidence < LEGACY_MATCH_MIN_CONFIDENCE:
+                flags.append(f"Uncertain match ({confidence:.2f})")
+        elif confidence != "high":
+            flags.append("Uncertain match")
     if (
         target["kind"] == "ingredient"
         and row["unit"] == "grams"
@@ -354,7 +401,7 @@ def row_flags(row: dict) -> list[str]:
         flags.append(
             f"Amount is {row['item_state']} weight, but the entry is {target['state']}"
         )
-    if row["grams_estimated"] and not row["user_edited"]:
+    if row["grams_estimated"] and not row.get("user_edited"):
         flags.append("Weight is estimated")
     return flags
 
@@ -401,65 +448,67 @@ def draft_message(rows: list[dict]) -> str:
     )
 
 
-# ── Draft edits and confirmation ──────────────────────────────────────────────
+# ── Revisions and confirmation ────────────────────────────────────────────────
 
 
-def apply_edit(row: dict, edit: dict) -> dict:
-    target_key = edit.get("target", row["target"])
-    target = alternative(row, target_key)
-    unit = edit.get("unit", row["unit"])
-    quantity = float(edit.get("quantity", row["quantity"]))
-    serving_size_id = edit.get("serving_size_id", row.get("serving_size_id"))
-    meal_type = edit.get("meal_type", row["meal_type"])
-
-    if not math.isfinite(quantity) or quantity <= 0:
-        raise DraftError("Quantity must be a positive number.")
-    if meal_type not in MEAL_TYPES:
-        raise DraftError(f"Invalid meal type '{meal_type}'.")
-    allowed_units = {
-        "ingredient": ("grams", "serving"),
-        "new": ("grams",),
-        "recipe": ("grams", "recipe"),
-    }[target["kind"]]
-    if unit not in allowed_units:
-        raise DraftError(f"Unit '{unit}' is not available for {target['name']}.")
-    if unit == "serving":
-        if not any(s["id"] == serving_size_id for s in target["serving_sizes"]):
-            raise DraftError("Unknown serving size for this food.")
-    else:
-        serving_size_id = None
-
-    updated = {
-        **row,
-        "target": target_key,
-        "unit": unit,
-        "quantity": quantity,
-        "serving_size_id": serving_size_id,
-        "meal_type": meal_type,
-    }
-    fields = ("target", "unit", "quantity", "serving_size_id", "meal_type")
-    if any(updated[f] != row.get(f) for f in fields):
-        updated["user_edited"] = True
-    return updated
+def revision_message(
+    current: str, meal_type: str, hhmm: str, said: str | None, instruction: str
+) -> str:
+    """The message a revision runs through the pipeline: the entry as it is,
+    plus the user's correction, so unchanged details carry over."""
+    originally = f', originally described as "{said}"' if said else ""
+    return (
+        "The user is correcting one entry of their food log.\n"
+        f"Current entry: {current} ({meal_type}, {hhmm}){originally}.\n"
+        f'Correction: "{instruction}"\n'
+        "Log the entry as it should be after the correction; keep what the "
+        "correction doesn't change."
+    )
 
 
-def apply_edits(rows: list[dict], edits: list[dict]) -> list[dict]:
-    """Replace `rows` with the edited ones; rows left out of `edits` are removed."""
-    if not edits:
-        raise DraftError("A draft needs at least one row; discard it instead.")
-    by_id = {row["id"]: row for row in rows}
-    updated = []
-    for edit in edits:
-        row = by_id.get(edit.get("id"))
-        if row is None:
-            raise DraftError(f"Unknown row '{edit.get('id')}'.")
-        updated.append(stored(apply_edit(row, edit)))
-    return updated
+def describe_logs(logs: list) -> tuple[str, str, str]:
+    """(description, meal type, HH:MM) of logged entries shown as one card:
+    a single ingredient log, or the ingredient logs of one recipe."""
+    first = logs[0]
+    hhmm = (first.log_for_local or "")[-5:] or first.log_for.strftime("%H:%M")
+
+    def grams(log) -> float:
+        if log.serving_size_id and log.ingredient:
+            serving = next(
+                (s for s in log.ingredient.serving_sizes if s.id == log.serving_size_id),
+                None,
+            )
+            if serving:
+                return (log.quantity or 0) * serving.grams
+        return float(log.quantity_g or 0)
+
+    if first.recipe_id and first.recipe:
+        total = sum(grams(log) for log in logs)
+        return f"{total:.0f} g of the saved recipe {first.recipe.name}", first.meal_type, hhmm
+    name = first.ingredient.name if first.ingredient else "food"
+    if first.serving_size_id and first.ingredient:
+        serving = next(
+            (s for s in first.ingredient.serving_sizes if s.id == first.serving_size_id),
+            None,
+        )
+        if serving:
+            label = serving.label if first.quantity == 1 else serving.label_plural
+            return f"{first.quantity:g} {label} {name}", first.meal_type, hhmm
+    return f"{grams(first):.0f} g {name}", first.meal_type, hhmm
 
 
-def stored(row: dict) -> dict:
-    """Drop derived fields before persisting."""
-    return {k: v for k, v in row.items() if k not in ("grams", "macros", "flags")}
+def replace_row(rows: list[dict], row_id: str, new_rows: list[dict]) -> list[dict]:
+    """Put `new_rows` where `row_id` was: the first keeps its id, extra rows
+    (foods the correction added) get fresh ids."""
+    index = next((n for n, r in enumerate(rows) if r["id"] == row_id), None)
+    if index is None:
+        raise DraftError(f"Unknown row '{row_id}'.")
+    next_id = max(int(r["id"][1:]) for r in rows) + 1
+    renamed = [
+        {**row, "id": row_id if n == 0 else f"r{next_id + n - 1}"}
+        for n, row in enumerate(new_rows)
+    ]
+    return rows[:index] + renamed + rows[index + 1 :]
 
 
 def log_entry(row: dict) -> dict:

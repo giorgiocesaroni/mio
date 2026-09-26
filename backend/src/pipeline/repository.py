@@ -100,6 +100,22 @@ def get_pending_drafts(user_id: str, day: str) -> list[dict]:
             return cur.fetchall()
 
 
+def get_pending_draft(user_id: str, draft_id: UUID) -> dict:
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                f"""
+                SELECT {_COLUMNS} FROM log_drafts
+                WHERE id = %s AND user_id = %s AND status = 'pending'
+                """,
+                (draft_id, user_id),
+            )
+            draft = cur.fetchone()
+    if draft is None:
+        raise DraftError("Draft not found, or already confirmed or discarded.")
+    return draft
+
+
 def _lock_pending(cur, user_id: str, draft_id: UUID) -> dict:
     cur.execute(
         f"""
@@ -133,6 +149,31 @@ def update_pending_rows(
             return cur.fetchone()
 
 
+def remove_row(user_id: str, draft_id: UUID, row_id: str) -> dict | None:
+    """Remove a row from a pending draft; removing the last one discards it."""
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            draft = _lock_pending(cur, user_id, draft_id)
+            remaining = [r for r in draft["rows"] if r["id"] != row_id]
+            if len(remaining) == len(draft["rows"]):
+                raise DraftError(f"Unknown row '{row_id}'.")
+            if not remaining:
+                cur.execute(
+                    "UPDATE log_drafts SET status = 'discarded', updated_at = now() WHERE id = %s",
+                    (draft_id,),
+                )
+                return None
+            cur.execute(
+                f"""
+                UPDATE log_drafts SET rows = %s, updated_at = now()
+                WHERE id = %s
+                RETURNING {_COLUMNS}
+                """,
+                (Jsonb(remaining), draft_id),
+            )
+            return cur.fetchone()
+
+
 def discard_pending(user_id: str, draft_id: UUID) -> None:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -143,36 +184,53 @@ def discard_pending(user_id: str, draft_id: UUID) -> None:
             )
 
 
-def claim_pending(user_id: str, draft_id: UUID) -> dict:
-    """Mark a pending draft confirmed and return it; a second claim fails."""
+def take_rows(user_id: str, draft_id: UUID, row_ids: list[str] | None) -> list[dict]:
+    """Remove rows (all when `row_ids` is None) from a pending draft for logging.
+
+    The draft becomes confirmed once its last row is taken; the row lock means
+    a double click can't take the same rows twice.
+    """
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             draft = _lock_pending(cur, user_id, draft_id)
-            cur.execute(
-                """
-                UPDATE log_drafts
-                SET status = 'confirmed', confirmed_at = now(), updated_at = now()
-                WHERE id = %s
-                """,
-                (draft_id,),
-            )
-            return draft
+            rows = draft["rows"]
+            wanted = set(row_ids) if row_ids is not None else {r["id"] for r in rows}
+            unknown = wanted - {r["id"] for r in rows}
+            if unknown or not wanted:
+                raise DraftError(f"Unknown rows: {sorted(unknown)}." if unknown else "No rows to confirm.")
+            taken = [r for r in rows if r["id"] in wanted]
+            remaining = [r for r in rows if r["id"] not in wanted]
+            if remaining:
+                cur.execute(
+                    "UPDATE log_drafts SET rows = %s, updated_at = now() WHERE id = %s",
+                    (Jsonb(remaining), draft_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE log_drafts
+                    SET status = 'confirmed', confirmed_at = now(), updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (draft_id,),
+                )
+            return taken
 
 
-def save_rows(draft_id: UUID, rows: list[dict], release: bool = False) -> None:
-    """Persist rows of a claimed draft; `release` puts it back to pending."""
+def put_back_rows(draft_id: UUID, rows: list[dict]) -> None:
+    """Return taken rows to their draft (pending again) after a failed confirm."""
     with psycopg.connect(**db_connection_params) as conn:
-        if release:
-            conn.execute(
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT status, rows FROM log_drafts WHERE id = %s FOR UPDATE", (draft_id,))
+            draft = cur.fetchone()
+            current = draft["rows"] if draft["status"] == "pending" else []
+            # Row ids are "r<index>", so this restores the original order.
+            merged = sorted(current + rows, key=lambda r: int(r["id"][1:]))
+            cur.execute(
                 """
                 UPDATE log_drafts
                 SET status = 'pending', confirmed_at = NULL, rows = %s, updated_at = now()
                 WHERE id = %s
                 """,
-                (Jsonb(rows), draft_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE log_drafts SET rows = %s, updated_at = now() WHERE id = %s",
-                (Jsonb(rows), draft_id),
+                (Jsonb(merged), draft_id),
             )

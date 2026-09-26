@@ -83,7 +83,6 @@ export type SandboxStageName =
   | "extract"
   | "retrieve"
   | "resolve"
-  | "plan"
   | "draft";
 
 export type SandboxStageStep = {
@@ -134,7 +133,8 @@ export type DraftAlternative = {
   per_100g: Per100g;
   serving_sizes?: DraftServingSize[];
   total_g?: number;
-  probability: number | null;
+  // Only set on drafts made by the earlier Jev resolver.
+  probability?: number | null;
 };
 
 export type DraftUnit = "grams" | "serving" | "recipe";
@@ -154,12 +154,6 @@ export type DraftRow = {
   macros: Per100g;
   flags: string[];
 };
-
-/** The editable subset of a row, as sent back to the backend. */
-export type DraftRowEdit = Pick<
-  DraftRow,
-  "id" | "target" | "quantity" | "unit" | "serving_size_id" | "meal_type"
->;
 
 export type LogDraft = {
   id: string;

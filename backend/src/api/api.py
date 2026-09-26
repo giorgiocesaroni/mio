@@ -236,18 +236,36 @@ async def list_drafts_endpoint(
     return await asyncio.to_thread(pipeline.list_drafts, user_id, day)
 
 
-@app.patch("/drafts/{draft_id}")
-async def update_draft_endpoint(
+@app.post("/drafts/{draft_id}/rows/{row_id}/revise")
+async def revise_draft_row_endpoint(
     draft_id: UUID,
+    row_id: str,
     request: Request,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
-    """Replace the draft's rows with the edited ones; omitted rows are removed."""
+    """Applies a correction in the user's words to one draft entry."""
     body = await request.json()
     try:
-        return await asyncio.to_thread(
-            pipeline.update_draft, user_id, draft_id, body.get("rows", [])
+        return await pipeline.revise_draft_row(
+            user_id, draft_id, row_id, body.get("instruction", "")
         )
+    except DraftError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/drafts/{draft_id}/rows/{row_id}")
+async def delete_draft_row_endpoint(
+    draft_id: UUID,
+    row_id: str,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """Removes one draft entry; returns the draft, or null once it's empty."""
+    try:
+        return {
+            "draft": await asyncio.to_thread(
+                pipeline.delete_draft_row, user_id, draft_id, row_id
+            )
+        }
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -255,10 +273,16 @@ async def update_draft_endpoint(
 @app.post("/drafts/{draft_id}/confirm")
 async def confirm_draft_endpoint(
     draft_id: UUID,
+    request: Request,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
+    """Logs the given `row_ids` of the draft, or all of its rows when omitted."""
+    body = await request.body()
+    row_ids = (json.loads(body) if body else {}).get("row_ids")
     try:
-        return await asyncio.to_thread(pipeline.confirm_draft, user_id, draft_id)
+        return await asyncio.to_thread(
+            pipeline.confirm_draft, user_id, draft_id, row_ids
+        )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -273,6 +297,30 @@ async def discard_draft_endpoint(
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"success": True}
+
+
+@app.post("/logs/revise")
+async def revise_logs_endpoint(
+    request: Request,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """Applies a correction in the user's words to logged entries (one card)."""
+    body = await request.json()
+    try:
+        return await pipeline.revise_logs(
+            user_id, body["day"], body["log_ids"], body.get("instruction", "")
+        )
+    except DraftError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/logs/delete")
+async def delete_logs_endpoint(
+    request: Request,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    body = await request.json()
+    return await asyncio.to_thread(pipeline.delete_logs, user_id, body["log_ids"])
 
 
 @app.post("/upload")

@@ -1,7 +1,6 @@
 import { supabase } from "@/repository/supabase/queries";
 import type {
   ConfirmDraftResult,
-  DraftRowEdit,
   LogDraft,
   ModelsResponse,
   RunAgentStep,
@@ -39,11 +38,11 @@ export type {
   SandboxStageName,
   LogDraft,
   DraftRow,
-  DraftRowEdit,
   DraftAlternative,
   DraftServingSize,
   DraftUnit,
   MealType,
+  Per100g,
   ConfirmDraftResult,
 } from "./types";
 
@@ -259,20 +258,56 @@ export function getDrafts(day: string): Promise<LogDraft[]> {
   return requestJSON(`/drafts?day=${encodeURIComponent(day)}`);
 }
 
-export function updateDraft(
+/** Applies a correction in the user's words to one draft entry. */
+export function reviseDraftRow(
   id: string,
-  rows: DraftRowEdit[],
+  rowId: string,
+  instruction: string,
 ): Promise<LogDraft> {
-  return requestJSON(`/drafts/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ rows }),
+  return requestJSON(`/drafts/${id}/rows/${rowId}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ instruction }),
   });
 }
 
-export function confirmDraft(id: string): Promise<ConfirmDraftResult> {
-  return requestJSON(`/drafts/${id}/confirm`, { method: "POST" });
+/** Removes one draft entry; the draft is null once it's empty. */
+export function deleteDraftRow(
+  id: string,
+  rowId: string,
+): Promise<{ draft: LogDraft | null }> {
+  return requestJSON(`/drafts/${id}/rows/${rowId}`, { method: "DELETE" });
+}
+
+/** Logs the given rows of a draft, or all of them when `rowIds` is omitted. */
+export function confirmDraft(
+  id: string,
+  rowIds?: string[],
+): Promise<ConfirmDraftResult> {
+  return requestJSON(`/drafts/${id}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(rowIds ? { row_ids: rowIds } : {}),
+  });
 }
 
 export function discardDraft(id: string): Promise<{ success: true }> {
   return requestJSON(`/drafts/${id}/discard`, { method: "POST" });
+}
+
+/** Applies a correction in the user's words to logged entries (one card). */
+export function reviseLogs(
+  day: string,
+  logIds: string[],
+  instruction: string,
+): Promise<ConfirmDraftResult> {
+  return requestJSON(`/logs/revise`, {
+    method: "POST",
+    body: JSON.stringify({ day, log_ids: logIds, instruction }),
+  });
+}
+
+export function deleteLogs(logIds: string[]): Promise<unknown> {
+  return requestJSON(`/logs/delete`, {
+    method: "POST",
+    body: JSON.stringify({ log_ids: logIds }),
+  });
 }

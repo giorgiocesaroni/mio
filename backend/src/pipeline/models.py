@@ -58,6 +58,40 @@ class Extraction(BaseModel):
     items: list[ExtractedItem]
 
 
+# ── Resolution ────────────────────────────────────────────────────────────────
+
+
+class ResolvedRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: int = Field(description="Index of the food in `foods`.")
+    target: str = Field(
+        description="Key of the candidate that is the same food, or 'new' when none is."
+    )
+    unit: Literal["grams", "serving", "recipe"]
+    serving: str | None = Field(
+        description="With unit 'serving': the key of the target's serving size. Otherwise null."
+    )
+    quantity: float = Field(
+        description="Grams for 'grams', number of servings for 'serving', fraction of the whole recipe for 'recipe'."
+    )
+    weight_state: agent_models.IngredientState = Field(
+        description="Whether the logged amount refers to the raw or cooked food."
+    )
+    meal_type: agent_models.MealType
+    time: str = Field(description="Local time of the meal, HH:MM.")
+    confidence: Literal["high", "medium", "low"]
+    note: str | None = Field(
+        description="When confidence isn't high: one short sentence for the user, in their language, saying what was assumed. Otherwise null."
+    )
+
+
+class Resolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rows: list[ResolvedRow]
+
+
 # ── Pipeline run ──────────────────────────────────────────────────────────────
 
 
@@ -66,12 +100,10 @@ class PipelineInput(BaseModel):
     # Already preprocessed: audio parts transcribed to text.
     message: agent_models.MessageType
     day: str | None = None  # YYYY-MM-DD in the user's timezone; defaults to today
-    model: str | None = None  # Extraction model override
+    model: str | None = None  # Extraction and resolution model override
 
 
-StageName = Literal[
-    "normalize", "route", "extract", "retrieve", "resolve", "plan", "draft"
-]
+StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "draft"]
 
 
 class StageStep(BaseModel):
