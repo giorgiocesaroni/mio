@@ -7,24 +7,21 @@ import {
 import { ModelSelector } from "@/app/components/model-selector";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
+import { useModel } from "@/app/hooks/use-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  getModels,
   streamSandboxLog,
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DAY_ENTRIES_QUERY_KEY } from "@/app/dashboard/components/day-entries";
 import { PendingDrafts } from "@/app/dashboard/components/draft-card";
 import { PipelineRun, formatCost, type Run } from "./components/pipeline-run";
-
-// Mirrors the backend's EXTRACT_MODEL_ID default.
-const DEFAULT_EXTRACT_MODEL = "google/gemini-3.8-flash";
 
 function todayKey(): string {
   return new Date().toLocaleDateString("en-CA");
@@ -37,29 +34,11 @@ export default function SandboxPage() {
   >([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [day, setDay] = useState(todayKey);
-  // Separate from the app-wide "model" preference, so experiments here don't
-  // change the model used by quick log and chat.
-  const [model, setModel] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem("sandbox-model");
-  });
+  const { models, model: resolvedModel, setModel } = useModel();
   const [runs, setRuns] = useState<Run[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const queryClient = useQueryClient();
-
-  const { data: modelsData } = useQuery({
-    queryKey: ["models"],
-    queryFn: getModels,
-    staleTime: Infinity,
-  });
-  const available = (id: string | null) =>
-    !!id && !!modelsData?.models.some((m) => m.id === id);
-  const resolvedModel = available(model)
-    ? model!
-    : available(DEFAULT_EXTRACT_MODEL)
-      ? DEFAULT_EXTRACT_MODEL
-      : modelsData?.default;
 
   const isRunning = runs.some((r) => !r.done && !r.error);
 
@@ -234,14 +213,11 @@ export default function SandboxPage() {
           }
           placeholder="What did you eat?"
           modelSelector={
-            modelsData ? (
+            models ? (
               <ModelSelector
-                models={modelsData.models}
+                models={models}
                 value={resolvedModel}
-                onChange={(value) => {
-                  setModel(value);
-                  window.localStorage.setItem("sandbox-model", value);
-                }}
+                onChange={setModel}
               />
             ) : null
           }

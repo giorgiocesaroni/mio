@@ -100,7 +100,7 @@ class PipelineInput(BaseModel):
     # Already preprocessed: audio parts transcribed to text.
     message: agent_models.MessageType
     day: str | None = None  # YYYY-MM-DD in the user's timezone; defaults to today
-    model: str | None = None  # Extraction and resolution model override
+    model: str | None = None  # Extraction and resolution model; see `providers.resolve_model`
     # The agent's `log_food` tool has already decided the message is a food log.
     skip_route: bool = False
 

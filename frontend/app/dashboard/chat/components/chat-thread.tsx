@@ -7,10 +7,10 @@ import {
 import { ModelSelector } from "@/app/components/model-selector";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
+import { useModel } from "@/app/hooks/use-model";
 import {
   type RunAgentStep,
   getConversationMessages,
-  getModels,
   streamChat,
   transcribeAudio,
   uploadFile,
@@ -142,27 +142,7 @@ export function ChatThread({
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
   const streamingTokenCountRef = useRef<number>(0);
-  const [model, setModel] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem("model");
-  });
-
-  const { data: modelsData } = useQuery({
-    queryKey: ["models"],
-    queryFn: getModels,
-    staleTime: Infinity,
-  });
-
-  const resolvedModel =
-    model && modelsData?.models.some((m) => m.id === model)
-      ? model
-      : (modelsData?.default ?? undefined);
-
-  const handleModelChange = (value: string | null) => {
-    if (!value) return;
-    setModel(value);
-    window.localStorage.setItem("model", value);
-  };
+  const { models, model: resolvedModel, setModel } = useModel();
 
   const sendMessage = useCallback(
     async (id: string, payload: object) => {
@@ -433,11 +413,11 @@ export function ChatThread({
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
           }
           modelSelector={
-            modelsData ? (
+            models ? (
               <ModelSelector
-                models={modelsData.models}
+                models={models}
                 value={resolvedModel}
-                onChange={handleModelChange}
+                onChange={setModel}
               />
             ) : null
           }

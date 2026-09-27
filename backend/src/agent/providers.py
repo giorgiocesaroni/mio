@@ -47,6 +47,12 @@ MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]
 
 DEFAULT_MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-6-luna")
 
+
+def resolve_model(model_id: str | None) -> str:
+    """The model for every LLM call but transcription and embeddings: the
+    user's pick, or the default when they haven't made one."""
+    return model_id or DEFAULT_MODEL_ID
+
 _clients: dict[str, AsyncOpenAI] = {}
 
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useModel } from "@/app/hooks/use-model";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -211,9 +212,11 @@ export function useInvalidateLogs() {
 export function useLogEntryActions(day: string, logIds: string[]) {
   const invalidateLogs = useInvalidateLogs();
   const [dialog, setDialog] = useState<EntryDialog>(null);
+  const { model } = useModel();
 
   const revise = useMutation({
-    mutationFn: (instruction: string) => reviseLogs(day, logIds, instruction),
+    mutationFn: (instruction: string) =>
+      reviseLogs(day, logIds, instruction, model),
     onSuccess: async (result) => {
       const failed = result.results.filter((r) => !r.success);
       if (failed.length)

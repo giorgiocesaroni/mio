@@ -261,7 +261,9 @@ async def _draft_opening_message(
     history and the conversation reloads the same way as when it drafts.
     """
     async for step in pipeline.run(
-        PipelineInput(user_id=input.user_id, message=message, day=input.day)
+        PipelineInput(
+            user_id=input.user_id, message=message, day=input.day, model=input.model
+        )
     ):
         if step.type != "done":
             continue

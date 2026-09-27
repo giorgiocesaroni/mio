@@ -212,7 +212,7 @@ async def revise_draft_row_endpoint(
     body = await request.json()
     try:
         return await pipeline.revise_draft_row(
-            user_id, draft_id, row_id, body.get("instruction", "")
+            user_id, draft_id, row_id, body.get("instruction", ""), body.get("model")
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -273,7 +273,11 @@ async def revise_logs_endpoint(
     body = await request.json()
     try:
         return await pipeline.revise_logs(
-            user_id, body["day"], body["log_ids"], body.get("instruction", "")
+            user_id,
+            body["day"],
+            body["log_ids"],
+            body.get("instruction", ""),
+            body.get("model"),
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))

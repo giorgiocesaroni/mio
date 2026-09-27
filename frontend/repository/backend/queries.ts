@@ -243,10 +243,11 @@ export function reviseDraftRow(
   id: string,
   rowId: string,
   instruction: string,
+  model: string | undefined,
 ): Promise<LogDraft> {
   return requestJSON(`/drafts/${id}/rows/${rowId}/revise`, {
     method: "POST",
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, ...(model ? { model } : {}) }),
   });
 }
 
@@ -278,10 +279,16 @@ export function reviseLogs(
   day: string,
   logIds: string[],
   instruction: string,
+  model: string | undefined,
 ): Promise<ConfirmDraftResult> {
   return requestJSON(`/logs/revise`, {
     method: "POST",
-    body: JSON.stringify({ day, log_ids: logIds, instruction }),
+    body: JSON.stringify({
+      day,
+      log_ids: logIds,
+      instruction,
+      ...(model ? { model } : {}),
+    }),
   });
 }
 

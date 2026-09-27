@@ -46,9 +46,8 @@ from src.pipeline.models import (
     StageStep,
 )
 
-# Cheapest model with good vision at this price point, for both LLM steps;
-# reasoning kept low since both are perception + lookup, not multi-step work.
-LLM_MODEL_ID = "google/gemini-3.8-flash"
+# Both LLM steps use the user's model (`providers.resolve_model`); reasoning
+# kept low since both are perception + lookup, not multi-step work.
 LLM_REASONING_EFFORT = "low"
 LLM_MAX_COMPLETION_TOKENS = 4096
 
@@ -251,7 +250,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         now = datetime.datetime.now(tz=ZoneInfo(timezone))
         today = now.strftime("%Y-%m-%d")
         day = input.day or today
-        model_id = input.model or LLM_MODEL_ID
+        model_id = providers.resolve_model(input.model)
 
         # 1. Normalize
         t = time.perf_counter()
@@ -404,7 +403,11 @@ def get_draft(user_id: str, draft_id: UUID) -> dict | None:
 
 
 async def draft_food(
-    user_id: str, description: str, image_urls: list[str], day: str | None
+    user_id: str,
+    description: str,
+    image_urls: list[str],
+    day: str | None,
+    model: str | None,
 ) -> dict:
     """Draft a food log from the agent's description, skipping the router.
 
@@ -416,7 +419,9 @@ async def draft_food(
     ]
     message = agent_models.RunAgentUserMessage(parts=parts)
     async for step in run(
-        PipelineInput(user_id=user_id, message=message, day=day, skip_route=True)
+        PipelineInput(
+            user_id=user_id, message=message, day=day, model=model, skip_route=True
+        )
     ):
         if step.type == "done":
             if step.outcome == "drafted" and step.draft:
@@ -433,7 +438,7 @@ def list_day_entries(user_id: str, day: str) -> dict:
 
 async def _revise(
     user_id: str, day: str, current: str, meal_type: str, hhmm: str,
-    said: str | None, instruction: str,
+    said: str | None, instruction: str, model: str | None,
 ) -> list[dict]:
     """Rows for an entry after a correction in the user's words.
 
@@ -447,14 +452,15 @@ async def _revise(
     timezone = agent_repository.get_user_timezone(user_id)
     now = datetime.datetime.now(tz=ZoneInfo(timezone))
     message = logic.revision_message(current, meal_type, hhmm, said, instruction)
+    model_id = providers.resolve_model(model)
     extraction, _, _ = await _extract(
-        user_id, LLM_MODEL_ID, message, [], now.strftime("%Y-%m-%d %H:%M")
+        user_id, model_id, message, [], now.strftime("%Y-%m-%d %H:%M")
     )
     if not extraction.items:
         raise DraftError("Couldn't tell what to change; try rephrasing.")
     candidates = await _retrieve(user_id, extraction.items)
     resolution, _, _ = await _resolve(
-        user_id, LLM_MODEL_ID, message, extraction.items, candidates, day,
+        user_id, model_id, message, extraction.items, candidates, day,
         now.strftime("%Y-%m-%d %H:%M"),
     )
     return logic.draft_rows(
@@ -464,7 +470,7 @@ async def _revise(
 
 
 async def revise_draft_row(
-    user_id: str, draft_id: UUID, row_id: str, instruction: str
+    user_id: str, draft_id: UUID, row_id: str, instruction: str, model: str | None
 ) -> dict:
     """Apply a correction in the user's words to one draft row."""
     draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
@@ -473,7 +479,7 @@ async def revise_draft_row(
         raise DraftError(f"Unknown row '{row_id}'.")
     new_rows = await _revise(
         user_id, draft["day"].isoformat(), logic.row_label(row), row["meal_type"],
-        row["log_for"][-5:], row.get("said"), instruction,
+        row["log_for"][-5:], row.get("said"), instruction, model,
     )
     updated = await asyncio.to_thread(
         repository.update_pending_rows,
@@ -485,7 +491,7 @@ async def revise_draft_row(
 
 
 async def revise_logs(
-    user_id: str, day: str, log_ids: list[str], instruction: str
+    user_id: str, day: str, log_ids: list[str], instruction: str, model: str | None
 ) -> dict:
     """Apply a correction in the user's words to logged entries (one card).
 
@@ -501,7 +507,9 @@ async def revise_logs(
     if not logs or len(logs) != len(wanted):
         raise DraftError("Entry not found; it may have been deleted.")
     current, meal_type, hhmm = logic.describe_logs(logs)
-    new_rows = await _revise(user_id, day, current, meal_type, hhmm, None, instruction)
+    new_rows = await _revise(
+        user_id, day, current, meal_type, hhmm, None, instruction, model
+    )
     result = await asyncio.to_thread(_write_rows, user_id, new_rows)
     if any(not r["success"] for r in result["results"]):
         return result

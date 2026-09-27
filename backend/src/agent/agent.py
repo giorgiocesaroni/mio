@@ -400,6 +400,7 @@ async def _log_food(
             args.get("description", ""),
             _latest_image_urls(input.contents),
             args.get("day"),
+            input.model,
         )
         response = log_food_result(draft)
     except Exception as e:
@@ -420,7 +421,7 @@ async def agent(
         {"role": "system", "content": input.system_prompt},
         *await _convert_history(input.contents),
     ]
-    model_id = input.model or providers.DEFAULT_MODEL_ID
+    model_id = providers.resolve_model(input.model)
     provider = providers.get_provider(model_id)
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)

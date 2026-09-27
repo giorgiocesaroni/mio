@@ -18,7 +18,7 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 | ----------- | ------------------------------- | ---------------------------- |
 | `agent/`    | The agent's core logic.         | MiMo API (OpenAI-compatible) |
 | `api/`      | The API of the application.     | FastAPI                      |
-| `pipeline/` | The structured food-logging pipeline and its log drafts, used by quick log and the agent's `log_food` tool. | Jev (TypeSafe), Gemini |
+| `pipeline/` | The structured food-logging pipeline and its log drafts, used by quick log and the agent's `log_food` tool. | Jev (TypeSafe), the user's selected model |
 
 ### Module Structure
 
