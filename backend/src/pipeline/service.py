@@ -49,7 +49,9 @@ from src.pipeline.models import (
 # Both LLM steps use the user's model (`providers.resolve_model`); reasoning
 # kept low since both are perception + lookup, not multi-step work.
 LLM_REASONING_EFFORT = "low"
-LLM_MAX_COMPLETION_TOKENS = 4096
+# Reasoning counts toward this, and some models (DeepSeek) reason at length
+# whatever the effort, so it's generous; only the tokens used are paid for.
+LLM_MAX_COMPLETION_TOKENS = 16384
 
 EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured items for a nutrition tracker. The user's local time is {now}.
 
@@ -149,7 +151,19 @@ async def _complete(
     cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
     if usage:
         repository.record_invocation(user_id, model_id, cost, usage, extract_tokens(usage))
-    raw = response.choices[0].message.content or ""
+    choice = response.choices[0]
+    raw = choice.message.content or ""
+    if choice.finish_reason == "length":
+        reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+        spent = f", {reasoning} of them reasoning" if reasoning else ""
+        raise RuntimeError(
+            f"{model_id} ran out of output tokens "
+            f"({LLM_MAX_COMPLETION_TOKENS}{spent}) before finishing its answer"
+        )
+    if not raw.strip():
+        raise RuntimeError(
+            f"{model_id} returned no content (finish reason: {choice.finish_reason})"
+        )
     return output.model_validate(logic.parse_json(raw)), cost, usage
 
 
@@ -235,6 +249,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
     session_id = f"pipeline-{uuid.uuid4()}"
     total_cost = 0.0
     stage: StageName = "normalize"
+    t = started
 
     def done(outcome, message: str, draft: dict | None = None) -> DoneStep:
         return DoneStep(
@@ -375,7 +390,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         )
         yield done("drafted", logic.draft_message(rows), draft)
     except Exception as e:
-        yield StageStep(name=stage, status="error", summary=str(e), ms=0)
+        yield StageStep(name=stage, status="error", summary=str(e), ms=_ms(t))
         yield done("error", f"{stage} failed: {e}")
 
 
