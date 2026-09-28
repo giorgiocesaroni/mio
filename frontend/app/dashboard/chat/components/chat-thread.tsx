@@ -24,9 +24,6 @@ import { dayEntriesQueryKey } from "@/app/dashboard/components/day-entries";
 import { ChatDraft } from "@/app/dashboard/components/draft-card";
 import type { DayEntries, LogDraft } from "@/repository/backend/queries";
 
-// Logging food shows up as its draft, so the tool that made it stays hidden.
-const HIDDEN_TOOLS = new Set(["log_food"]);
-
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
     if (
@@ -56,11 +53,6 @@ function StepDisplay({ step }: { step: RunAgentStep }) {
       </div>
     );
   }
-  if (
-    (step.type === "tool_call" || step.type === "tool_call_start") &&
-    HIDDEN_TOOLS.has(step.name)
-  )
-    return null;
   if (step.type === "tool_call") {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">

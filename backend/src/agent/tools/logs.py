@@ -244,9 +244,11 @@ log_food_declaration = models.FunctionDeclaration(
         "database (created when missing) and shown to the user as a draft to "
         "confirm or correct. Nothing is logged until they confirm. Returns the "
         "drafted entries.\n\n"
-        "- One item per distinct food or drink. Split a meal into its components, "
-        "unless it is a well-known single dish (e.g. 'lasagna', 'cappuccino') or a "
-        "saved recipe.\n"
+        "- One item per distinct food or drink. When the user names a dish "
+        "('espresso zuccherato', 'lasagna'), keep it as one "
+        "item named as they said it: it may be one of their saved recipes, which "
+        "only match as a whole. Split into components only when they list the "
+        "foods themselves.\n"
         "- Keep the user's quantities. When they give none, assume a typical single "
         "portion; for photos, estimate the portion visually.\n"
         "- `per_100g` must be realistic for the food in the given `state`."
@@ -262,6 +264,14 @@ log_food_declaration = models.FunctionDeclaration(
             "day": {
                 "type": "string",
                 "description": "Day of the meal as YYYY-MM-DD in the user's local time. Defaults to today.",
+            },
+            "replaces_draft_id": {
+                "type": "string",
+                "description": (
+                    "When the user corrects a draft that is still awaiting "
+                    "confirmation: its `draft_id`. That draft is discarded and "
+                    "this one takes its place."
+                ),
             },
         },
         "required": ["items"],

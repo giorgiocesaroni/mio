@@ -12,15 +12,17 @@ from src.agent.utils import (
     inline_image_url,
 )
 from typing import AsyncGenerator
+from uuid import UUID
 from pydantic import TypeAdapter
 from src.pipeline.models import ExtractedItem
 
 MAX_TURNS = 35
 
-# Maximum output tokens per model invocation. Configurable because some
-# providers/models (e.g. OpenRouter "contributor" tiers) truncate responses
-# when this is too low, which shows up as a model stopping mid-sentence.
-MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "4096"))
+# Maximum output tokens per model invocation. Reasoning counts toward it, and
+# DeepSeek reasons at length whatever the effort, so it's generous; only the
+# tokens used are paid for. Too low shows up as a model stopping mid-sentence
+# or a truncated tool call.
+MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "16384"))
 
 
 def _sanitize_tool_calls(messages: list[dict]) -> None:
@@ -390,13 +392,25 @@ async def _log_food(
     except json.JSONDecodeError:
         args = {}
     draft = None
+    replaces = args.get("replaces_draft_id")
     try:
+        # Checked first, so a correction to a draft the user already
+        # confirmed doesn't draft the same foods twice.
+        if replaces:
+            old = pipeline.get_draft(input.user_id, UUID(replaces))
+            if not old or old["status"] != "pending":
+                raise ValueError(
+                    "That draft was already confirmed or discarded, so it can't be "
+                    "replaced; correct logged foods with `update_logs` or `delete_logs`."
+                )
         draft = await pipeline.draft_items(
             input.user_id,
             _latest_user_text(input.contents),
             _ITEMS.validate_python(args.get("items", [])),
             args.get("day"),
         )
+        if replaces:
+            pipeline.discard_draft(input.user_id, UUID(replaces))
         response = log_food_result(draft)
     except Exception as e:
         response = {"error": str(e)}

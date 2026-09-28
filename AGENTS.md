@@ -16,9 +16,9 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 
 | Directory   | Notes                           | Core Technologies            |
 | ----------- | ------------------------------- | ---------------------------- |
-| `agent/`    | The agent's core logic.         | Gemini 3.8 Flash via OpenRouter |
+| `agent/`    | The agent's core logic.         | DeepSeek V4.1 Flash via OpenRouter |
 | `api/`      | The API of the application.     | FastAPI                      |
-| `pipeline/` | The structured food-logging pipeline and its log drafts, used by the agent's `log_food` tool and draft corrections. | Gemini 3.8 Flash (extract), GPT-6 Luna (resolve) |
+| `pipeline/` | The structured food-logging pipeline and its log drafts, used by the agent's `log_food` tool and draft corrections. | DeepSeek V4.1 Flash (extract), GPT-6 Luna (resolve) |
 
 ### Module Structure
 

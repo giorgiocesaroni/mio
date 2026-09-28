@@ -12,9 +12,9 @@ PROVIDERS = {
 # its task; the environment variables are for trying others.
 #
 # The agent chats, reads photos, and extracts the foods it logs.
-AGENT_MODEL = os.getenv("AGENT_MODEL", "google/gemini-3.8-flash")
+AGENT_MODEL = os.getenv("AGENT_MODEL", "deepseek/deepseek-v4.1-flash")
 # Extraction outside chat: the sandbox and corrections to drafts and logs.
-EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "google/gemini-3.8-flash")
+EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
 # Matching extracted foods to the user's database: text only, structured output.
 RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "openai/gpt-6-luna")
 
