@@ -72,18 +72,44 @@ def recipe_nutrition(recipe_ids: list[str], user_id: str) -> dict[str, dict]:
 _COLUMNS = "id, created_at, day, status, message, rows"
 
 
-def insert_draft(user_id: str, day: str, message: str, rows: list[dict]) -> dict:
+def insert_draft(
+    user_id: str, day: str, message: str, rows: list[dict], cost: float, via: str
+) -> dict:
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 f"""
-                INSERT INTO log_drafts (user_id, day, message, rows)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO log_drafts (user_id, day, message, rows, cost, via)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING {_COLUMNS}
                 """,
-                (user_id, day, message, Jsonb(rows)),
+                (user_id, day, message, Jsonb(rows), cost, via),
             )
             return cur.fetchone()
+
+
+def add_draft_cost(draft_id: UUID, cost: float) -> None:
+    with psycopg.connect(**db_connection_params) as conn:
+        conn.execute(
+            "UPDATE log_drafts SET cost = COALESCE(cost, 0) + %s WHERE id = %s",
+            (cost, draft_id),
+        )
+
+
+def get_log_costs() -> list[dict]:
+    """Drafts created from chat and what creating each one cost, by route."""
+    with psycopg.connect(**db_connection_params) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT via, COUNT(*)::int AS logs, SUM(cost)::float AS total_cost
+                FROM log_drafts
+                WHERE cost IS NOT NULL AND via IN ('pipeline', 'agent')
+                GROUP BY via
+                ORDER BY via
+                """
+            )
+            return cur.fetchall()
 
 
 def get_day_entries(user_id: str, day: str) -> tuple[list[dict], list[dict]]:

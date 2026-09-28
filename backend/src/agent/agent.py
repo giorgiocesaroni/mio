@@ -13,13 +13,11 @@ from src.agent.utils import (
 )
 from typing import AsyncGenerator
 from uuid import UUID
-from pydantic import TypeAdapter
-from src.pipeline.models import ExtractedItem
 
 MAX_TURNS = 35
 
 # Maximum output tokens per model invocation. Reasoning counts toward it, and
-# DeepSeek reasons at length whatever the effort, so it's generous; only the
+# some models reason at length whatever the effort, so it's generous; only the
 # tokens used are paid for. Too low shows up as a model stopping mid-sentence
 # or a truncated tool call.
 MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "16384"))
@@ -184,14 +182,30 @@ async def _inline_content_images(parts: list[dict]) -> list[dict]:
     return inlined
 
 
+def _without_images(parts: list[dict]) -> list[dict]:
+    """Earlier photos as a placeholder: resending them every turn is costly,
+    and what they showed is already in the conversation."""
+    return [
+        {"type": "text", "text": "[photo]"} if part.get("type") == "image_url" else part
+        for part in parts
+    ]
+
+
 async def _convert_history(contents: list[dict]) -> list[dict]:
     messages: list[dict] = []
-    for msg in contents:
+    latest_user = max(
+        (i for i, msg in enumerate(contents) if msg.get("role") == "user"), default=-1
+    )
+    for index, msg in enumerate(contents):
         role = msg.get("role")
         if role in ("user", "model"):
             content = msg.get("content")
             if isinstance(content, list):
-                content = await _inline_content_images(content)
+                content = (
+                    await _inline_content_images(content)
+                    if index == latest_user
+                    else _without_images(content)
+                )
             if isinstance(content, (str, list)):
                 messages.append(
                     {
@@ -364,23 +378,20 @@ def log_food_result(draft: dict) -> dict:
     }
 
 
-_ITEMS = TypeAdapter(list[ExtractedItem])
-
-
-def _latest_user_text(contents: list[dict]) -> str:
-    """The text of the user's latest message, which the resolver reads too."""
+def _latest_image_urls(contents: list[dict]) -> list[str]:
+    """Image URLs of the user's latest message, which `log_food` drafts from too."""
     for msg in reversed(contents):
         if msg.get("role") != "user":
             continue
         content = msg.get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            return "\n".join(
-                part["text"] for part in content if part.get("type") == "text"
-            )
-        return ""
-    return ""
+        if not isinstance(content, list):
+            return []
+        return [
+            part["image_url"]["url"]
+            for part in content
+            if part.get("type") == "image_url" and part.get("image_url", {}).get("url")
+        ]
+    return []
 
 
 async def _log_food(
@@ -403,10 +414,10 @@ async def _log_food(
                     "That draft was already confirmed or discarded, so it can't be "
                     "replaced; correct logged foods with `update_logs` or `delete_logs`."
                 )
-        draft = await pipeline.draft_items(
+        draft = await pipeline.draft_food(
             input.user_id,
-            _latest_user_text(input.contents),
-            _ITEMS.validate_python(args.get("items", [])),
+            args.get("description", ""),
+            _latest_image_urls(input.contents),
             args.get("day"),
         )
         if replaces:
@@ -431,6 +442,9 @@ async def agent(
         *await _convert_history(input.contents),
     ]
     model_id = providers.AGENT_MODEL
+    # What this turn cost, counted toward the drafts it creates.
+    turn_cost = 0.0
+    draft_ids: list[str] = []
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)
         async for chunk in _invoke_model(model_id, messages):
@@ -440,6 +454,7 @@ async def agent(
                     uncached_input, cached_input, output = extract_tokens(usage)
                     cost = await get_openrouter_cost(model_id=model_id, usage=usage)
                     print(f"Invocation cost: ${cost}")
+                    turn_cost += cost
                     repository.insert_llm_invocation(
                         total_cost=cost,
                         raw_usage_metadata=usage,
@@ -454,11 +469,14 @@ async def agent(
                 yield message_dict
                 tool_calls = message_dict.get("tool_calls") or []
                 if not tool_calls:
+                    for draft_id in draft_ids:
+                        pipeline.add_draft_cost(draft_id, turn_cost / len(draft_ids))
                     return
                 for tc in tool_calls:
                     if tc["function"]["name"] == "log_food":
                         tool_result, draft = await _log_food(tc, input)
                         if draft:
+                            draft_ids.append(draft["id"])
                             yield models.DraftStep(draft=draft)
                     else:
                         tool_result = _get_tool_response(tc, input.user_id)

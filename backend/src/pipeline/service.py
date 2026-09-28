@@ -3,11 +3,14 @@
 A fixed sequence of steps, where each model only makes the decision it is
 good at:
 
-    normalize → extract (LLM) → retrieve (code) → resolve (LLM) → draft (persisted)
+    normalize → route (Jev) → extract (LLM) → retrieve (code)
+              → resolve (LLM) → draft (persisted)
 
-In chat, the agent extracts the foods itself (its `log_food` call carries
-them), so the run starts at retrieve. Nothing is logged directly: the result
-is a draft the user reviews, edits, and confirms.
+Every chat message starts here. Nothing is logged directly: the result is a
+draft the user reviews, edits, and confirms. Whatever the router doesn't
+recognize as a new, self-contained food log is handed back to the caller,
+which falls back to the agent; the agent's `log_food` tool runs the pipeline
+again without the router.
 """
 
 import asyncio
@@ -15,15 +18,19 @@ import base64
 import datetime
 import json
 import time
+import uuid
 from typing import AsyncGenerator, TypeVar
 from uuid import UUID
 from zoneinfo import ZoneInfo
+
+from typesafe_sdk import Choice, Noul
 
 import src.agent.embeddings as embeddings
 import src.agent.models as agent_models
 import src.agent.providers as providers
 import src.agent.repository as agent_repository
 import src.agent.tools as tools
+import src.pipeline.jev as jev
 import src.pipeline.logic as logic
 import src.pipeline.repository as repository
 from src.agent.utils import extract_tokens, get_openrouter_cost, inline_image_url
@@ -32,6 +39,7 @@ from pydantic import BaseModel
 from src.pipeline.models import (
     DoneStep,
     DraftError,
+    DraftVia,
     ExtractedItem,
     Extraction,
     Resolution,
@@ -41,13 +49,13 @@ from src.pipeline.models import (
     StageStep,
 )
 
-# Reasoning counts toward this, and some models (DeepSeek) reason at length
-# whatever the effort, so it's generous; only the tokens used are paid for.
+# Reasoning counts toward this, and some models reason at length whatever the
+# effort, so it's generous; only the tokens used are paid for.
 LLM_MAX_COMPLETION_TOKENS = 16384
 
 EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured items for a nutrition tracker. The user's local time is {now}.
 
-- One item per distinct food or drink. Split a meal into its components, unless it is a well-known single dish (e.g. "lasagna", "cappuccino").
+- One item per distinct food or drink. Split a meal into its components only when the user lists them; keep a dish they name (e.g. "lasagna", "espresso zuccherato") as one item, since it may be one of their saved recipes.
 - Keep the user's quantities. When they give none, assume a typical single portion.
 - Fill every field following its description. `per_100g` must be realistic for the food in the given `state`.
 - If the message does not describe anything eaten or drunk, return an empty `items` list."""
@@ -88,6 +96,47 @@ async def _normalize(message: agent_models.MessageType) -> tuple[str, list[str],
         elif part.data and mime.startswith("image/"):
             images.append(f"data:{mime};base64,{base64.b64encode(part.data).decode()}")
     return text, images, displayable
+
+
+async def _route(
+    user_id: str, input: PipelineInput, text: str, image_count: int
+) -> tuple[dict, float]:
+    state = logic.route_state(text, image_count, input.last_reply, input.pending_draft)
+    questions: dict[str, jev.Question] = {
+        "depends_on_conversation": Noul(
+            instructions=(
+                "Does `message` (with its `attached_photos`) only make sense given "
+                "the conversation: answering something `assistant_last_reply` "
+                "asked, correcting `pending_draft`, or identifying foods by "
+                "pointing to earlier meals or logs (e.g. 'same as yesterday', 'my "
+                "usual breakfast') instead of naming them? A message naming new "
+                "foods, or a photo when nothing was asked for, stands on its own "
+                "even mid-conversation."
+            ),
+        ),
+    }
+    # A photo without text has no intent to read; only its context decides.
+    if text:
+        questions["intent"] = Choice(
+            instructions="What does the user want their food-tracking assistant to do with `message`?",
+            criteria=logic.ROUTE_INTENTS,
+        )
+    response, cost = await jev.ask(user_id, f"route-{uuid.uuid4()}", state, questions)
+    intent = response.choices.get("intent")
+    route, reason = logic.route_decision(
+        intent.choice if intent else None,
+        intent.confidence if intent else 1.0,
+        response.nouls["depends_on_conversation"].noul,
+    )
+    return {
+        "route": route,
+        "reason": reason,
+        "jev": jev.debug(state, questions, response),
+    }, cost
+
+
+def _extract_model(images: list[str]) -> str:
+    return providers.PHOTO_EXTRACT_MODEL if images else providers.TEXT_EXTRACT_MODEL
 
 
 async def _complete(
@@ -141,7 +190,7 @@ async def _extract(
         {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
         {"role": "user", "content": content},
     ]
-    return await _complete(user_id, providers.EXTRACT_MODEL, messages, Extraction)
+    return await _complete(user_id, _extract_model(images), messages, Extraction)
 
 
 async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]]:
@@ -244,36 +293,54 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
                 "now": now.strftime("%Y-%m-%d %H:%M"),
             },
         )
-        if not text and not images and input.items is None:
+        if not text and not images:
             yield done("nothing", "Empty message.")
             return
 
-        # 2. Extract
-        stage = "extract"
+        # 2. Route
+        stage = "route"
         t = time.perf_counter()
-        if input.items is not None:
-            items, cost, usage = input.items, 0.0, None
+        if input.skip_route:
+            decision, cost = {"route": "pipeline", "reason": "Requested by the agent."}, 0.0
         else:
-            extraction, cost, usage = await _extract(
-                input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M")
-            )
-            items = extraction.items
+            decision, cost = await _route(input.user_id, input, text, len(images))
         total_cost += cost
         yield StageStep(
             name=stage,
-            status="ok" if usage is not None else "skipped",
+            status="skipped" if input.skip_route else "ok",
+            summary=f"{decision['route']}: {decision['reason']}",
+            ms=_ms(t),
+            cost=cost,
+            model=None if input.skip_route else "jev",
+            data=decision,
+        )
+        if decision["route"] != "pipeline":
+            yield done("handoff", decision["reason"])
+            return
+
+        # 3. Extract
+        stage = "extract"
+        t = time.perf_counter()
+        extraction, cost, usage = await _extract(
+            input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M")
+        )
+        total_cost += cost
+        items = extraction.items
+        yield StageStep(
+            name=stage,
+            status="ok",
             summary=f"{len(items)} item(s): "
             + ", ".join(f"{logic.amount(i)} {i.name}" for i in items),
             ms=_ms(t),
             cost=cost,
-            model=providers.EXTRACT_MODEL if usage is not None else None,
+            model=_extract_model(images),
             data={"items": [i.model_dump() for i in items], "usage": usage},
         )
         if not items:
             yield done("nothing", "No food found in the message.")
             return
 
-        # 3. Retrieve
+        # 4. Retrieve
         stage = "retrieve"
         t = time.perf_counter()
         candidates = await _retrieve(input.user_id, items)
@@ -288,7 +355,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ],
         )
 
-        # 4. Resolve
+        # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
         resolution, cost, debug = await _resolve(
@@ -316,11 +383,11 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
         )
 
-        # 5. Draft
+        # 6. Draft
         stage = "draft"
         t = time.perf_counter()
         draft = await asyncio.to_thread(
-            create_draft, input.user_id, day, text, rows
+            create_draft, input.user_id, day, text, rows, total_cost, input.via
         )
         yield StageStep(
             name=stage,
@@ -349,8 +416,15 @@ def _serialize(draft: dict) -> dict:
     }
 
 
-def create_draft(user_id: str, day: str, message: str, rows: list[dict]) -> dict:
-    return _serialize(repository.insert_draft(user_id, day, message, rows))
+def create_draft(
+    user_id: str, day: str, message: str, rows: list[dict], cost: float, via: DraftVia
+) -> dict:
+    return _serialize(repository.insert_draft(user_id, day, message, rows, cost, via))
+
+
+def add_draft_cost(draft_id: str, cost: float) -> None:
+    """Count more of what logging these foods cost, e.g. the agent's turn."""
+    repository.add_draft_cost(UUID(draft_id), cost)
 
 
 def get_draft(user_id: str, draft_id: UUID) -> dict | None:
@@ -358,24 +432,21 @@ def get_draft(user_id: str, draft_id: UUID) -> dict | None:
     return _serialize(draft) if draft else None
 
 
-async def draft_items(
-    user_id: str, message: str, items: list[ExtractedItem], day: str | None
+async def draft_food(
+    user_id: str, description: str, image_urls: list[str], day: str | None
 ) -> dict:
-    """Draft a food log from the foods the agent extracted.
+    """Draft a food log from the agent's description, skipping the router.
 
     This is how the agent logs food, so every log is the same kind of draft
-    the user confirms. `message` is the user's own words, which the resolver
-    reads for stated weights, meals, and times.
+    the user confirms.
     """
-    if not items:
-        raise DraftError("No foods to log.")
-    parts = [agent_models.UserMessagePart(text=message)] if message else []
+    parts = [agent_models.UserMessagePart(text=description)] + [
+        agent_models.UserMessagePart(url=url, mime_type="image/*") for url in image_urls
+    ]
+    message = agent_models.RunAgentUserMessage(parts=parts)
     async for step in run(
         PipelineInput(
-            user_id=user_id,
-            message=agent_models.RunAgentUserMessage(parts=parts),
-            day=day,
-            items=items,
+            user_id=user_id, message=message, day=day, skip_route=True, via="agent"
         )
     ):
         if step.type == "done":
@@ -383,6 +454,15 @@ async def draft_items(
                 return step.draft
             raise DraftError(step.message)
     raise DraftError("The pipeline ended without a result.")
+
+
+def get_log_costs() -> list[dict]:
+    """What creating a draft from chat costs on average, by route: straight
+    through the pipeline, or through the agent (its turn included)."""
+    return [
+        {**row, "cost_per_log": row["total_cost"] / row["logs"]}
+        for row in repository.get_log_costs()
+    ]
 
 
 def list_day_entries(user_id: str, day: str) -> dict:

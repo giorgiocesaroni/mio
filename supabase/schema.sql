@@ -118,6 +118,8 @@ CREATE TABLE public.log_drafts (
   message text,
   rows jsonb NOT NULL,
   confirmed_at timestamp with time zone,
+  cost numeric,
+  via text,
   CONSTRAINT log_drafts_pkey PRIMARY KEY (id),
   CONSTRAINT log_drafts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

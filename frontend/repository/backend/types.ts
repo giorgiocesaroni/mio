@@ -72,12 +72,22 @@ export type UsageOverview = {
     total_cost: number;
     models: Array<{ model_id: string; cost: number }>;
   }>;
+  logs: UsageLogCost[];
+};
+
+/** Drafts created from chat, by the path that created them. */
+export type UsageLogCost = {
+  via: "pipeline" | "agent";
+  logs: number;
+  total_cost: number;
+  cost_per_log: number;
 };
 
 // ── Sandbox (structured logging pipeline prototype) ──────────────────────────
 
 export type SandboxStageName =
   | "normalize"
+  | "route"
   | "extract"
   | "retrieve"
   | "resolve"
@@ -96,7 +106,7 @@ export type SandboxStageStep = {
 
 export type SandboxDoneStep = {
   type: "done";
-  outcome: "drafted" | "nothing" | "error";
+  outcome: "drafted" | "handoff" | "nothing" | "error";
   message: string;
   total_ms: number;
   total_cost: number;

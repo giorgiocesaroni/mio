@@ -37,6 +37,10 @@ from src.pipeline.models import DraftError, ExtractedItem, Resolution, ResolvedR
 
 CANDIDATES_PER_KIND = 4
 
+# Confidence gates (tune against QA data).
+ROUTE_MIN_CONFIDENCE = 0.5
+CONTEXT_MAX_NOUL = 0.5
+
 # Drafts created by the earlier Jev resolver store a numeric confidence.
 LEGACY_MATCH_MIN_CONFIDENCE = 0.6
 
@@ -104,6 +108,52 @@ def amount(item: ExtractedItem) -> str:
             label = item.unit_label or item.unit
             plural = "" if item.quantity == 1 or label.endswith("s") else "s"
             return f"{item.quantity:g} {label}{plural}"
+
+
+# ── Routing ───────────────────────────────────────────────────────────────────
+
+ROUTE_INTENTS = {
+    "log_food": "Record foods or drinks they ate, are eating, or will eat",
+    "edit_logs": "Correct, change, move, or remove foods that are already logged or drafted",
+    "ask": "Get an answer or advice, e.g. about nutrition, their intake, or their progress, without logging anything",
+    "other": "Anything else, such as setting goals, recording body weight, or managing recipes and ingredients",
+}
+
+# Longest assistant reply the router reads; its end is where a question is.
+ROUTE_REPLY_MAX_CHARS = 600
+
+
+def route_state(
+    text: str, image_count: int, last_reply: str | None, pending_draft: list[str] | None
+) -> dict:
+    """What the router sees: the message, plus the conversation it may depend on."""
+    if last_reply and len(last_reply) > ROUTE_REPLY_MAX_CHARS:
+        last_reply = "…" + last_reply[-ROUTE_REPLY_MAX_CHARS:]
+    return {
+        "message": text,
+        "attached_photos": image_count,
+        "assistant_last_reply": last_reply,
+        "pending_draft": pending_draft,
+    }
+
+
+def route_decision(
+    intent: str | None, confidence: float, context_noul: float
+) -> tuple[str, str]:
+    """Return (route, reason): "pipeline" for new food logs, "agent" otherwise.
+
+    `intent` is None for a photo without text, which is a new meal unless it
+    answers or corrects what came before.
+    """
+    if context_noul >= CONTEXT_MAX_NOUL:
+        return "agent", f"Depends on the conversation (noul {context_noul:.2f})."
+    if intent is None:
+        return "pipeline", "Photo of a new meal."
+    if confidence < ROUTE_MIN_CONFIDENCE:
+        return "agent", f"Intent unclear (confidence {confidence:.2f})."
+    if intent != "log_food":
+        return "agent", f"Intent is '{intent}', not a new log."
+    return "pipeline", "New food log."
 
 
 # ── Retrieval and resolution ──────────────────────────────────────────────────

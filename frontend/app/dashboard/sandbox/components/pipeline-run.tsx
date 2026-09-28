@@ -12,6 +12,7 @@ import { Loader2 } from "lucide-react";
 export const STAGES: { name: SandboxStageName; label: string; kind: string }[] =
   [
     { name: "normalize", label: "Normalize", kind: "code" },
+    { name: "route", label: "Route", kind: "Jev" },
     { name: "extract", label: "Extract", kind: "LLM" },
     { name: "retrieve", label: "Retrieve", kind: "code" },
     { name: "resolve", label: "Resolve", kind: "LLM" },
@@ -33,9 +34,110 @@ export function formatCost(cost: number): string {
 
 const OUTCOME_LABELS: Record<SandboxDoneStep["outcome"], string> = {
   drafted: "Drafted",
+  handoff: "Handoff",
   nothing: "Nothing",
   error: "Error",
 };
+
+type JevAnswer =
+  | {
+      type: "choice";
+      choice: string;
+      confidence: number;
+      probabilities: Record<string, number>;
+    }
+  | { type: "noul"; noul: number };
+
+type JevDebug = {
+  model: string;
+  questions: Record<string, { criteria?: Record<string, unknown> }>;
+  answers: Record<string, JevAnswer>;
+};
+
+function ProbabilityBar({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: number;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_6rem_3rem] items-center gap-2 text-xs">
+      <span
+        className={cn(
+          "truncate",
+          highlight ? "font-medium" : "text-muted-foreground",
+        )}
+        title={label}
+      >
+        {label}
+      </span>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full",
+            highlight ? "bg-primary" : "bg-muted-foreground/40",
+          )}
+          style={{ width: `${Math.round(value * 100)}%` }}
+        />
+      </div>
+      <span className="text-right tabular-nums text-muted-foreground">
+        {value.toFixed(2)}
+      </span>
+    </div>
+  );
+}
+
+/** Every Jev answer with its full distribution, labelled by criteria text. */
+function JevAnswers({ jev }: { jev: JevDebug }) {
+  return (
+    <div className="grid gap-3">
+      {Object.entries(jev.answers).map(([key, answer]) => {
+        const criteria = jev.questions[key]?.criteria ?? {};
+        const optionLabel = (option: string) => {
+          const description = criteria[option];
+          return typeof description === "string"
+            ? `${option} · ${description}`
+            : option;
+        };
+        return (
+          <div key={key} className="grid gap-1">
+            <div className="flex items-center gap-2 text-xs">
+              <code className="font-medium">{key}</code>
+              {answer.type === "choice" ? (
+                <span className="text-muted-foreground">
+                  → {answer.choice} · confidence{" "}
+                  {answer.confidence.toFixed(2)}
+                </span>
+              ) : null}
+            </div>
+            {answer.type === "choice" ? (
+              Object.entries(answer.probabilities)
+                .sort(([, a], [, b]) => b - a)
+                .map(([option, p]) => (
+                  <ProbabilityBar
+                    key={option}
+                    label={optionLabel(option)}
+                    value={p}
+                    highlight={option === answer.choice}
+                  />
+                ))
+            ) : (
+              <ProbabilityBar label="yes" value={answer.noul} highlight />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function jevOf(stage: SandboxStageStep): JevDebug | null {
+  const data = stage.data as { jev?: JevDebug | null } | null;
+  return data?.jev ?? null;
+}
 
 function StageRow({
   label,
@@ -48,6 +150,7 @@ function StageRow({
   stage?: SandboxStageStep;
   isPending: boolean;
 }) {
+  const jev = stage ? jevOf(stage) : null;
   return (
     <li className="grid grid-cols-[1rem_minmax(0,1fr)] gap-3">
       <span
@@ -84,6 +187,11 @@ function StageRow({
             {stage.summary}
           </p>
         ) : null}
+        {jev ? (
+          <div className="mt-1 rounded-md border p-3">
+            <JevAnswers jev={jev} />
+          </div>
+        ) : null}
         {stage?.data ? (
           <details className="text-xs">
             <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
@@ -102,7 +210,7 @@ function StageRow({
 export function PipelineRun({ run }: { run: Run }) {
   const isRunning = !run.done && !run.error;
   const byName = new Map(run.stages.map((s) => [s.name, s]));
-  // Stages after an early exit never arrive; only the next
+  // Stages after a handoff or an early exit never arrive; only the next
   // expected stage shows a spinner while the run is in flight.
   const nextIndex = STAGES.findIndex((s) => !byName.has(s.name));
   const visible = run.done

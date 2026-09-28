@@ -9,12 +9,15 @@ PROVIDERS = {
 }
 
 # Every LLM call but transcription and embeddings uses one of these, picked for
-# its task; the environment variables are for trying others.
+# its task; the environment variables are for trying others. Messages are
+# routed by Jev (`src/pipeline/jev.py`), which has its own model.
 #
-# The agent chats, reads photos, and extracts the foods it logs.
-AGENT_MODEL = os.getenv("AGENT_MODEL", "deepseek/deepseek-v4.1-flash")
-# Extraction outside chat: the sandbox and corrections to drafts and logs.
-EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
+# The agent: chat, questions, and whatever depends on the conversation.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "openai/gpt-6-luna")
+# Extracting foods from a message: the best visual model only when there are
+# photos, since it's the most expensive.
+PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "google/gemini-3.8-flash")
+TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "openai/gpt-6-luna")
 # Matching extracted foods to the user's database: text only, structured output.
 RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "openai/gpt-6-luna")
 
@@ -23,6 +26,7 @@ REASONING_EFFORT = "low"
 # Display names, including models used in the past, for the usage page.
 MODEL_NAMES = {
     "google/gemini-3.8-flash": "Gemini 3.8 Flash",
+    "typesafe/jev-1.13-20260917": "Jev 1.13",
     "openai/gpt-6-luna": "GPT-6 Luna",
     "deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
     "z-ai/glm-5.3-flash": "GLM 5.3 Flash",

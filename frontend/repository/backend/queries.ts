@@ -32,6 +32,7 @@ export type {
   RunAgentStep,
   Model,
   ModelsResponse,
+  UsageLogCost,
   UsageOverview,
   SandboxStep,
   SandboxStageStep,

@@ -95,16 +95,26 @@ class Resolution(BaseModel):
 # ── Pipeline run ──────────────────────────────────────────────────────────────
 
 
+# "pipeline": a chat message the router sent straight to the pipeline;
+# "agent": the agent's `log_food` call.
+DraftVia = Literal["pipeline", "agent", "sandbox"]
+
+
 class PipelineInput(BaseModel):
     user_id: str
     # Already preprocessed: audio parts transcribed to text.
     message: agent_models.MessageType
     day: str | None = None  # YYYY-MM-DD in the user's timezone; defaults to today
-    # Foods the agent's `log_food` call already extracted; extraction is skipped.
-    items: list[ExtractedItem] | None = None
+    # The conversation the router weighs the message against, when in chat.
+    last_reply: str | None = None  # the assistant's latest reply
+    pending_draft: list[str] | None = None  # entries of a draft awaiting confirmation
+    # The agent's `log_food` tool has already decided the message is a food log.
+    skip_route: bool = False
+    # What started the run, stored with the draft for the usage page.
+    via: DraftVia = "sandbox"
 
 
-StageName = Literal["normalize", "extract", "retrieve", "resolve", "draft"]
+StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "draft"]
 
 
 class StageStep(BaseModel):
@@ -120,7 +130,7 @@ class StageStep(BaseModel):
 
 class DoneStep(BaseModel):
     type: Literal["done"] = "done"
-    outcome: Literal["drafted", "nothing", "error"]
+    outcome: Literal["drafted", "handoff", "nothing", "error"]
     message: str
     total_ms: int
     total_cost: float

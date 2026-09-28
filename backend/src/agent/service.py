@@ -2,14 +2,17 @@ import base64
 import datetime
 import json
 import mimetypes
+import uuid
 from typing import AsyncGenerator
 from uuid import UUID
 from zoneinfo import ZoneInfo
 import src.agent.models as models
 import src.agent.repository as repository
-from src.agent.agent import agent
+from src.agent.agent import agent, log_food_result
 import src.agent.prompts as prompts
+import src.pipeline.logic as pipeline_logic
 import src.pipeline.service as pipeline
+from src.pipeline.models import PipelineInput
 from src.agent.utils import extract_tokens
 from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
 
@@ -160,6 +163,15 @@ async def run_agent(
     contents = repository.get_messages_by_conversation_id(
         input.conversation_id, input.user_id
     )
+    # Every message is routed: a new, self-contained food log is drafted by
+    # the pipeline directly, which is faster and cheaper than the agent;
+    # anything else, including whatever depends on the conversation, goes to
+    # the agent, which sees the pipeline's drafts in the history.
+    drafted = await _draft_directly(input, preprocessed_message, contents)
+    if drafted:
+        yield drafted[0]
+        yield models.DraftStep(draft=drafted[1])
+        return
     timezone = repository.get_user_timezone(input.user_id)
     today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
     daily_macros = repository.get_daily_macros(today, input.user_id)
@@ -226,6 +238,7 @@ def get_usage_overview() -> dict:
         "total": total,
         "models": models,
         "daily": repository.get_daily_llm_usage(),
+        "logs": pipeline.get_log_costs(),
     }
 
 
@@ -239,6 +252,104 @@ def get_conversations(user_id: str) -> list[models.Conversation]:
 
 def _mime_type_from_url(url: str) -> str | None:
     return mimetypes.guess_type(url.split("?", 1)[0])[0]
+
+
+def _routing_context(
+    contents: list[dict], user_id: str
+) -> tuple[str | None, list[str] | None]:
+    """The assistant's latest reply, and the entries of the conversation's
+    latest draft while it awaits confirmation: what the router weighs a new
+    message against."""
+    last_reply = next(
+        (
+            msg["content"]
+            for msg in reversed(contents)
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), str)
+            and msg["content"]
+        ),
+        None,
+    )
+    latest = next(
+        (
+            draft
+            for msg in reversed(contents)
+            if msg.get("role") == "tool" and (draft := _drafted(msg, user_id))
+        ),
+        None,
+    )
+    pending = (
+        [pipeline_logic.row_label(row) for row in latest["rows"]]
+        if latest and latest["status"] == "pending"
+        else None
+    )
+    return last_reply, pending
+
+
+async def _draft_directly(
+    input: models.RunAgentInput, message: models.MessageType, contents: list[dict]
+) -> tuple[models.ToolCallStep, dict] | None:
+    """Draft the message when the router finds it's a new food log.
+
+    The draft is stored as a `log_food` call, so the agent sees it in the
+    history and the conversation reloads the same way as when it drafts.
+    Returns the call and the draft, or None to hand the message to the agent.
+    """
+    last_reply, pending = _routing_context(contents, input.user_id)
+    failed_stage = None
+    async for step in pipeline.run(
+        PipelineInput(
+            user_id=input.user_id,
+            message=message,
+            day=input.day,
+            last_reply=last_reply,
+            pending_draft=pending,
+            via="pipeline",
+        )
+    ):
+        if step.type == "stage":
+            if step.status == "error":
+                failed_stage = step.name
+            continue
+        if step.outcome == "error":
+            # Without a route, the agent can still handle the message.
+            if failed_stage == "route":
+                print(f"[WARN] Routing failed, falling back to the agent: {step.message}")
+                return None
+            raise Exception(step.message)
+        if step.outcome != "drafted" or not step.draft:
+            return None
+        call_id = f"call_{uuid.uuid4().hex}"
+        text = "\n".join(p.text for p in message.parts if p.text)
+        args = {"description": text, "day": step.draft["day"]}
+        repository.insert_conversation_message(
+            input.conversation_id,
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": "log_food", "arguments": json.dumps(args)},
+                    }
+                ],
+            },
+            input.user_id,
+        )
+        repository.insert_conversation_message(
+            input.conversation_id,
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": json.dumps(log_food_result(step.draft)),
+            },
+            input.user_id,
+        )
+        return (
+            models.ToolCallStep(type="tool_call", name="log_food", args=args),
+            step.draft,
+        )
+    return None
 
 
 def _drafted(tool_message: dict, user_id: str) -> dict | None:

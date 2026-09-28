@@ -4,8 +4,6 @@ from uuid import UUID
 
 import src.agent.models as models
 import src.agent.repository as repository
-from src.pipeline.logic import inline_refs
-from src.pipeline.models import ExtractedItem
 
 get_daily_summary_declaration = models.FunctionDeclaration(
     name="get_daily_summary",
@@ -240,26 +238,25 @@ def _apply_log_entry(user_id: str, entry: dict) -> str:
 log_food_declaration = models.FunctionDeclaration(
     name="log_food",
     description=(
-        "Logs foods the user ate by drafting them: each item is matched to the "
-        "database (created when missing) and shown to the user as a draft to "
-        "confirm or correct. Nothing is logged until they confirm. Returns the "
-        "drafted entries.\n\n"
-        "- One item per distinct food or drink. When the user names a dish "
-        "('espresso zuccherato', 'lasagna'), keep it as one "
-        "item named as they said it: it may be one of their saved recipes, which "
-        "only match as a whole. Split into components only when they list the "
-        "foods themselves.\n"
-        "- Keep the user's quantities. When they give none, assume a typical single "
-        "portion; for photos, estimate the portion visually.\n"
-        "- `per_100g` must be realistic for the food in the given `state`."
+        "Logs foods the user ate by drafting them: the system matches each food "
+        "to the database (creating it when missing), estimates amounts, and shows "
+        "the user a draft to confirm or correct. Nothing is logged until they "
+        "confirm. Photos in the user's latest message are included automatically. "
+        "Returns the drafted entries."
     ),
     parameters_json_schema={
         "type": "object",
         "properties": {
-            "items": {
-                "type": "array",
-                "description": "The foods to log, in one batch.",
-                "items": inline_refs(ExtractedItem.model_json_schema()),
+            "description": {
+                "type": "string",
+                "description": (
+                    "Every food to log with its amount, meal, and time when known, in "
+                    "the user's words (e.g. 'pasta al pomodoro 80 g and an apple for "
+                    "lunch at 13:00'). Name each food explicitly: resolve references "
+                    "like 'same as yesterday' from the logs first. Keep a dish the "
+                    "user names ('espresso zuccherato') as they said it: it may be one "
+                    "of their saved recipes, which only match as a whole."
+                ),
             },
             "day": {
                 "type": "string",
@@ -274,7 +271,7 @@ log_food_declaration = models.FunctionDeclaration(
                 ),
             },
         },
-        "required": ["items"],
+        "required": ["description"],
     },
 )
 

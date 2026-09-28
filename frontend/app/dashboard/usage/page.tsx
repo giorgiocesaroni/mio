@@ -1,6 +1,10 @@
 "use client";
 
-import { getModels, getUsage } from "@/repository/backend/queries";
+import {
+  getModels,
+  getUsage,
+  type UsageLogCost,
+} from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { ChartTooltip } from "@/app/dashboard/components/chart";
@@ -25,6 +29,11 @@ const EXTRA_MODEL_NAMES: Record<string, string> = {
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
   "meta/muse-voice-transcribe-1.0": "Muse Voice Transcribe 1.0 (transcription)",
   "openai/gpt-transcribe": "GPT Transcribe (transcription)",
+};
+
+const LOG_ROUTE_LABELS: Record<UsageLogCost["via"], string> = {
+  pipeline: "Direct",
+  agent: "Via the agent",
 };
 
 function formatCost(cost: number): string {
@@ -66,6 +75,8 @@ export default function UsagePage() {
   const modelNames = new Map(
     (modelsData?.models ?? []).map((m) => [m.id, m.name]),
   );
+  const logCount = (usage?.logs ?? []).reduce((sum, r) => sum + r.logs, 0);
+  const logCost = (usage?.logs ?? []).reduce((sum, r) => sum + r.total_cost, 0);
   const days = getLastSevenDays();
   const dailyTotals = days.map(
     ({ key }) => usage?.daily.find((entry) => entry.day === key)?.total_cost ?? 0,
@@ -153,6 +164,41 @@ export default function UsagePage() {
                 <CompactNumber value={usage.total.completion_tokens} />
               </p>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {usage && logCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cost per log</CardTitle>
+            <CardDescription>
+              What drafting a meal from chat costs, from routing to the draft.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div>
+              <p className="font-sans text-sm text-muted-foreground">Average</p>
+              <p className="font-medium text-foreground">
+                {formatCost(logCost / logCount)}
+              </p>
+            </div>
+            <div>
+              <p className="font-sans text-sm text-muted-foreground">Logs</p>
+              <p className="font-medium text-foreground">
+                {logCount.toLocaleString()}
+              </p>
+            </div>
+            {usage.logs.map((route) => (
+              <div key={route.via}>
+                <p className="font-sans text-sm text-muted-foreground">
+                  {LOG_ROUTE_LABELS[route.via]} ({route.logs.toLocaleString()})
+                </p>
+                <p className="font-medium text-foreground">
+                  {formatCost(route.cost_per_log)}
+                </p>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
