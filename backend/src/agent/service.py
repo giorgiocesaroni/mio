@@ -2,16 +2,14 @@ import base64
 import datetime
 import json
 import mimetypes
-import uuid
 from typing import AsyncGenerator
 from uuid import UUID
 from zoneinfo import ZoneInfo
 import src.agent.models as models
 import src.agent.repository as repository
-from src.agent.agent import agent, log_food_result
+from src.agent.agent import agent
 import src.agent.prompts as prompts
 import src.pipeline.service as pipeline
-from src.pipeline.models import PipelineInput
 from src.agent.utils import extract_tokens
 from src.api.transcribe import transcribe_audio, MODEL_ID as TRANSCRIBE_MODEL_ID
 
@@ -162,14 +160,6 @@ async def run_agent(
     contents = repository.get_messages_by_conversation_id(
         input.conversation_id, input.user_id
     )
-    # A conversation that opens with a food log is drafted by the pipeline
-    # directly, which is faster and cheaper than the agent; anything else, and
-    # every later message, goes to the agent.
-    if len(contents) == 1:
-        draft = await _draft_opening_message(input, preprocessed_message)
-        if draft:
-            yield models.DraftStep(draft=draft)
-            return
     timezone = repository.get_user_timezone(input.user_id)
     today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
     daily_macros = repository.get_daily_macros(today, input.user_id)
@@ -187,7 +177,6 @@ async def run_agent(
         system_prompt=system_prompt,
         contents=contents,
         thinking=input.thinking,
-        model=input.model,
     )
     async for chunk in agent(agent_input):
         if isinstance(
@@ -250,60 +239,6 @@ def get_conversations(user_id: str) -> list[models.Conversation]:
 
 def _mime_type_from_url(url: str) -> str | None:
     return mimetypes.guess_type(url.split("?", 1)[0])[0]
-
-
-async def _draft_opening_message(
-    input: models.RunAgentInput, message: models.MessageType
-) -> dict | None:
-    """Draft the conversation's first message when it's a new food log.
-
-    The draft is stored as a `log_food` call, so the agent sees it in the
-    history and the conversation reloads the same way as when it drafts.
-    """
-    async for step in pipeline.run(
-        PipelineInput(
-            user_id=input.user_id, message=message, day=input.day, model=input.model
-        )
-    ):
-        if step.type != "done":
-            continue
-        if step.outcome == "error":
-            raise Exception(step.message)
-        if step.outcome != "drafted" or not step.draft:
-            return None
-        call_id = f"call_{uuid.uuid4().hex}"
-        text = "\n".join(p.text for p in message.parts if p.text)
-        repository.insert_conversation_message(
-            input.conversation_id,
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": "log_food",
-                            "arguments": json.dumps(
-                                {"description": text, "day": step.draft["day"]}
-                            ),
-                        },
-                    }
-                ],
-            },
-            input.user_id,
-        )
-        repository.insert_conversation_message(
-            input.conversation_id,
-            {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": json.dumps(log_food_result(step.draft)),
-            },
-            input.user_id,
-        )
-        return step.draft
-    return None
 
 
 def _drafted(tool_message: dict, user_id: str) -> dict | None:

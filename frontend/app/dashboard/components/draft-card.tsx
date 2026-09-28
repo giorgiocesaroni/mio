@@ -20,7 +20,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useModel } from "@/app/hooks/use-model";
 import { getElapsedTime } from "@/app/utils";
 import {
   DeleteDialog,
@@ -61,7 +60,6 @@ function amountOf(row: DraftRow, target: DraftAlternative): string {
 function useDraftRowMutations(draft: LogDraft) {
   const queryClient = useQueryClient();
   const invalidateLogs = useInvalidateLogs();
-  const { model } = useModel();
   const setDraft = (updated: LogDraft | null) =>
     queryClient.setQueryData<DayEntries>(
       dayEntriesQueryKey(draft.day),
@@ -81,7 +79,7 @@ function useDraftRowMutations(draft: LogDraft) {
     }: {
       rowId: string;
       instruction: string;
-    }) => reviseDraftRow(draft.id, rowId, instruction, model),
+    }) => reviseDraftRow(draft.id, rowId, instruction),
     onSuccess: (updated) => setDraft(updated),
     onError: (err) => toast.error(err.message),
   });

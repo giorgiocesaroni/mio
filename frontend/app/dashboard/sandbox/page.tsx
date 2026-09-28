@@ -4,10 +4,8 @@ import {
   ChatEditor,
   type PendingAttachment,
 } from "@/app/components/chat-editor";
-import { ModelSelector } from "@/app/components/model-selector";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
-import { useModel } from "@/app/hooks/use-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +32,6 @@ export default function SandboxPage() {
   >([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [day, setDay] = useState(todayKey);
-  const { models, model: resolvedModel, setModel } = useModel();
   const [runs, setRuns] = useState<Run[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
@@ -66,7 +63,6 @@ export default function SandboxPage() {
       id: crypto.randomUUID(),
       text,
       images: pendingAttachments.map((a) => a.url),
-      model: resolvedModel,
       stages: [],
     };
     setRuns((prev) => [run, ...prev]);
@@ -78,7 +74,7 @@ export default function SandboxPage() {
     try {
       await streamSandboxLog(
         { parts },
-        { day, model: resolvedModel },
+        { day },
         controller.signal,
         (step) => {
           if (step.type === "stage")
@@ -212,15 +208,6 @@ export default function SandboxPage() {
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
           }
           placeholder="What did you eat?"
-          modelSelector={
-            models ? (
-              <ModelSelector
-                models={models}
-                value={resolvedModel}
-                onChange={setModel}
-              />
-            ) : null
-          }
         />
       </div>
       <PendingDrafts day={day} />

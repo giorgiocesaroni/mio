@@ -37,9 +37,6 @@ from src.pipeline.models import DraftError, ExtractedItem, Resolution, ResolvedR
 
 CANDIDATES_PER_KIND = 4
 
-# Confidence gates (tune against QA data).
-ROUTE_MIN_CONFIDENCE = 0.5
-PAST_REFERENCE_MAX_NOUL = 0.5
 # Drafts created by the earlier Jev resolver store a numeric confidence.
 LEGACY_MATCH_MIN_CONFIDENCE = 0.6
 
@@ -107,27 +104,6 @@ def amount(item: ExtractedItem) -> str:
             label = item.unit_label or item.unit
             plural = "" if item.quantity == 1 or label.endswith("s") else "s"
             return f"{item.quantity:g} {label}{plural}"
-
-
-# ── Routing ───────────────────────────────────────────────────────────────────
-
-ROUTE_INTENTS = {
-    "log_food": "Record foods or drinks they ate, are eating, or will eat",
-    "edit_logs": "Correct, change, move, or remove foods that are already logged",
-    "ask": "Get an answer or advice, e.g. about nutrition, their intake, or their progress, without logging anything",
-    "other": "Anything else, such as setting goals, recording body weight, or managing recipes and ingredients",
-}
-
-
-def route_decision(intent: str, confidence: float, past_noul: float) -> tuple[str, str]:
-    """Return (route, reason): "pipeline" for new food logs, "agent" otherwise."""
-    if confidence < ROUTE_MIN_CONFIDENCE:
-        return "agent", f"Intent unclear (confidence {confidence:.2f})."
-    if intent != "log_food":
-        return "agent", f"Intent is '{intent}', not a new log."
-    if past_noul >= PAST_REFERENCE_MAX_NOUL:
-        return "agent", f"Refers to past meals (noul {past_noul:.2f}); needs history."
-    return "pipeline", "New food log."
 
 
 # ── Retrieval and resolution ──────────────────────────────────────────────────

@@ -5,65 +5,35 @@ PROVIDERS = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "api_key_env": "OPENROUTER_API_KEY",
-        "supports_thinking_extension": False,
     },
 }
 
-# Curated models, each mapped to the provider that serves it.
-AVAILABLE_MODELS = [
-    {
-        "id": "openai/gpt-6-luna",
-        "provider": "openrouter",
-        "name": "GPT-6 Luna",
-    },
-    {
-        "id": "google/gemini-3.8-flash",
-        "provider": "openrouter",
-        "name": "Gemini 3.8 Flash",
-    },
-    {
-        "id": "deepseek/deepseek-v4.1-flash",
-        "provider": "openrouter",
-        "name": "DeepSeek V4.1 Flash",
-    },
-    {
-        "id": "z-ai/glm-5.3-flash",
-        "provider": "openrouter",
-        "name": "GLM 5.3 Flash",
-    },
-    {
-        "id": "xiaomi/mimo-v2.6-pro",
-        "provider": "openrouter",
-        "name": "MiMo-V2.6-Pro",
-    },
-    {
-        "id": "xiaomi/mimo-v2.6-flash",
-        "provider": "openrouter",
-        "name": "MiMo-V2.6-Flash",
-    },
-]
+# Every LLM call but transcription and embeddings uses one of these, picked for
+# its task; the environment variables are for trying others.
+#
+# The agent chats, reads photos, and extracts the foods it logs.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "google/gemini-3.8-flash")
+# Extraction outside chat: the sandbox and corrections to drafts and logs.
+EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "google/gemini-3.8-flash")
+# Matching extracted foods to the user's database: text only, structured output.
+RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "openai/gpt-6-luna")
 
-MODEL_IDS = [m["id"] for m in AVAILABLE_MODELS]
+REASONING_EFFORT = "low"
 
-DEFAULT_MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-6-luna")
-
-
-def resolve_model(model_id: str | None) -> str:
-    """The model for every LLM call but transcription and embeddings: the
-    user's pick, or the default when they haven't made one."""
-    return model_id or DEFAULT_MODEL_ID
+# Display names, including models used in the past, for the usage page.
+MODEL_NAMES = {
+    "google/gemini-3.8-flash": "Gemini 3.8 Flash",
+    "openai/gpt-6-luna": "GPT-6 Luna",
+    "deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
+    "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
+    "xiaomi/mimo-v2.6-pro": "MiMo-V2.6-Pro",
+    "xiaomi/mimo-v2.6-flash": "MiMo-V2.6-Flash",
+}
 
 _clients: dict[str, AsyncOpenAI] = {}
 
 
-def get_provider(model_id: str) -> str:
-    for model in AVAILABLE_MODELS:
-        if model["id"] == model_id:
-            return model["provider"]
-    raise ValueError(f"Unknown model: {model_id}")
-
-
-def get_client(provider: str) -> AsyncOpenAI:
+def get_client(provider: str = "openrouter") -> AsyncOpenAI:
     if provider not in PROVIDERS:
         raise ValueError(f"Unknown provider: {provider}")
     if provider not in _clients:
@@ -73,8 +43,3 @@ def get_client(provider: str) -> AsyncOpenAI:
             api_key=os.getenv(config["api_key_env"]),
         )
     return _clients[provider]
-
-
-def get_provider_config(model_id: str) -> dict:
-    provider = get_provider(model_id)
-    return PROVIDERS[provider]

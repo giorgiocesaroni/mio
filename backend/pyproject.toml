@@ -15,7 +15,6 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "supabase>=2.30.1",
     "tinyfish>=0.1.0",
-    "typesafe-sdk>=0.7.1",
     "uvicorn>=0.48.0",
     "websockets>=15.0.1",
 ]

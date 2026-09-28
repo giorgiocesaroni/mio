@@ -4,10 +4,8 @@ import {
   ChatEditor,
   type PendingAttachment,
 } from "@/app/components/chat-editor";
-import { ModelSelector } from "@/app/components/model-selector";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
-import { useModel } from "@/app/hooks/use-model";
 import {
   type RunAgentStep,
   getConversationMessages,
@@ -142,7 +140,6 @@ export function ChatThread({
   const abortRef = useRef<AbortController | null>(null);
   const streamingContentRef = useRef<string>("");
   const streamingTokenCountRef = useRef<number>(0);
-  const { models, model: resolvedModel, setModel } = useModel();
 
   const sendMessage = useCallback(
     async (id: string, payload: object) => {
@@ -157,7 +154,6 @@ export function ChatThread({
         await streamChat(
           id,
           payload,
-          resolvedModel,
           controller.signal,
           (step) => {
             if (step.type === "content_token") {
@@ -215,7 +211,7 @@ export function ChatThread({
         streamingTokenCountRef.current = 0;
       }
     },
-    [setIsLoading, resolvedModel, showDraft],
+    [setIsLoading, showDraft],
   );
 
   const { isFetching: isFetchingHistory, data: historyData } = useQuery({
@@ -411,15 +407,6 @@ export function ChatThread({
           pendingAttachments={pendingAttachments}
           onRemoveAttachment={(i) =>
             setPendingAttachments((prev) => prev.filter((_, idx) => idx !== i))
-          }
-          modelSelector={
-            models ? (
-              <ModelSelector
-                models={models}
-                value={resolvedModel}
-                onChange={setModel}
-              />
-            ) : null
           }
         ></ChatEditor>
       </div>

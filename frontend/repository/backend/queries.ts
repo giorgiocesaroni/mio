@@ -183,7 +183,6 @@ async function streamSSE<T extends { type: string } = RunAgentStep>(
 export async function streamChat(
   conversationId: string,
   payload: object,
-  model: string | undefined,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
@@ -192,7 +191,6 @@ export async function streamChat(
     {
       conversation_id: conversationId,
       message: payload,
-      ...(model ? { model } : {}),
     },
     signal,
     onStep,
@@ -201,7 +199,7 @@ export async function streamChat(
 
 export async function streamSandboxLog(
   payload: object,
-  options: { day: string; model?: string },
+  options: { day: string },
   signal: AbortSignal,
   onStep: (step: SandboxStep) => void,
 ): Promise<void> {
@@ -210,7 +208,6 @@ export async function streamSandboxLog(
     {
       message: payload,
       day: options.day,
-      ...(options.model ? { model: options.model } : {}),
     },
     signal,
     onStep,
@@ -243,11 +240,10 @@ export function reviseDraftRow(
   id: string,
   rowId: string,
   instruction: string,
-  model: string | undefined,
 ): Promise<LogDraft> {
   return requestJSON(`/drafts/${id}/rows/${rowId}/revise`, {
     method: "POST",
-    body: JSON.stringify({ instruction, ...(model ? { model } : {}) }),
+    body: JSON.stringify({ instruction }),
   });
 }
 
@@ -279,7 +275,6 @@ export function reviseLogs(
   day: string,
   logIds: string[],
   instruction: string,
-  model: string | undefined,
 ): Promise<ConfirmDraftResult> {
   return requestJSON(`/logs/revise`, {
     method: "POST",
@@ -287,7 +282,6 @@ export function reviseLogs(
       day,
       log_ids: logIds,
       instruction,
-      ...(model ? { model } : {}),
     }),
   });
 }

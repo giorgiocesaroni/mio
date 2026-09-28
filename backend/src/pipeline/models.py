@@ -100,12 +100,11 @@ class PipelineInput(BaseModel):
     # Already preprocessed: audio parts transcribed to text.
     message: agent_models.MessageType
     day: str | None = None  # YYYY-MM-DD in the user's timezone; defaults to today
-    model: str | None = None  # Extraction and resolution model; see `providers.resolve_model`
-    # The agent's `log_food` tool has already decided the message is a food log.
-    skip_route: bool = False
+    # Foods the agent's `log_food` call already extracted; extraction is skipped.
+    items: list[ExtractedItem] | None = None
 
 
-StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "draft"]
+StageName = Literal["normalize", "extract", "retrieve", "resolve", "draft"]
 
 
 class StageStep(BaseModel):
@@ -121,7 +120,7 @@ class StageStep(BaseModel):
 
 class DoneStep(BaseModel):
     type: Literal["done"] = "done"
-    outcome: Literal["drafted", "handoff", "nothing", "error"]
+    outcome: Literal["drafted", "nothing", "error"]
     message: str
     total_ms: int
     total_cost: float

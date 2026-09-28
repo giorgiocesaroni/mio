@@ -39,15 +39,14 @@ export type DraftStep = {
 
 export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep | ErrorStep | DraftStep;
 
+/** Display names of the models the app uses or has used. */
 export type Model = {
   id: string;
-  provider: string;
   name: string;
 };
 
 export type ModelsResponse = {
   models: Model[];
-  default: string;
 };
 
 export type UsageModel = {
@@ -79,7 +78,6 @@ export type UsageOverview = {
 
 export type SandboxStageName =
   | "normalize"
-  | "route"
   | "extract"
   | "retrieve"
   | "resolve"
@@ -98,7 +96,7 @@ export type SandboxStageStep = {
 
 export type SandboxDoneStep = {
   type: "done";
-  outcome: "drafted" | "handoff" | "nothing" | "error";
+  outcome: "drafted" | "nothing" | "error";
   message: string;
   total_ms: number;
   total_cost: number;

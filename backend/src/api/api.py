@@ -112,9 +112,11 @@ async def health():
 
 @app.get("/models")
 async def list_models():
+    """Display names of the models the app uses or has used, for the usage page."""
     return {
-        "models": sorted(providers.AVAILABLE_MODELS, key=lambda m: m["id"]),
-        "default": providers.DEFAULT_MODEL_ID,
+        "models": [
+            {"id": id, "name": name} for id, name in sorted(providers.MODEL_NAMES.items())
+        ],
     }
 
 
@@ -138,7 +140,6 @@ async def chat_endpoint(
         user_id=user_id,
         message=_parse_message(body["message"]),
         thinking=body.get("thinking", True),
-        model=body.get("model"),
         day=body.get("day"),
     )
 
@@ -174,7 +175,6 @@ async def sandbox_log_endpoint(
         user_id=user_id,
         message=message,
         day=body.get("day"),
-        model=body.get("model"),
     )
 
     async def event_stream():
@@ -212,7 +212,7 @@ async def revise_draft_row_endpoint(
     body = await request.json()
     try:
         return await pipeline.revise_draft_row(
-            user_id, draft_id, row_id, body.get("instruction", ""), body.get("model")
+            user_id, draft_id, row_id, body.get("instruction", "")
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -277,7 +277,6 @@ async def revise_logs_endpoint(
             body["day"],
             body["log_ids"],
             body.get("instruction", ""),
-            body.get("model"),
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))

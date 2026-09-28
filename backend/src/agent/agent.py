@@ -12,6 +12,8 @@ from src.agent.utils import (
     inline_image_url,
 )
 from typing import AsyncGenerator
+from pydantic import TypeAdapter
+from src.pipeline.models import ExtractedItem
 
 MAX_TURNS = 35
 
@@ -80,24 +82,15 @@ async def _invoke_model(
     messages: list[dict],
 ) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
     """Stream model response, yielding content tokens, tool call starts, and the final message dict."""
-    provider = providers.get_provider(model_id)
-    client = providers.get_client(provider)
+    client = providers.get_client()
     create_kwargs: dict = dict(
         model=model_id,
         messages=messages,
         tools=_to_openai_tools(TOOL_DECLARATIONS),
         max_completion_tokens=MAX_COMPLETION_TOKENS,
-        # temperature=1.0,
-        # top_p=0.95,
         stream=True,
+        extra_body={"reasoning": {"effort": providers.REASONING_EFFORT}},
     )
-    # Fixed reasoning: high for all models (MiMo thinking extension + OpenAI/OpenRouter reasoning_effort)
-    create_kwargs["reasoning_effort"] = "high"
-    create_kwargs["extra_body"] = {
-        "thinking": {"type": "high"},
-        "reasoning": {"effort": "high"},
-        "reasoning_effort": "high",
-    }
     for _ in range(3):
         try:
             stream = await client.chat.completions.create(**create_kwargs)
@@ -369,20 +362,23 @@ def log_food_result(draft: dict) -> dict:
     }
 
 
-def _latest_image_urls(contents: list[dict]) -> list[str]:
-    """Image URLs of the user's latest message, which `log_food` drafts from too."""
+_ITEMS = TypeAdapter(list[ExtractedItem])
+
+
+def _latest_user_text(contents: list[dict]) -> str:
+    """The text of the user's latest message, which the resolver reads too."""
     for msg in reversed(contents):
         if msg.get("role") != "user":
             continue
         content = msg.get("content")
-        if not isinstance(content, list):
-            return []
-        return [
-            part["image_url"]["url"]
-            for part in content
-            if part.get("type") == "image_url" and part.get("image_url", {}).get("url")
-        ]
-    return []
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "\n".join(
+                part["text"] for part in content if part.get("type") == "text"
+            )
+        return ""
+    return ""
 
 
 async def _log_food(
@@ -395,12 +391,11 @@ async def _log_food(
         args = {}
     draft = None
     try:
-        draft = await pipeline.draft_food(
+        draft = await pipeline.draft_items(
             input.user_id,
-            args.get("description", ""),
-            _latest_image_urls(input.contents),
+            _latest_user_text(input.contents),
+            _ITEMS.validate_python(args.get("items", [])),
             args.get("day"),
-            input.model,
         )
         response = log_food_result(draft)
     except Exception as e:
@@ -421,8 +416,7 @@ async def agent(
         {"role": "system", "content": input.system_prompt},
         *await _convert_history(input.contents),
     ]
-    model_id = providers.resolve_model(input.model)
-    provider = providers.get_provider(model_id)
+    model_id = providers.AGENT_MODEL
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)
         async for chunk in _invoke_model(model_id, messages):

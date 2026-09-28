@@ -1,14 +1,13 @@
 """Structured food-logging pipeline.
 
-Replaces the quick-log agent loop with a fixed sequence of steps, where each
-model only makes the decision it is good at:
+A fixed sequence of steps, where each model only makes the decision it is
+good at:
 
-    normalize → route (Jev) → extract (LLM) → retrieve (code)
-              → resolve (LLM) → draft (persisted)
+    normalize → extract (LLM) → retrieve (code) → resolve (LLM) → draft (persisted)
 
-Nothing is logged directly: the result is a draft the user reviews, edits, and
-confirms. Whatever the router doesn't recognize as a new food log is handed
-back to the caller, which falls back to the agent.
+In chat, the agent extracts the foods itself (its `log_food` call carries
+them), so the run starts at retrieve. Nothing is logged directly: the result
+is a draft the user reviews, edits, and confirms.
 """
 
 import asyncio
@@ -16,19 +15,15 @@ import base64
 import datetime
 import json
 import time
-import uuid
 from typing import AsyncGenerator, TypeVar
 from uuid import UUID
 from zoneinfo import ZoneInfo
-
-from typesafe_sdk import Choice, Noul
 
 import src.agent.embeddings as embeddings
 import src.agent.models as agent_models
 import src.agent.providers as providers
 import src.agent.repository as agent_repository
 import src.agent.tools as tools
-import src.pipeline.jev as jev
 import src.pipeline.logic as logic
 import src.pipeline.repository as repository
 from src.agent.utils import extract_tokens, get_openrouter_cost, inline_image_url
@@ -46,9 +41,6 @@ from src.pipeline.models import (
     StageStep,
 )
 
-# Both LLM steps use the user's model (`providers.resolve_model`); reasoning
-# kept low since both are perception + lookup, not multi-step work.
-LLM_REASONING_EFFORT = "low"
 # Reasoning counts toward this, and some models (DeepSeek) reason at length
 # whatever the effort, so it's generous; only the tokens used are paid for.
 LLM_MAX_COMPLETION_TOKENS = 16384
@@ -98,41 +90,11 @@ async def _normalize(message: agent_models.MessageType) -> tuple[str, list[str],
     return text, images, displayable
 
 
-async def _route(
-    user_id: str, session_id: str, text: str, image_count: int
-) -> tuple[dict, float]:
-    if not text:
-        return {
-            "route": "pipeline",
-            "reason": "Photo without text: assumed to be food to log.",
-        }, 0.0
-    state = {"message": text, "attached_photos": image_count}
-    questions: dict[str, jev.Question] = {
-        "intent": Choice(
-            instructions="What does the user want their food-tracking assistant to do with `message`?",
-            criteria=logic.ROUTE_INTENTS,
-        ),
-        "refers_to_past": Noul(
-            instructions="Does `message` identify the foods only by pointing to an earlier meal or earlier logs (e.g. 'same as yesterday', 'my usual breakfast') instead of naming them?",
-        ),
-    }
-    response, cost = await jev.ask(user_id, session_id, state, questions)
-    intent = response.choices["intent"]
-    route, reason = logic.route_decision(
-        intent.choice, intent.confidence, response.nouls["refers_to_past"].noul
-    )
-    return {
-        "route": route,
-        "reason": reason,
-        "jev": jev.debug(state, questions, response),
-    }, cost
-
-
 async def _complete(
     user_id: str, model_id: str, messages: list[dict], output: type[_Output]
 ) -> tuple[_Output, float, dict]:
     """One structured-output completion, validated into `output`."""
-    client = providers.get_client(providers.get_provider(model_id))
+    client = providers.get_client()
     response = await client.chat.completions.create(
         model=model_id,
         messages=messages,  # type: ignore[arg-type]
@@ -145,7 +107,7 @@ async def _complete(
             },
         },
         max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
-        extra_body={"reasoning": {"effort": LLM_REASONING_EFFORT}},
+        extra_body={"reasoning": {"effort": providers.REASONING_EFFORT}},
     )
     usage = response.usage.model_dump() if response.usage else {}
     cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
@@ -168,7 +130,7 @@ async def _complete(
 
 
 async def _extract(
-    user_id: str, model_id: str, text: str, images: list[str], now: str
+    user_id: str, text: str, images: list[str], now: str
 ) -> tuple[Extraction, float, dict]:
     content: list[dict] = []
     if text:
@@ -179,7 +141,7 @@ async def _extract(
         {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
         {"role": "user", "content": content},
     ]
-    return await _complete(user_id, model_id, messages, Extraction)
+    return await _complete(user_id, providers.EXTRACT_MODEL, messages, Extraction)
 
 
 async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]]:
@@ -218,7 +180,6 @@ async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]
 
 async def _resolve(
     user_id: str,
-    model_id: str,
     text: str,
     items: list[ExtractedItem],
     candidates: list[list[dict]],
@@ -236,7 +197,9 @@ async def _resolve(
         },
         {"role": "user", "content": json.dumps({"foods": foods}, ensure_ascii=False)},
     ]
-    resolution, cost, usage = await _complete(user_id, model_id, messages, Resolution)
+    resolution, cost, usage = await _complete(
+        user_id, providers.RESOLVE_MODEL, messages, Resolution
+    )
     return resolution, cost, {"foods": foods, "usage": usage}
 
 
@@ -246,7 +209,6 @@ async def _resolve(
 async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
     """Run the pipeline, streaming every stage; the last step is a `DoneStep`."""
     started = time.perf_counter()
-    session_id = f"pipeline-{uuid.uuid4()}"
     total_cost = 0.0
     stage: StageName = "normalize"
     t = started
@@ -265,7 +227,6 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         now = datetime.datetime.now(tz=ZoneInfo(timezone))
         today = now.strftime("%Y-%m-%d")
         day = input.day or today
-        model_id = providers.resolve_model(input.model)
 
         # 1. Normalize
         t = time.perf_counter()
@@ -276,7 +237,6 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             summary=f"{len(text)} chars of text, {len(images)} photo(s)",
             ms=_ms(t),
             data={
-                "session_id": session_id,
                 "text": text,
                 "images": displayable,
                 "timezone": timezone,
@@ -284,54 +244,36 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
                 "now": now.strftime("%Y-%m-%d %H:%M"),
             },
         )
-        if not text and not images:
+        if not text and not images and input.items is None:
             yield done("nothing", "Empty message.")
             return
 
-        # 2. Route
-        stage = "route"
-        t = time.perf_counter()
-        if input.skip_route:
-            decision, cost = {"route": "pipeline", "reason": "Requested by the agent."}, 0.0
-        else:
-            decision, cost = await _route(input.user_id, session_id, text, len(images))
-        total_cost += cost
-        yield StageStep(
-            name=stage,
-            status="ok" if cost else "skipped",
-            summary=f"{decision['route']}: {decision['reason']}",
-            ms=_ms(t),
-            cost=cost,
-            model="jev" if cost else None,
-            data=decision,
-        )
-        if decision["route"] != "pipeline":
-            yield done("handoff", decision["reason"])
-            return
-
-        # 3. Extract
+        # 2. Extract
         stage = "extract"
         t = time.perf_counter()
-        extraction, cost, usage = await _extract(
-            input.user_id, model_id, text, images, now.strftime("%Y-%m-%d %H:%M")
-        )
+        if input.items is not None:
+            items, cost, usage = input.items, 0.0, None
+        else:
+            extraction, cost, usage = await _extract(
+                input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M")
+            )
+            items = extraction.items
         total_cost += cost
-        items = extraction.items
         yield StageStep(
             name=stage,
-            status="ok",
+            status="ok" if usage is not None else "skipped",
             summary=f"{len(items)} item(s): "
             + ", ".join(f"{logic.amount(i)} {i.name}" for i in items),
             ms=_ms(t),
             cost=cost,
-            model=model_id,
+            model=providers.EXTRACT_MODEL if usage is not None else None,
             data={"items": [i.model_dump() for i in items], "usage": usage},
         )
         if not items:
             yield done("nothing", "No food found in the message.")
             return
 
-        # 4. Retrieve
+        # 3. Retrieve
         stage = "retrieve"
         t = time.perf_counter()
         candidates = await _retrieve(input.user_id, items)
@@ -346,12 +288,11 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ],
         )
 
-        # 5. Resolve
+        # 4. Resolve
         stage = "resolve"
         t = time.perf_counter()
         resolution, cost, debug = await _resolve(
             input.user_id,
-            model_id,
             text,
             items,
             candidates,
@@ -371,11 +312,11 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ),
             ms=_ms(t),
             cost=cost,
-            model=model_id,
+            model=providers.RESOLVE_MODEL,
             data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
         )
 
-        # 6. Draft
+        # 5. Draft
         stage = "draft"
         t = time.perf_counter()
         draft = await asyncio.to_thread(
@@ -417,25 +358,24 @@ def get_draft(user_id: str, draft_id: UUID) -> dict | None:
     return _serialize(draft) if draft else None
 
 
-async def draft_food(
-    user_id: str,
-    description: str,
-    image_urls: list[str],
-    day: str | None,
-    model: str | None,
+async def draft_items(
+    user_id: str, message: str, items: list[ExtractedItem], day: str | None
 ) -> dict:
-    """Draft a food log from the agent's description, skipping the router.
+    """Draft a food log from the foods the agent extracted.
 
-    This is how the agent logs food, so every log, from quick log or chat,
-    is the same kind of draft the user confirms.
+    This is how the agent logs food, so every log is the same kind of draft
+    the user confirms. `message` is the user's own words, which the resolver
+    reads for stated weights, meals, and times.
     """
-    parts = [agent_models.UserMessagePart(text=description)] + [
-        agent_models.UserMessagePart(url=url, mime_type="image/*") for url in image_urls
-    ]
-    message = agent_models.RunAgentUserMessage(parts=parts)
+    if not items:
+        raise DraftError("No foods to log.")
+    parts = [agent_models.UserMessagePart(text=message)] if message else []
     async for step in run(
         PipelineInput(
-            user_id=user_id, message=message, day=day, model=model, skip_route=True
+            user_id=user_id,
+            message=agent_models.RunAgentUserMessage(parts=parts),
+            day=day,
+            items=items,
         )
     ):
         if step.type == "done":
@@ -453,7 +393,7 @@ def list_day_entries(user_id: str, day: str) -> dict:
 
 async def _revise(
     user_id: str, day: str, current: str, meal_type: str, hhmm: str,
-    said: str | None, instruction: str, model: str | None,
+    said: str | None, instruction: str,
 ) -> list[dict]:
     """Rows for an entry after a correction in the user's words.
 
@@ -467,15 +407,14 @@ async def _revise(
     timezone = agent_repository.get_user_timezone(user_id)
     now = datetime.datetime.now(tz=ZoneInfo(timezone))
     message = logic.revision_message(current, meal_type, hhmm, said, instruction)
-    model_id = providers.resolve_model(model)
     extraction, _, _ = await _extract(
-        user_id, model_id, message, [], now.strftime("%Y-%m-%d %H:%M")
+        user_id, message, [], now.strftime("%Y-%m-%d %H:%M")
     )
     if not extraction.items:
         raise DraftError("Couldn't tell what to change; try rephrasing.")
     candidates = await _retrieve(user_id, extraction.items)
     resolution, _, _ = await _resolve(
-        user_id, model_id, message, extraction.items, candidates, day,
+        user_id, message, extraction.items, candidates, day,
         now.strftime("%Y-%m-%d %H:%M"),
     )
     return logic.draft_rows(
@@ -485,7 +424,7 @@ async def _revise(
 
 
 async def revise_draft_row(
-    user_id: str, draft_id: UUID, row_id: str, instruction: str, model: str | None
+    user_id: str, draft_id: UUID, row_id: str, instruction: str
 ) -> dict:
     """Apply a correction in the user's words to one draft row."""
     draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
@@ -494,7 +433,7 @@ async def revise_draft_row(
         raise DraftError(f"Unknown row '{row_id}'.")
     new_rows = await _revise(
         user_id, draft["day"].isoformat(), logic.row_label(row), row["meal_type"],
-        row["log_for"][-5:], row.get("said"), instruction, model,
+        row["log_for"][-5:], row.get("said"), instruction,
     )
     updated = await asyncio.to_thread(
         repository.update_pending_rows,
@@ -506,7 +445,7 @@ async def revise_draft_row(
 
 
 async def revise_logs(
-    user_id: str, day: str, log_ids: list[str], instruction: str, model: str | None
+    user_id: str, day: str, log_ids: list[str], instruction: str
 ) -> dict:
     """Apply a correction in the user's words to logged entries (one card).
 
@@ -523,7 +462,7 @@ async def revise_logs(
         raise DraftError("Entry not found; it may have been deleted.")
     current, meal_type, hhmm = logic.describe_logs(logs)
     new_rows = await _revise(
-        user_id, day, current, meal_type, hhmm, None, instruction, model
+        user_id, day, current, meal_type, hhmm, None, instruction
     )
     result = await asyncio.to_thread(_write_rows, user_id, new_rows)
     if any(not r["success"] for r in result["results"]):
