@@ -57,7 +57,14 @@ class DraftStep(BaseModel):
     draft: dict
 
 
-RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep, ContentTokenStep, ToolCallStartStep, DraftStep]
+class StatusStep(BaseModel):
+    """What the assistant is doing right now, shown while it works."""
+
+    type: Literal["status"] = "status"
+    text: str
+
+
+RunAgentStep = Union[ToolCallStep, MessageStep, UserMessageStep, ContentTokenStep, ToolCallStartStep, DraftStep, StatusStep]
 
 
 class UserMessagePart(BaseModel):

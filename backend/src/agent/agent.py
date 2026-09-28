@@ -36,6 +36,38 @@ def _sanitize_tool_calls(messages: list[dict]) -> None:
                         tc["function"]["arguments"] = "{}"
 
 
+# What the agent is doing while a tool runs, shown to the user.
+TOOL_STATUS = {
+    "search": "Searching your foods",
+    "web_search": "Searching the web",
+    "web_fetch": "Reading sources",
+    "get_ingredient_by_id": "Looking up your foods",
+    "insert_ingredient": "Saving the ingredient",
+    "update_ingredient": "Updating the ingredient",
+    "delete_ingredient": "Deleting the ingredient",
+    "get_serving_sizes_by_ingredient_id": "Looking up serving sizes",
+    "insert_serving_size": "Saving the serving size",
+    "update_serving_size": "Updating the serving size",
+    "delete_serving_size": "Deleting the serving size",
+    "get_recipe_by_id": "Looking up the recipe",
+    "insert_recipe": "Saving the recipe",
+    "update_recipe": "Updating the recipe",
+    "delete_recipe": "Deleting the recipe",
+    "get_daily_summary": "Checking your day",
+    "log_food": "Logging foods",
+    "update_logs": "Updating your logs",
+    "delete_logs": "Deleting logs",
+    "get_current_goal": "Checking your goal",
+    "insert_goal": "Saving your goal",
+    "get_latest_measurements": "Checking your measurements",
+    "insert_measurement": "Saving your measurement",
+}
+
+
+def _tool_status(name: str) -> models.StatusStep:
+    return models.StatusStep(text=TOOL_STATUS.get(name, "Working"))
+
+
 TOOL_DECLARATIONS = [
     tools.search_declaration,
     tools.web_search_declaration,
@@ -396,8 +428,9 @@ def _latest_image_urls(contents: list[dict]) -> list[str]:
 
 async def _log_food(
     tool_call: dict, input: models.AgentInput
-) -> tuple[dict, dict | None]:
-    """Run `log_food` through the logging pipeline; returns (tool result, draft)."""
+) -> AsyncGenerator[models.StatusStep | tuple[dict, dict | None], None]:
+    """Run `log_food` through the logging pipeline, streaming its statuses;
+    the last item is (tool result, draft)."""
     try:
         args = json.loads(tool_call["function"]["arguments"])
     except json.JSONDecodeError:
@@ -414,18 +447,28 @@ async def _log_food(
                     "That draft was already confirmed or discarded, so it can't be "
                     "replaced; correct logged foods with `update_logs` or `delete_logs`."
                 )
-        draft = await pipeline.draft_food(
+        async for step in pipeline.draft_food(
             input.user_id,
             args.get("description", ""),
             _latest_image_urls(input.contents),
             args.get("day"),
-        )
+        ):
+            if step.type == "stage":
+                # Its message was read already: the statuses start at extraction.
+                if step.name != "normalize" and (
+                    status := pipeline_logic.status_after(step)
+                ):
+                    yield models.StatusStep(text=status)
+            elif step.outcome == "drafted" and step.draft:
+                draft = step.draft
+            else:
+                raise ValueError(step.message)
         if replaces:
             pipeline.discard_draft(input.user_id, UUID(replaces))
         response = log_food_result(draft)
     except Exception as e:
         response = {"error": str(e)}
-    return {
+    yield {
         "tool_call_id": tool_call["id"],
         "role": "tool",
         "content": json.dumps(response),
@@ -435,7 +478,12 @@ async def _log_food(
 async def agent(
     input: models.AgentInput,
 ) -> AsyncGenerator[
-    dict | models.ContentTokenStep | models.ToolCallStartStep | models.DraftStep, None
+    dict
+    | models.ContentTokenStep
+    | models.ToolCallStartStep
+    | models.DraftStep
+    | models.StatusStep,
+    None,
 ]:
     messages: list[dict] = [
         {"role": "system", "content": input.system_prompt},
@@ -447,6 +495,7 @@ async def agent(
     draft_ids: list[str] = []
     for _ in range(MAX_TURNS):
         _sanitize_tool_calls(messages)
+        yield models.StatusStep(text="Thinking")
         async for chunk in _invoke_model(model_id, messages):
             if isinstance(chunk, tuple):
                 message_dict, usage = chunk
@@ -473,8 +522,13 @@ async def agent(
                         pipeline.add_draft_cost(draft_id, turn_cost / len(draft_ids))
                     return
                 for tc in tool_calls:
+                    yield _tool_status(tc["function"]["name"])
                     if tc["function"]["name"] == "log_food":
-                        tool_result, draft = await _log_food(tc, input)
+                        async for item in _log_food(tc, input):
+                            if isinstance(item, models.StatusStep):
+                                yield item
+                            else:
+                                tool_result, draft = item
                         if draft:
                             draft_ids.append(draft["id"])
                             yield models.DraftStep(draft=draft)
@@ -484,4 +538,6 @@ async def agent(
                     yield tool_result
             else:
                 yield chunk
+                if isinstance(chunk, models.ToolCallStartStep):
+                    yield _tool_status(chunk.name)
     raise Exception("Maximum number of turns reached without reaching a conclusion.")

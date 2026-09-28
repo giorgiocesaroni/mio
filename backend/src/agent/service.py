@@ -143,6 +143,11 @@ async def run_agent(
         input.conversation_id, input.user_id, title
     )
 
+    yield models.StatusStep(
+        text="Transcribing"
+        if any((p.mime_type or "").startswith("audio/") for p in input.message.parts)
+        else "Reading your message"
+    )
     # Preprocess message (transcribes audio)
     preprocessed_message = await preprocess_message(
         input.message, input.user_id, input.conversation_id
@@ -167,10 +172,11 @@ async def run_agent(
     # the pipeline directly, which is faster and cheaper than the agent;
     # anything else, including whatever depends on the conversation, goes to
     # the agent, which sees the pipeline's drafts in the history.
-    drafted = await _draft_directly(input, preprocessed_message, contents)
+    drafted = False
+    async for step in _draft_directly(input, preprocessed_message, contents):
+        drafted = drafted or isinstance(step, models.DraftStep)
+        yield step
     if drafted:
-        yield drafted[0]
-        yield models.DraftStep(draft=drafted[1])
         return
     timezone = repository.get_user_timezone(input.user_id)
     today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
@@ -193,7 +199,12 @@ async def run_agent(
     async for chunk in agent(agent_input):
         if isinstance(
             chunk,
-            (models.ContentTokenStep, models.ToolCallStartStep, models.DraftStep),
+            (
+                models.ContentTokenStep,
+                models.ToolCallStartStep,
+                models.DraftStep,
+                models.StatusStep,
+            ),
         ):
             yield chunk
         elif isinstance(chunk, dict):
@@ -287,12 +298,13 @@ def _routing_context(
 
 async def _draft_directly(
     input: models.RunAgentInput, message: models.MessageType, contents: list[dict]
-) -> tuple[models.ToolCallStep, dict] | None:
+) -> AsyncGenerator[models.RunAgentStep, None]:
     """Draft the message when the router finds it's a new food log.
 
     The draft is stored as a `log_food` call, so the agent sees it in the
     history and the conversation reloads the same way as when it drafts.
-    Returns the call and the draft, or None to hand the message to the agent.
+    Streams statuses, then the call and a `DraftStep`; without a `DraftStep`
+    the message is the agent's.
     """
     last_reply, pending = _routing_context(contents, input.user_id)
     failed_stage = None
@@ -309,15 +321,17 @@ async def _draft_directly(
         if step.type == "stage":
             if step.status == "error":
                 failed_stage = step.name
+            elif status := pipeline_logic.status_after(step):
+                yield models.StatusStep(text=status)
             continue
         if step.outcome == "error":
             # Without a route, the agent can still handle the message.
             if failed_stage == "route":
                 print(f"[WARN] Routing failed, falling back to the agent: {step.message}")
-                return None
+                return
             raise Exception(step.message)
         if step.outcome != "drafted" or not step.draft:
-            return None
+            return
         call_id = f"call_{uuid.uuid4().hex}"
         text = "\n".join(p.text for p in message.parts if p.text)
         args = {"description": text, "day": step.draft["day"]}
@@ -345,11 +359,8 @@ async def _draft_directly(
             },
             input.user_id,
         )
-        return (
-            models.ToolCallStep(type="tool_call", name="log_food", args=args),
-            step.draft,
-        )
-    return None
+        yield models.ToolCallStep(type="tool_call", name="log_food", args=args)
+        yield models.DraftStep(draft=step.draft)
 
 
 def _drafted(tool_message: dict, user_id: str) -> dict | None:

@@ -432,10 +432,11 @@ def get_draft(user_id: str, draft_id: UUID) -> dict | None:
     return _serialize(draft) if draft else None
 
 
-async def draft_food(
+def draft_food(
     user_id: str, description: str, image_urls: list[str], day: str | None
-) -> dict:
-    """Draft a food log from the agent's description, skipping the router.
+) -> AsyncGenerator[PipelineStep, None]:
+    """Draft a food log from the agent's description, skipping the router;
+    streams the run like `run`.
 
     This is how the agent logs food, so every log is the same kind of draft
     the user confirms.
@@ -444,16 +445,11 @@ async def draft_food(
         agent_models.UserMessagePart(url=url, mime_type="image/*") for url in image_urls
     ]
     message = agent_models.RunAgentUserMessage(parts=parts)
-    async for step in run(
+    return run(
         PipelineInput(
             user_id=user_id, message=message, day=day, skip_route=True, via="agent"
         )
-    ):
-        if step.type == "done":
-            if step.outcome == "drafted" and step.draft:
-                return step.draft
-            raise DraftError(step.message)
-    raise DraftError("The pipeline ended without a result.")
+    )
 
 
 def get_log_costs() -> list[dict]:

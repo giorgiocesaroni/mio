@@ -123,6 +123,8 @@ export function ChatThread({
     [queryClient],
   );
   const [isLoading, setIsLoading] = useState(false);
+  // What the assistant is doing, next to the status dot while it works.
+  const [status, setStatus] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -148,6 +150,13 @@ export function ChatThread({
           payload,
           controller.signal,
           (step) => {
+            if (step.type === "status") {
+              setStatus(step.text);
+              return;
+            }
+            // Its reply shows what it's doing from here.
+            if (step.type === "content_token" || step.type === "message")
+              setStatus(null);
             if (step.type === "content_token") {
               streamingContentRef.current += step.token;
               streamingTokenCountRef.current++;
@@ -198,6 +207,7 @@ export function ChatThread({
         setSteps((prev) => [...prev, { type: "error", text: message }]);
       } finally {
         setIsLoading(false);
+        setStatus(null);
         abortRef.current = null;
         streamingContentRef.current = "";
         streamingTokenCountRef.current = 0;
@@ -374,13 +384,19 @@ export function ChatThread({
           <StepDisplay key={i} step={step} />
         ))}
         {steps.length > 0 && (
-          <div
-            ref={bottomRef}
-            className={
-              "flex size-4 rounded-full transition-colors duration-200" +
-              (isLoading ? " animate-pulse bg-brand" : " animate-none bg-border")
-            }
-          ></div>
+          <div ref={bottomRef} className="flex items-center gap-2">
+            <div
+              className={
+                "size-4 shrink-0 rounded-full transition-colors duration-200" +
+                (isLoading ? " animate-blink bg-brand" : " bg-border")
+              }
+            />
+            {isLoading && status ? (
+              <p className="font-sans text-xs text-muted-foreground">
+                {status}
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
 

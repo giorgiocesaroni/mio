@@ -37,7 +37,13 @@ export type DraftStep = {
   draft: LogDraft;
 };
 
-export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep | ErrorStep | DraftStep;
+/** What the assistant is doing right now, shown while it works. */
+export type StatusStep = {
+  type: "status";
+  text: string;
+};
+
+export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep | ErrorStep | DraftStep | StatusStep;
 
 /** Display names of the models the app uses or has used. */
 export type Model = {

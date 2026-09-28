@@ -101,6 +101,21 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* The chat's status dot while the assistant works: on and off, quickly. */
+@theme {
+  --animate-blink: blink 0.9s ease-in-out infinite;
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.1;
+    }
+  }
+}
+
 .dark {
   --background: oklch(0.2 0.006 70);
   --background-alt: oklch(0.23 0.007 70);

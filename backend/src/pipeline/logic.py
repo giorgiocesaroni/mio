@@ -31,7 +31,13 @@ import json
 import math
 import re
 
-from src.pipeline.models import DraftError, ExtractedItem, Resolution, ResolvedRow
+from src.pipeline.models import (
+    DraftError,
+    ExtractedItem,
+    Resolution,
+    ResolvedRow,
+    StageStep,
+)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -154,6 +160,27 @@ def route_decision(
     if intent != "log_food":
         return "agent", f"Intent is '{intent}', not a new log."
     return "pipeline", "New food log."
+
+
+# ── Status ────────────────────────────────────────────────────────────────────
+
+# What the pipeline does next once a stage is done, shown to the user.
+STATUS_AFTER_STAGE = {
+    "normalize": "Reading your message",
+    "route": "Extracting foods",
+    "extract": "Retrieving your foods",
+    "retrieve": "Resolving quantities",
+    "resolve": "Saving the draft",
+}
+
+
+def status_after(step: StageStep) -> str | None:
+    """The status once `step` is done, or None when the pipeline stops there."""
+    if step.status == "error":
+        return None
+    if step.name == "route" and (step.data or {}).get("route") != "pipeline":
+        return None
+    return STATUS_AFTER_STAGE.get(step.name)
 
 
 # ── Retrieval and resolution ──────────────────────────────────────────────────
