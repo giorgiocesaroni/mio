@@ -13,8 +13,8 @@ export const queryClient = new QueryClient({
 
 // Matches the --background value of each theme in globals.css.
 const themeColors: Record<string, string> = {
-  light: "#ffffff",
-  dark: "#0a0a0a",
+  light: "#fbf9f5",
+  dark: "#181613",
 };
 
 function ThemeColorSync() {
