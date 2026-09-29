@@ -17,8 +17,8 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { DAY_ENTRIES_QUERY_KEY } from "@/app/dashboard/components/day-entries";
-import { PendingDrafts } from "@/app/dashboard/components/draft-card";
+import { DAY_ENTRIES_QUERY_KEY, useDayEntries } from "@/app/dashboard/components/day-entries";
+import { DraftDishes } from "@/app/dashboard/components/draft-card";
 import { PipelineRun, formatCost, type Run } from "./components/pipeline-run";
 
 function todayKey(): string {
@@ -36,6 +36,14 @@ export default function SandboxPage() {
   const abortRef = useRef<AbortController | null>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const queryClient = useQueryClient();
+  // Drafts saved before this page loaded belong to earlier sessions.
+  const [sessionStart] = useState(() => new Date().toISOString());
+  const { data: entries } = useDayEntries(day);
+  const sessionDrafts = (entries?.drafts ?? []).filter(
+    (draft) =>
+      draft.via === "sandbox" &&
+      new Date(draft.created_at) >= new Date(sessionStart),
+  );
 
   const isRunning = runs.some((r) => !r.done && !r.error);
 
@@ -210,10 +218,19 @@ export default function SandboxPage() {
           placeholder="What did you eat?"
         />
       </div>
-      <PendingDrafts day={day} />
       {runs.map((run) => (
         <PipelineRun key={run.id} run={run} />
       ))}
+      {sessionDrafts.length ? (
+        <div className="grid gap-3">
+          <p className="text-sm font-medium text-muted-foreground">
+            Drafts saved this session
+          </p>
+          {sessionDrafts.map((draft) => (
+            <DraftDishes key={draft.id} draft={draft} />
+          ))}
+        </div>
+      ) : null}
     </DashboardPage>
   );
 }

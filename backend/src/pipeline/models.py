@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 import src.agent.models as agent_models
 
@@ -25,33 +25,24 @@ class ExtractedItem(BaseModel):
         description="The user's own words for this food, copied verbatim in their language, including brand and descriptors but not the quantity, e.g. 'cotolette AIA'. Empty string when the food is only visible in a photo."
     )
     name: str = Field(
-        description="Short, generic, English, lowercase, singular food name as it would appear in a food database, e.g. 'whole wheat bread'. No brand."
+        description="Short, generic, English, lowercase, singular food name as it would appear in a food database, e.g. 'whole wheat bread'. No brand. Name it in the same state as `state`, so a cooked amount is a cooked food."
     )
     brand: str | None = Field(description="Brand, only if stated or visible.")
     quantity: float = Field(description="Amount as the user expressed it.")
     unit: Unit = Field(
         description="'g' weight, 'ml' volume, 'piece' countable items (eggs, apples, slices), 'serving' household measures (cup, tablespoon, bowl), 'recipe' fraction of a whole dish (0.5 = half)."
     )
-    unit_label: str | None = Field(
-        description="For 'piece' and 'serving': the English, lowercase, singular measure, e.g. 'slice', 'tablespoon', 'medium', 'cup'. Otherwise null."
-    )
     grams: float = Field(
-        description="Best estimate of the eaten weight in grams. Always filled; for photos, estimate the portion visually."
-    )
-    meal_type: agent_models.MealType | None = Field(
-        description="Only if stated or clearly implied, otherwise null."
-    )
-    time: str | None = Field(
-        description="Local time of the meal as HH:MM, only if stated, otherwise null."
+        description="Best estimate of the eaten weight in grams, in the same `state` as this component. Always filled; for photos, estimate the portion visually."
     )
     state: agent_models.IngredientState = Field(
-        description="Whether `grams` and `per_100g` refer to the raw or cooked food."
+        description="The state the `grams` amount is measured in — how the amount was quantified, not whether the dish was cooked. When the user gave a weight, this is the state that weight is in; when you estimated the portion, it is the state the food is eaten in. Oils, condiments, herbs and spices are 'raw'."
     )
     per_100g: Per100g = Field(
-        description="Typical nutrition facts per 100 g of this food in that state."
+        description="Typical nutrition facts per 100 g of this food, in the same `state` as `grams`. `name`, `state` and `per_100g` must all describe the same amount: never name a component 'dry spaghetti' and report a cooked weight."
     )
     assumed: bool = Field(
-        description="True when this component was added because the dish normally has it (cooking oil, dressing, cheese on top...) but the user didn't mention it and it isn't visible in a photo. False for everything the user said or the photo shows."
+        description="True only for extras added beyond the dish the user described — cooking oil, dressing, cheese on top, bread on the side. The components that make up a dish the user named are never assumed, even when you named them yourself; false for everything the user said or the photo shows."
     )
 
 
@@ -62,10 +53,11 @@ class ExtractedDish(BaseModel):
         description="The user's own words for the dish, copied verbatim in their language, e.g. 'pasta al pomodoro'. Empty string when the dish is only visible in a photo."
     )
     name: str = Field(
-        description="Short, generic, English, lowercase name of the dish, e.g. 'spaghetti with tomato sauce'. For a single food or drink, the same as its component's name."
+        description="Short, generic, English name of the dish, written as a person would say it with a capital first letter, e.g. 'Spaghetti with tomato sauce' (not all lowercase). For a single food or drink, the same as its component's name."
     )
     components: list[ExtractedItem] = Field(
-        description="The foods the dish is made of, each with its own eaten weight and nutrition. A single food or drink is a dish with exactly one component."
+        min_length=1,
+        description="The foods the dish is made of, each with its own eaten weight and nutrition. A single food or drink is a dish with exactly one component; never empty.",
     )
 
 
@@ -73,11 +65,6 @@ class Extraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dishes: list[ExtractedDish]
-
-    @model_validator(mode="after")
-    def _drop_empty_dishes(self):
-        self.dishes = [d for d in self.dishes if d.components]
-        return self
 
     @property
     def items(self) -> list[ExtractedItem]:
@@ -162,6 +149,9 @@ StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "dra
 
 
 class StageStep(BaseModel):
+    """One stage of a run. `warnings` are degradations the stage survived — a
+    partial or repaired answer — as opposed to an `error`, which stops the run."""
+
     type: Literal["stage"] = "stage"
     name: StageName
     status: Literal["ok", "skipped", "error"]
@@ -170,6 +160,7 @@ class StageStep(BaseModel):
     cost: float = 0.0
     model: str | None = None
     data: dict | list | None = None
+    warnings: list[str] = []
 
 
 class DoneStep(BaseModel):
@@ -179,6 +170,8 @@ class DoneStep(BaseModel):
     total_ms: int
     total_cost: float
     draft: dict | None = None
+    # Everything that went wrong but didn't stop the run, from every stage.
+    warnings: list[str] = []
 
 
 PipelineStep = StageStep | DoneStep

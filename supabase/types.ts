@@ -166,6 +166,8 @@ export type Database = {
       logs: {
         Row: {
           created_at: string
+          dish_id: string | null
+          dish_name: string | null
           food_id: string
           id: string
           log_for: string
@@ -178,6 +180,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          dish_id?: string | null
+          dish_name?: string | null
           food_id: string
           id?: string
           log_for: string
@@ -190,6 +194,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          dish_id?: string | null
+          dish_name?: string | null
           food_id?: string
           id?: string
           log_for?: string
@@ -276,6 +282,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pipeline_runs: {
+        Row: {
+          created_at: string
+          day: string | null
+          draft_id: string | null
+          id: string
+          message: string | null
+          outcome: string | null
+          outcome_message: string | null
+          steps: Json
+          total_cost: number | null
+          total_ms: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          day?: string | null
+          draft_id?: string | null
+          id?: string
+          message?: string | null
+          outcome?: string | null
+          outcome_message?: string | null
+          steps: Json
+          total_cost?: number | null
+          total_ms?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          day?: string | null
+          draft_id?: string | null
+          id?: string
+          message?: string | null
+          outcome?: string | null
+          outcome_message?: string | null
+          steps?: Json
+          total_cost?: number | null
+          total_ms?: number | null
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -426,6 +474,8 @@ export type Database = {
           food_name: string | null
           food_protein_g: number | null
           log_created_at: string | null
+          log_dish_id: string | null
+          log_dish_name: string | null
           log_food_id: string | null
           log_for: string | null
           log_id: string | null

@@ -259,6 +259,9 @@ class InsertLogByGramsInput(BaseModel):
     recipe_id: UUID | None = None
     meal_type: MealType
     log_for: str  # YYYY-MM-DD HH:MM — the actual time of the meal
+    # The dish this log is a component of, when it was logged as several foods.
+    dish_id: UUID | None = None
+    dish_name: str | None = None
 
     @field_serializer("food_id")
     def serialize_food_id(self, v: UUID | None) -> str | None:
@@ -275,6 +278,8 @@ class InsertLogByServingSizeInput(BaseModel):
     quantity: float
     meal_type: MealType
     log_for: str  # YYYY-MM-DD HH:MM — the actual time of the meal
+    dish_id: UUID | None = None
+    dish_name: str | None = None
 
     @field_serializer("food_id")
     def serialize_food_id(self, v: UUID | None) -> str | None:
@@ -345,6 +350,8 @@ class LogWithEntry(BaseModel):
     serving_size_id: Optional[UUID] = None
     quantity: Optional[float] = None
     recipe_id: Optional[UUID] = None
+    dish_id: Optional[UUID] = None
+    dish_name: Optional[str] = None
     meal_type: MealType
     log_for: datetime
     log_for_local: str | None = None

@@ -112,30 +112,49 @@ function amountOf(log: FoodLog): string {
 
 type FoodBlock =
   | { kind: "food"; log: FoodLog }
-  | { kind: "recipe"; recipeId: string; recipeName: string; logs: FoodLog[] };
+  | {
+      kind: "group";
+      key: string;
+      label: "Dish" | "Recipe";
+      name: string;
+      logs: FoodLog[];
+    };
 
+/**
+ * A day's logs, grouped into one card per dish. A dish's component rows share
+ * `log_dish_id`; a saved recipe's dispatched rows share `log_recipe_id`.
+ */
 function buildBlocks(logs: FoodLog[]) {
-  const groups = new Map<string, FoodLog[]>();
+  const groups = new Map<string, Extract<FoodBlock, { kind: "group" }>>();
   const standalone: FoodLog[] = [];
   for (const log of logs) {
-    if (log.log_recipe_id) {
-      const list = groups.get(log.log_recipe_id) ?? [];
-      list.push(log);
-      groups.set(log.log_recipe_id, list);
-    } else {
+    const key = log.log_dish_id
+      ? `dish:${log.log_dish_id}`
+      : log.log_recipe_id
+        ? `recipe:${log.log_recipe_id}`
+        : null;
+    if (!key) {
       standalone.push(log);
+      continue;
+    }
+    const group = groups.get(key);
+    if (group) {
+      group.logs.push(log);
+    } else {
+      groups.set(key, {
+        kind: "group",
+        key,
+        label: log.log_dish_id ? "Dish" : "Recipe",
+        name: log.log_dish_name ?? log.recipe_name ?? log.food_name,
+        logs: [log],
+      });
     }
   }
 
-  const blocks: FoodBlock[] = standalone.map((log) => ({ kind: "food", log }));
-  for (const [recipeId, recipeLogs] of groups) {
-    blocks.push({
-      kind: "recipe",
-      recipeId,
-      recipeName: recipeLogs[0].recipe_name ?? "Recipe",
-      logs: recipeLogs,
-    });
-  }
+  const blocks: FoodBlock[] = [
+    ...standalone.map((log) => ({ kind: "food" as const, log })),
+    ...groups.values(),
+  ];
 
   // Keep chronological order (descending) using each block's representative timestamp.
   const ts = (b: FoodBlock) =>
@@ -239,12 +258,12 @@ function IngredientLogCard({ day, log }: { day: string; log: FoodLog }) {
   );
 }
 
-function RecipeLogCard({
+function GroupedLogCard({
   day,
   block,
 }: {
   day: string;
-  block: Extract<FoodBlock, { kind: "recipe" }>;
+  block: Extract<FoodBlock, { kind: "group" }>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const timestamp = block.logs[0].log_created_at!;
@@ -255,7 +274,7 @@ function RecipeLogCard({
   const { menu, dialogs } = useLogEntry(
     day,
     block.logs,
-    `${Math.round(totalGrams)} g ${block.recipeName}`,
+    `${Math.round(totalGrams)} g ${block.name}`,
   );
   return (
     <>
@@ -266,8 +285,8 @@ function RecipeLogCard({
         <CardContent className="grid gap-2">
           <div className="flex min-w-0 items-center justify-between gap-4 overflow-hidden">
             <p className="min-w-0 truncate font-medium text-foreground">
-              <EntryPill>Recipe</EntryPill>
-              {block.recipeName}
+              <EntryPill>{block.label}</EntryPill>
+              {block.name}
             </p>
             <EntryMeta timestamp={timestamp} menu={menu} />
           </div>
@@ -313,15 +332,11 @@ function DailyFoodLogsWithFoods({ day }: { day: string }) {
   return (
     <div className="grid gap-3">
       <PendingDrafts day={day} />
-      {blocks.map((block, index) =>
+      {blocks.map((block) =>
         block.kind === "food" ? (
           <IngredientLogCard key={block.log.log_id} day={day} log={block.log} />
         ) : (
-          <RecipeLogCard
-            key={`recipe-${block.recipeId}-${index}`}
-            day={day}
-            block={block}
-          />
+          <GroupedLogCard key={block.key} day={day} block={block} />
         ),
       )}
     </div>

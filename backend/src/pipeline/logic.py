@@ -5,7 +5,8 @@ A draft row looks like:
     {
       "id": "r0",
       "said": "cotolette AIA",               # the user's words
-      "dish": null,                          # the dish this is a component of, if several
+      "dish_id": null,                       # the draft-local group this row belongs to
+      "dish": null,                          # the dish's name, when it has several components
       "assumed": false,                      # a usual component nobody mentioned
       "alternatives": [                      # what the user may pick from
         {"key": "c0", "kind": "ingredient", "id": "…", "name": "AIA chicken cutlet",
@@ -116,9 +117,8 @@ def amount(item: ExtractedItem) -> str:
         case "recipe":
             return f"{item.quantity:g} × recipe"
         case _:
-            label = item.unit_label or item.unit
-            plural = "" if item.quantity == 1 or label.endswith("s") else "s"
-            return f"{item.quantity:g} {label}{plural}"
+            plural = "" if item.quantity == 1 or item.unit.endswith("s") else "s"
+            return f"{item.quantity:g} {item.unit}{plural}"
 
 
 def extraction_summary(extraction: Extraction) -> str:
@@ -126,9 +126,15 @@ def extraction_summary(extraction: Extraction) -> str:
         parts = ", ".join(
             f"{amount(c)} {c.name}{' (assumed)' if c.assumed else ''}" for c in d.components
         )
-        return parts if len(d.components) == 1 else f"{d.name} ({parts})"
+        return parts if len(d.components) == 1 else f"{dish_label(d.name)} ({parts})"
 
     return "; ".join(dish(d) for d in extraction.dishes)
+
+
+def dish_label(name: str) -> str:
+    """A dish's display name: the model's own casing, with the first letter
+    capitalized in case it ignored the instruction and returned all lowercase."""
+    return name[:1].upper() + name[1:] if name else name
 
 
 # ── Routing ───────────────────────────────────────────────────────────────────
@@ -284,8 +290,6 @@ def resolver_dishes(
                     "estimated_grams": item.grams,
                     "estimated_state": item.state,
                     "assumed": item.assumed,
-                    "meal_type": item.meal_type,
-                    "time": item.time,
                     "candidates": [_resolver_candidate(c) for c in candidates[index]],
                 }
             )
@@ -404,20 +408,22 @@ def _validated(
 def _when(
     resolved_time: str | None,
     resolved_meal: str | None,
-    item: ExtractedItem,
     day: str,
     now_hhmm: str,
     is_today: bool,
 ) -> tuple[str, str]:
-    """(meal type, 'day HH:MM') from the resolver's answer, then the extraction's."""
-    hhmm = parse_hhmm(resolved_time) or parse_hhmm(item.time)
+    """(meal type, 'day HH:MM') from the resolver's answer, defaulting to now."""
+    meal_type = resolved_meal if resolved_meal in MEAL_TYPES else None
+    hhmm = parse_hhmm(resolved_time)
     if not hhmm:
-        meal = item.meal_type
-        hhmm = now_hhmm if is_today else (MEAL_DEFAULT_TIMES[meal] if meal else "12:00")
-    meal_type = (
-        resolved_meal if resolved_meal in MEAL_TYPES
-        else item.meal_type or infer_meal_type(hhmm)
-    )
+        if is_today:
+            hhmm = now_hhmm
+        elif meal_type:
+            hhmm = MEAL_DEFAULT_TIMES[meal_type]
+        else:
+            hhmm = "12:00"
+    if meal_type is None:
+        meal_type = infer_meal_type(hhmm)
     return meal_type, f"{day} {hhmm}"
 
 
@@ -438,11 +444,11 @@ def _recipe_row(
     alternatives = [{k: r[k] for k in _ALTERNATIVE_FIELDS if k in r} for r in recipes]
     alternatives.sort(key=lambda a: a["key"] != resolved.target)
     meal_type, log_for = _when(
-        resolved.time, resolved.meal_type, dish.components[0], day, now_hhmm, is_today
+        resolved.time, resolved.meal_type, day, now_hhmm, is_today
     )
     return {
         "said": dish.said,
-        "dish": dish.name,
+        "dish": dish_label(dish.name),
         "alternatives": alternatives,
         "auto_target": resolved.target,
         "target": resolved.target,
@@ -456,6 +462,39 @@ def _recipe_row(
         "log_for": log_for,
         "grams_estimated": False,
     }
+
+
+def missing_rows(
+    extraction: Extraction,
+    resolution: Resolution,
+    dish_recipes: list[list[dict]],
+) -> list[int]:
+    """Component indices the resolver returned no row for.
+
+    A dish matched to one of its saved recipes needs no per-component rows, so
+    its components count as covered — but only when that match would survive
+    `_recipe_row`, since an invalid one falls back to per-component rows.
+    """
+    covered = {r.item for r in resolution.rows}
+    by_dish = {r.dish: r for r in resolution.recipes}
+    recipe_dishes = set()
+    for d, recipes in enumerate(dish_recipes):
+        resolved = by_dish.get(d)
+        if (
+            resolved is not None
+            and math.isfinite(resolved.quantity)
+            and resolved.quantity > 0
+            and any(c["key"] == resolved.target for c in recipes)
+        ):
+            recipe_dishes.add(d)
+    missing = []
+    index = 0
+    for d, dish in enumerate(extraction.dishes):
+        for _ in dish.components:
+            if d not in recipe_dishes and index not in covered:
+                missing.append(index)
+            index += 1
+    return missing
 
 
 def draft_rows(
@@ -489,15 +528,17 @@ def draft_rows(
             meal_type, log_for = _when(
                 resolved.time if resolved else None,
                 resolved.meal_type if resolved else None,
-                item, day, now_hhmm, is_today,
+                day, now_hhmm, is_today,
             )
 
             # The chosen match first, then the other candidates in retrieval order.
             alternatives.sort(key=lambda a: a["key"] != fields["target"])
+            multi = len(dish.components) > 1
             rows.append(
                 {
                     "said": item.said,
-                    "dish": dish.name if len(dish.components) > 1 else None,
+                    "dish_id": f"d{d}" if multi else None,
+                    "dish": dish_label(dish.name) if multi else None,
                     "assumed": item.assumed,
                     "alternatives": alternatives,
                     "auto_target": fields["target"],
@@ -646,6 +687,13 @@ def describe_logs(logs: list) -> tuple[str, str, str]:
     if first.recipe_id and first.recipe:
         total = sum(grams(log) for log in logs)
         return f"{total:.0f} g of the saved recipe {first.recipe.name}", first.meal_type, hhmm
+    if first.dish_id and first.dish_name:
+        total = sum(grams(log) for log in logs)
+        components = ", ".join(
+            f"{grams(log):.0f} g {log.ingredient.name if log.ingredient else 'food'}"
+            for log in logs
+        )
+        return f"{first.dish_name} ({total:.0f} g: {components})", first.meal_type, hhmm
     name = first.ingredient.name if first.ingredient else "food"
     if first.serving_size_id and first.ingredient:
         serving = next(
@@ -658,22 +706,75 @@ def describe_logs(logs: list) -> tuple[str, str, str]:
     return f"{grams(first):.0f} g {name}", first.meal_type, hhmm
 
 
-def replace_row(rows: list[dict], row_id: str, new_rows: list[dict]) -> list[dict]:
-    """Put `new_rows` where `row_id` was: the first keeps its id, extra rows
-    (foods the correction added) get fresh ids."""
-    index = next((n for n, r in enumerate(rows) if r["id"] == row_id), None)
-    if index is None:
-        raise DraftError(f"Unknown row '{row_id}'.")
-    next_id = max(int(r["id"][1:]) for r in rows) + 1
+def group_key(row: dict) -> str:
+    """What groups a draft row with its dish's other rows: the dish it is a
+    component of, or the row itself for a standalone food."""
+    return row.get("dish_id") or row["id"]
+
+
+def describe_rows(rows: list[dict]) -> tuple[str, str, str, str | None]:
+    """(description, meal type, HH:MM, said) of a draft dish shown as one card."""
+    first = rows[0]
+    if len(rows) == 1:
+        current = row_label(first)
+    else:
+        current = f"{first.get('dish') or 'the dish'} (" + ", ".join(
+            row_label(r) for r in rows
+        ) + ")"
+    return current, first["meal_type"], first["log_for"][-5:], first.get("said")
+
+
+def replace_dish(rows: list[dict], key: str, new_rows: list[dict]) -> list[dict]:
+    """Put `new_rows` where the `key` group was, dropping its old rows.
+
+    A revision re-runs the pipeline, so `new_rows` carries fresh row and dish
+    ids; both are remapped so they can't collide with the rows that stay."""
+    indices = [n for n, r in enumerate(rows) if group_key(r) == key]
+    if not indices:
+        raise DraftError(f"Unknown dish '{key}'.")
+    kept = [r for n, r in enumerate(rows) if n not in indices]
+    next_row = max((int(r["id"][1:]) for r in rows), default=-1) + 1
+
+    # Remap the new rows' dish ids, keeping each distinct dish together and
+    # clear of the ids the surviving rows still use.
+    used = {r["dish_id"] for r in kept if r.get("dish_id")}
+    next_dish = max((int(d[1:]) for d in used), default=-1) + 1
+    dish_ids: dict[str, str] = {}
+    for row in new_rows:
+        old = row.get("dish_id")
+        if old and old not in dish_ids:
+            dish_ids[old] = f"d{next_dish}"
+            next_dish += 1
     renamed = [
-        {**row, "id": row_id if n == 0 else f"r{next_id + n - 1}"}
+        {
+            **row,
+            "id": f"r{next_row + n}",
+            "dish_id": dish_ids.get(row.get("dish_id") or "", row.get("dish_id")),
+        }
         for n, row in enumerate(new_rows)
     ]
-    return rows[:index] + renamed + rows[index + 1 :]
+
+    # Rebuild in order: the new rows take the first slot of the old group.
+    result: list[dict] = []
+    inserted = False
+    for n, row in enumerate(rows):
+        if n in indices:
+            if not inserted:
+                result.extend(renamed)
+                inserted = True
+            continue
+        result.append(row)
+    return result
 
 
-def log_entry(row: dict) -> dict:
-    """The `log_entries` entry for a row whose target exists (or was created)."""
+def log_entry(
+    row: dict, dish_id: str | None = None, dish_name: str | None = None
+) -> dict:
+    """The `log_entries` entry for a row whose target exists (or was created).
+
+    `dish_id`/`dish_name` group a component dish's rows in the log; recipes
+    are grouped by their own `recipe_id` instead.
+    """
     target = alternative(row)
     base = {"meal_type": row["meal_type"], "log_for": row["log_for"]}
     if target["kind"] == "recipe":
@@ -682,4 +783,7 @@ def log_entry(row: dict) -> dict:
     entry = {**base, "food_id": target["id"], "quantity": row["quantity"], "unit": row["unit"]}
     if row["unit"] == "serving":
         entry["serving_size_id"] = row["serving_size_id"]
+    if dish_id:
+        entry["dish_id"] = dish_id
+        entry["dish_name"] = dish_name
     return entry

@@ -14,6 +14,8 @@ select
   coalesce(l.log_for, l.created_at) as log_created_at,
   l.food_id as log_food_id,
   l.recipe_id as log_recipe_id,
+  l.dish_id as log_dish_id,
+  l.dish_name as log_dish_name,
   coalesce(ss.grams * l.quantity, l.quantity_g) as log_quantity_g,
   l.serving_size_id as log_serving_size_id,
   l.quantity as log_quantity,

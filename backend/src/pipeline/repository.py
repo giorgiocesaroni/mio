@@ -69,7 +69,7 @@ def recipe_nutrition(recipe_ids: list[str], user_id: str) -> dict[str, dict]:
 
 # ── Drafts ────────────────────────────────────────────────────────────────────
 
-_COLUMNS = "id, created_at, day, status, message, rows"
+_COLUMNS = "id, created_at, day, status, message, rows, via"
 
 
 def insert_draft(
@@ -86,6 +86,40 @@ def insert_draft(
                 (user_id, day, message, Jsonb(rows), cost, via),
             )
             return cur.fetchone()
+
+
+def insert_pipeline_run(
+    user_id: str,
+    day: str | None,
+    message: str | None,
+    steps: list[dict],
+    outcome: str,
+    outcome_message: str,
+    total_ms: int,
+    total_cost: float,
+    draft_id: str | None,
+) -> None:
+    """Record a sandbox run, every stage included, for debugging."""
+    with psycopg.connect(**db_connection_params) as conn:
+        conn.execute(
+            """
+            INSERT INTO pipeline_runs
+                (user_id, day, message, steps, outcome, outcome_message,
+                 total_ms, total_cost, draft_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                user_id,
+                day,
+                message,
+                Jsonb(steps),
+                outcome,
+                outcome_message,
+                total_ms,
+                total_cost,
+                draft_id,
+            ),
+        )
 
 
 def add_draft_cost(draft_id: UUID, cost: float) -> None:
@@ -146,6 +180,8 @@ def get_day_entries(user_id: str, day: str) -> tuple[list[dict], list[dict]]:
                     COALESCE(l.log_for, l.created_at) AS log_created_at,
                     l.food_id::text AS log_food_id,
                     l.recipe_id::text AS log_recipe_id,
+                    l.dish_id::text AS log_dish_id,
+                    l.dish_name AS log_dish_name,
                     COALESCE(ss.grams * l.quantity, l.quantity_g)::float AS log_quantity_g,
                     l.serving_size_id::text AS log_serving_size_id,
                     l.quantity::float AS log_quantity,
@@ -232,14 +268,17 @@ def update_pending_rows(
             return cur.fetchone()
 
 
-def remove_row(user_id: str, draft_id: UUID, row_id: str) -> dict | None:
-    """Remove a row from a pending draft; removing the last one discards it."""
+def remove_dish(user_id: str, draft_id: UUID, dish_id: str) -> dict | None:
+    """Remove one dish (all of a group's rows) from a pending draft;
+    removing the last one discards it."""
     with psycopg.connect(**db_connection_params) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             draft = _lock_pending(cur, user_id, draft_id)
-            remaining = [r for r in draft["rows"] if r["id"] != row_id]
+            remaining = [
+                r for r in draft["rows"] if (r.get("dish_id") or r["id"]) != dish_id
+            ]
             if len(remaining) == len(draft["rows"]):
-                raise DraftError(f"Unknown row '{row_id}'.")
+                raise DraftError(f"Unknown dish '{dish_id}'.")
             if not remaining:
                 cur.execute(
                     "UPDATE log_drafts SET status = 'discarded', updated_at = now() WHERE id = %s",

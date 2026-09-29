@@ -18,7 +18,7 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 | ----------- | ------------------------------- | ---------------------------- |
 | `agent/`    | The agent's core logic.         | GPT-6 Luna via OpenRouter |
 | `api/`      | The API of the application.     | FastAPI                      |
-| `pipeline/` | The structured food-logging pipeline and its log drafts. Every chat message is routed here first; the agent's `log_food` tool and draft corrections use it too. | Jev (routing), Gemini 3.8 Flash (photo extraction), GPT-6 Luna (text extraction, resolve) |
+| `pipeline/` | The structured food-logging pipeline and its log drafts. Every chat message is routed here first; the agent's `log_food` tool and draft corrections use it too. | Jev (routing), DeepSeek V4.1 Flash (extraction and resolve, no reasoning) |
 
 ### Module Structure
 

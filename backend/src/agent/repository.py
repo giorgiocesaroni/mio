@@ -647,7 +647,8 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     iss_agg.serving_sizes,
                     -- recipe fields (NULL when the log is a plain ingredient log)
                     r.id, r.name, r.image_url,
-                    ri_agg.recipe_items
+                    ri_agg.recipe_items,
+                    l.dish_id, l.dish_name
                 FROM logs l
                 LEFT JOIN ingredients i ON i.id = l.food_id
                 LEFT JOIN (
@@ -681,7 +682,9 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     serving_size_id=row[3],
                     quantity=row[4],
                     recipe_id=row[5],
-                    meal_type=row[6],
+                    dish_id=row[22],
+                    dish_name=row[23],
+                    meal_type=row[8],
                     log_for=log_for_utc,
                     log_for_local=log_for_local,
                 )
@@ -733,10 +736,18 @@ def insert_log_by_grams(
             elif input.food_id is not None:
                 cur.execute(
                     """
-                    INSERT INTO logs (food_id, quantity_g, meal_type, log_for, user_id)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO logs (food_id, quantity_g, meal_type, log_for, user_id, dish_id, dish_name)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (str(input.food_id), input.quantity_g, input.meal_type, log_for_dt, user_id),
+                    (
+                        str(input.food_id),
+                        input.quantity_g,
+                        input.meal_type,
+                        log_for_dt,
+                        user_id,
+                        str(input.dish_id) if input.dish_id else None,
+                        input.dish_name,
+                    ),
                 )
             else:
                 raise ValueError("insert_log_by_grams requires either food_id or recipe_id.")
@@ -788,10 +799,19 @@ def insert_log_by_serving_size(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO logs (food_id, serving_size_id, quantity, meal_type, log_for, user_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO logs (food_id, serving_size_id, quantity, meal_type, log_for, user_id, dish_id, dish_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (str(input.food_id), str(input.serving_size_id), input.quantity, input.meal_type, log_for_dt, user_id),
+                (
+                    str(input.food_id),
+                    str(input.serving_size_id),
+                    input.quantity,
+                    input.meal_type,
+                    log_for_dt,
+                    user_id,
+                    str(input.dish_id) if input.dish_id else None,
+                    input.dish_name,
+                ),
             )
 
 

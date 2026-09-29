@@ -236,24 +236,26 @@ export function getDayEntries(day: string): Promise<DayEntries> {
   return requestJSON(`/entries?day=${encodeURIComponent(day)}`);
 }
 
-/** Applies a correction in the user's words to one draft entry. */
-export function reviseDraftRow(
+/** Applies a correction in the user's words to one dish of a draft. */
+export function reviseDraftDish(
   id: string,
-  rowId: string,
+  dishId: string,
   instruction: string,
 ): Promise<LogDraft> {
-  return requestJSON(`/drafts/${id}/rows/${rowId}/revise`, {
+  return requestJSON(`/drafts/${id}/dishes/${encodeURIComponent(dishId)}/revise`, {
     method: "POST",
     body: JSON.stringify({ instruction }),
   });
 }
 
-/** Removes one draft entry; the draft is null once it's empty. */
-export function deleteDraftRow(
+/** Removes one draft dish; the draft is null once it's empty. */
+export function deleteDraftDish(
   id: string,
-  rowId: string,
+  dishId: string,
 ): Promise<{ draft: LogDraft | null }> {
-  return requestJSON(`/drafts/${id}/rows/${rowId}`, { method: "DELETE" });
+  return requestJSON(`/drafts/${id}/dishes/${encodeURIComponent(dishId)}`, {
+    method: "DELETE",
+  });
 }
 
 /** Logs the given rows of a draft, or all of them when `rowIds` is omitted. */

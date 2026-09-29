@@ -14,14 +14,29 @@ PROVIDERS = {
 #
 # The agent: chat, questions, and whatever depends on the conversation.
 AGENT_MODEL = os.getenv("AGENT_MODEL", "openai/gpt-6-luna")
-# Extracting foods from a message: the best visual model only when there are
-# photos, since it's the most expensive.
-PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "google/gemini-3.8-flash")
-TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "openai/gpt-6-luna")
-# Matching extracted foods to the user's database: text only, structured output.
-RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "openai/gpt-6-luna")
+# Extracting foods from a message and resolving them against the database:
+# DeepSeek without reasoning, since both are mechanical and its reasoning only
+# adds latency and tokens.
+PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
+TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
+RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "deepseek/deepseek-v4.1-flash")
 
+# Every call reasons at low effort unless its model is listed here.
 REASONING_EFFORT = "low"
+NO_REASONING_MODELS = {"deepseek/deepseek-v4.1-flash"}
+
+
+def reasoning_extra_body(model_id: str) -> dict:
+    """The OpenRouter `extra_body` that controls reasoning for one model.
+
+    Turning it off is per model: a model used for both a reasoning-heavy and a
+    mechanical task would otherwise have to pick one. Set `effort` instead when
+    the model should reason, so its provider can spend the right amount.
+    """
+    if model_id in NO_REASONING_MODELS:
+        return {"reasoning": {"enabled": False}}
+    return {"reasoning": {"effort": REASONING_EFFORT}}
+
 
 # Display names, including models used in the past, for the usage page.
 MODEL_NAMES = {

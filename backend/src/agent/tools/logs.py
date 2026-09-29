@@ -214,6 +214,8 @@ def _apply_log_entry(user_id: str, entry: dict) -> str:
                     recipe_id=None,
                     meal_type=meal_type,  # type: ignore
                     log_for=log_for,
+                    dish_id=entry.get("dish_id"),
+                    dish_name=entry.get("dish_name"),
                 ),
                 user_id,
             )
@@ -227,6 +229,8 @@ def _apply_log_entry(user_id: str, entry: dict) -> str:
                     quantity=quantity,
                     meal_type=meal_type,  # type: ignore
                     log_for=log_for,
+                    dish_id=entry.get("dish_id"),
+                    dish_name=entry.get("dish_name"),
                 ),
                 user_id,
             )

@@ -39,6 +39,8 @@ CREATE TABLE public.logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   food_id uuid NOT NULL,
+  dish_id uuid,
+  dish_name text,
   quantity_g numeric,
   user_id uuid NOT NULL,
   quantity numeric,
@@ -146,4 +148,20 @@ CREATE TABLE public.recipe_ingredients (
   CONSTRAINT recipe_items_food_id_fkey FOREIGN KEY (food_id) REFERENCES public.ingredients(id),
   CONSTRAINT recipe_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT recipe_items_recipe_id_fkey FOREIGN KEY (recipe_id) REFERENCES public.recipes(id)
+);
+CREATE TABLE public.pipeline_runs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  user_id uuid NOT NULL,
+  day date,
+  message text,
+  outcome text,
+  outcome_message text,
+  total_ms integer,
+  total_cost numeric,
+  draft_id uuid,
+  steps jsonb NOT NULL,
+  CONSTRAINT pipeline_runs_pkey PRIMARY KEY (id),
+  CONSTRAINT pipeline_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT pipeline_runs_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES public.log_drafts(id) ON DELETE SET NULL
 );

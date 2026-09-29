@@ -17,6 +17,7 @@ import asyncio
 import base64
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import AsyncGenerator, TypeVar
@@ -55,13 +56,15 @@ LLM_MAX_COMPLETION_TOKENS = 16384
 EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured foods for a nutrition tracker. The user's local time is {now}.
 
 Return `dishes`: what the user calls each thing they ate ("pasta al pomodoro", "a cheeseburger with fries" is two dishes), each broken into its `components`.
-- Never estimate a composite dish as one food. Break it into the foods it is made of, one component each: spaghetti with tomato sauce is dry spaghetti, tomato sauce, olive oil and parmesan. Give every component its own eaten weight and nutrition, so the weights add up to the portion eaten.
+- Never estimate a composite dish as one food. Break it into the foods it is made of, one component each: spaghetti with tomato sauce is spaghetti, tomato sauce, olive oil and parmesan. Give every component its own eaten weight and nutrition, so the weights add up to the portion eaten.
 - A single food or drink is a dish with one component ("a banana", "an espresso", "a slice of bread", a branded packaged product): don't split it further.
 - Use the user's own words for a component only when they used them (`said`); leave it empty for components you derived.
 - When the user gives a weight or amount for the whole dish ("300 g of lasagna", "half a pizza"), spread it over the components in the dish's usual proportions. When they give one for a component, keep it exactly. When they give none, assume a typical single portion.
 - Photos: name each visible component and estimate its weight from the portion, the plate and the cutlery.
-- Use good sense about what a dish is really made of but nobody says or a photo can't show: cooking oil or butter, a drizzle of olive oil, dressing on a salad, sugar in a coffee, grated cheese on pasta, mayonnaise in a sandwich, bread served with the meal. Add the ones this dish normally has, in a realistic modest amount, and mark them `assumed`. Skip anything the user ruled out ("no oil", "senza zucchero"), anything already listed, and trace amounts such as salt, spices and herbs. Add few, only when you're fairly sure.
-- When the message corrects an entry already logged, return that entry as corrected as a single-component dish, and add nothing the correction doesn't ask for.
+- Use good sense about what a dish is really made of but nobody says or a photo can't show: cooking oil or butter, a drizzle of olive oil, dressing on a salad, sugar in a coffee, grated cheese on pasta, mayonnaise in a sandwich, bread served with the meal. Add the ones this dish normally has, in a realistic modest amount, and mark them `assumed`. `assumed` is only for those extras: the components that make up the dish the user named are never assumed, even when you named them yourself. Add at most one or two, only when you're fairly sure. Skip anything the user ruled out ("no oil", "senza zucchero"), anything already listed, and trace amounts such as salt, spices and herbs.
+- When the message corrects something already logged, return it as the current description shows it, changed as the correction asks; keep a whole saved recipe whole, and add nothing the correction doesn't ask for.
+- `state` is how each component's amount was measured, not whether the dish was cooked. When the user states a weight, keep their weight and its state (80 g of dry spaghetti is `raw`). When you estimate the portion, estimate the state it is eaten in. Oils, condiments, herbs and spices are always `raw`.
+- `name`, `state` and `per_100g` must describe the same amount; never name a component one way and report a weight in the other state.
 - Fill every field following its description. `per_100g` must be realistic for the component in the given `state`.
 - If the message does not describe anything eaten or drunk, return an empty `dishes` list."""
 
@@ -168,7 +171,11 @@ async def _complete(
             },
         },
         max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
-        extra_body={"reasoning": {"effort": providers.REASONING_EFFORT}},
+        # Extraction and resolution are estimation, not writing: sampling at a
+        # non-zero temperature makes the same message draft differently every
+        # run. Greedy keeps the draft reproducible.
+        temperature=0,
+        extra_body=providers.reasoning_extra_body(model_id),
     )
     usage = response.usage.model_dump() if response.usage else {}
     cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
@@ -266,7 +273,12 @@ async def _resolve(
     day: str,
     now: str,
 ) -> tuple[Resolution, float, dict]:
-    """Match each food to a candidate and decide how to log it, in one call."""
+    """Match each food to a candidate and decide how to log it, in one call.
+
+    A non-reasoning model occasionally omits a component. A missing row would
+    silently fall back to the extraction's own estimate, so ask once more with
+    the omissions spelled out before accepting a partial answer.
+    """
     dishes = logic.resolver_dishes(extraction, candidates, dish_recipes)
     messages = [
         {
@@ -280,18 +292,43 @@ async def _resolve(
     resolution, cost, usage = await _complete(
         user_id, providers.RESOLVE_MODEL, messages, Resolution
     )
-    return resolution, cost, {"dishes": dishes, "usage": usage}
+    missing = logic.missing_rows(extraction, resolution, dish_recipes)
+    if missing:
+        retry, retry_cost, retry_usage = await _complete(
+            user_id,
+            providers.RESOLVE_MODEL,
+            messages
+            + [
+                {
+                    "role": "user",
+                    "content": (
+                        "Return exactly one row per component: your answer was "
+                        f"missing items {missing}. Include every component."
+                    ),
+                }
+            ],
+            Resolution,
+        )
+        cost += retry_cost
+        usage = retry_usage
+        retry_missing = logic.missing_rows(extraction, retry, dish_recipes)
+        if len(retry_missing) < len(missing):
+            resolution, missing = retry, retry_missing
+    return resolution, cost, {"dishes": dishes, "usage": usage, "missing": missing}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
-async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
+async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
     """Run the pipeline, streaming every stage; the last step is a `DoneStep`."""
     started = time.perf_counter()
     total_cost = 0.0
     stage: StageName = "normalize"
     t = started
+    # Degradations that didn't stop the run, so they reach the client and the
+    # recorded sandbox run instead of only living in a row's note.
+    warnings: list[str] = []
 
     def done(outcome, message: str, draft: dict | None = None) -> DoneStep:
         return DoneStep(
@@ -300,6 +337,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             total_ms=_ms(started),
             total_cost=total_cost,
             draft=draft,
+            warnings=list(warnings),
         )
 
     try:
@@ -415,6 +453,14 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             now.strftime("%H:%M"), day == today,
         )
         enriched = [logic.enrich_row(row) for row in rows]
+        stage_warnings = []
+        missing = debug.get("missing") or []
+        if missing:
+            stage_warnings.append(
+                f"The resolver returned no row for component(s) {missing}; "
+                "they fell back to the extraction's estimate."
+            )
+        warnings.extend(stage_warnings)
         yield StageStep(
             name=stage,
             status="ok",
@@ -425,6 +471,7 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             cost=cost,
             model=providers.RESOLVE_MODEL,
             data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
+            warnings=stage_warnings,
         )
 
         # 6. Draft
@@ -446,6 +493,51 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         yield done("error", f"{stage} failed: {e}")
 
 
+async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
+    """Stream `_run`, and keep the whole sandbox run for debugging.
+
+    A QA run's every stage is recorded in `pipeline_runs`, so what extraction
+    handed the resolver (and what the resolver did with it) can be read back
+    long after the sandbox page is gone.
+    """
+    record = input.via == "sandbox"
+    steps: list[dict] = []
+    outcome: DoneStep | None = None
+    async for step in _run(input):
+        if record:
+            steps.append(step.model_dump(mode="json"))
+            if isinstance(step, DoneStep):
+                outcome = step
+        yield step
+    if record:
+        await asyncio.to_thread(_record_run, input, steps, outcome)
+
+
+def _record_run(
+    input: PipelineInput, steps: list[dict], outcome: DoneStep | None
+) -> None:
+    """Persist one sandbox run; best-effort, since it only serves debugging."""
+    normalized = next(
+        (s["data"] for s in steps if s.get("name") == "normalize" and s.get("data")),
+        {},
+    )
+    draft = outcome.draft if outcome else None
+    try:
+        repository.insert_pipeline_run(
+            user_id=input.user_id,
+            day=normalized.get("day") or input.day,
+            message=normalized.get("text") or None,
+            steps=steps,
+            outcome=outcome.outcome if outcome else "error",
+            outcome_message=outcome.message if outcome else "",
+            total_ms=outcome.total_ms if outcome else 0,
+            total_cost=outcome.total_cost if outcome else 0.0,
+            draft_id=draft["id"] if draft else None,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Could not record the sandbox run")
+
+
 # ── Drafts ────────────────────────────────────────────────────────────────────
 
 
@@ -456,6 +548,7 @@ def _serialize(draft: dict) -> dict:
         "day": draft["day"].isoformat(),
         "status": draft["status"],
         "message": draft["message"],
+        "via": draft.get("via"),
         "rows": [logic.enrich_row(row) for row in draft["rows"]],
     }
 
@@ -543,23 +636,27 @@ async def _revise(
     )
 
 
-async def revise_draft_row(
-    user_id: str, draft_id: UUID, row_id: str, instruction: str
+async def revise_draft_dish(
+    user_id: str, draft_id: UUID, dish_id: str, instruction: str
 ) -> dict:
-    """Apply a correction in the user's words to one draft row."""
+    """Apply a correction in the user's words to one dish of a draft.
+
+    A dish is a component's group, or a standalone row; `dish_id` is what
+    `logic.group_key` returns for it.
+    """
     draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
-    row = next((r for r in draft["rows"] if r["id"] == row_id), None)
-    if row is None:
-        raise DraftError(f"Unknown row '{row_id}'.")
+    rows = [r for r in draft["rows"] if logic.group_key(r) == dish_id]
+    if not rows:
+        raise DraftError(f"Unknown dish '{dish_id}'.")
+    current, meal_type, hhmm, said = logic.describe_rows(rows)
     new_rows = await _revise(
-        user_id, draft["day"].isoformat(), logic.row_label(row), row["meal_type"],
-        row["log_for"][-5:], row.get("said"), instruction,
+        user_id, draft["day"].isoformat(), current, meal_type, hhmm, said, instruction
     )
     updated = await asyncio.to_thread(
         repository.update_pending_rows,
         user_id,
         draft_id,
-        lambda rows: logic.replace_row(rows, row_id, new_rows),
+        lambda rows: logic.replace_dish(rows, dish_id, new_rows),
     )
     return _serialize(updated)
 
@@ -595,9 +692,9 @@ def delete_logs(user_id: str, log_ids: list[str]) -> dict:
     return tools.delete_logs_tool(user_id=user_id, log_ids=log_ids)
 
 
-def delete_draft_row(user_id: str, draft_id: UUID, row_id: str) -> dict | None:
-    """Remove one row; returns the draft, or None once its last row is gone."""
-    draft = repository.remove_row(user_id, draft_id, row_id)
+def delete_draft_dish(user_id: str, draft_id: UUID, dish_id: str) -> dict | None:
+    """Remove one dish; returns the draft, or None once its last dish is gone."""
+    draft = repository.remove_dish(user_id, draft_id, dish_id)
     return _serialize(draft) if draft else None
 
 
@@ -624,10 +721,21 @@ def confirm_draft(
     except Exception:
         repository.put_back_rows(draft_id, rows)
         raise
-    result = tools.log_entries_tool(
-        user_id=user_id, entries=[logic.log_entry(row) for row in rows]
-    )
+    result = tools.log_entries_tool(user_id=user_id, entries=_entries(rows))
     return {"created_ingredients": created, **result}
+
+
+def _entries(rows: list[dict]) -> list[dict]:
+    """The `log_entries` entries for a batch of rows, grouping each component
+    dish under one fresh dish id so it stays a dish once logged."""
+    dishes: dict[str, str] = {}
+    entries = []
+    for row in rows:
+        dish_id = None
+        if row.get("dish_id") and logic.alternative(row)["kind"] != "recipe":
+            dish_id = dishes.setdefault(row["dish_id"], str(uuid.uuid4()))
+        entries.append(logic.log_entry(row, dish_id, row.get("dish")))
+    return entries
 
 
 def _create_new_ingredients(user_id: str, rows: list[dict]) -> list[dict]:
@@ -653,7 +761,5 @@ def _create_new_ingredients(user_id: str, rows: list[dict]) -> list[dict]:
 
 def _write_rows(user_id: str, rows: list[dict]) -> dict:
     created = _create_new_ingredients(user_id, rows)
-    result = tools.log_entries_tool(
-        user_id=user_id, entries=[logic.log_entry(row) for row in rows]
-    )
+    result = tools.log_entries_tool(user_id=user_id, entries=_entries(rows))
     return {"created_ingredients": created, **result}

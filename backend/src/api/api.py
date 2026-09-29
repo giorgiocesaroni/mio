@@ -175,6 +175,7 @@ async def sandbox_log_endpoint(
         user_id=user_id,
         message=message,
         day=body.get("day"),
+        via="sandbox",
     )
 
     async def event_stream():
@@ -201,34 +202,34 @@ async def list_entries_endpoint(
     return await asyncio.to_thread(pipeline.list_day_entries, user_id, day)
 
 
-@app.post("/drafts/{draft_id}/rows/{row_id}/revise")
-async def revise_draft_row_endpoint(
+@app.post("/drafts/{draft_id}/dishes/{dish_id}/revise")
+async def revise_draft_dish_endpoint(
     draft_id: UUID,
-    row_id: str,
+    dish_id: str,
     request: Request,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
-    """Applies a correction in the user's words to one draft entry."""
+    """Applies a correction in the user's words to one draft dish."""
     body = await request.json()
     try:
-        return await pipeline.revise_draft_row(
-            user_id, draft_id, row_id, body.get("instruction", "")
+        return await pipeline.revise_draft_dish(
+            user_id, draft_id, dish_id, body.get("instruction", "")
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/drafts/{draft_id}/rows/{row_id}")
-async def delete_draft_row_endpoint(
+@app.delete("/drafts/{draft_id}/dishes/{dish_id}")
+async def delete_draft_dish_endpoint(
     draft_id: UUID,
-    row_id: str,
+    dish_id: str,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
-    """Removes one draft entry; returns the draft, or null once it's empty."""
+    """Removes one draft dish; returns the draft, or null once it's empty."""
     try:
         return {
             "draft": await asyncio.to_thread(
-                pipeline.delete_draft_row, user_id, draft_id, row_id
+                pipeline.delete_draft_dish, user_id, draft_id, dish_id
             )
         }
     except DraftError as e:

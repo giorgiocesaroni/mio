@@ -108,6 +108,8 @@ export type SandboxStageStep = {
   cost: number;
   model: string | null;
   data: unknown;
+  // Degradations the stage survived, e.g. a food the resolver skipped.
+  warnings: string[];
 };
 
 export type SandboxDoneStep = {
@@ -117,6 +119,7 @@ export type SandboxDoneStep = {
   total_ms: number;
   total_cost: number;
   draft: LogDraft | null;
+  warnings: string[];
 };
 
 export type SandboxStep = SandboxStageStep | SandboxDoneStep | ErrorStep;
@@ -156,8 +159,13 @@ export type DraftUnit = "grams" | "serving" | "recipe";
 export type DraftRow = {
   id: string;
   said: string;
+  // The draft-local group this row belongs to, when it is a component of a
+  // dish logged as several foods; null for a standalone food.
+  dish_id?: string | null;
   // The dish this row is a component of, when it was logged as several foods.
   dish?: string | null;
+  // A usual component nobody mentioned (cooking oil, dressing...).
+  assumed?: boolean;
   alternatives: DraftAlternative[];
   target: string;
   quantity: number;
@@ -177,6 +185,8 @@ export type LogDraft = {
   day: string;
   status: "pending" | "confirmed" | "discarded";
   message: string | null;
+  // What created it; sandbox runs are debug drafts, kept out of the day's list.
+  via: "pipeline" | "agent" | "sandbox" | null;
   rows: DraftRow[];
 };
 
@@ -187,6 +197,9 @@ export type DayLog = {
   log_created_at: string;
   log_food_id: string;
   log_recipe_id: string | null;
+  // Groups the component rows of one dish, when it was logged as several foods.
+  log_dish_id: string | null;
+  log_dish_name: string | null;
   log_quantity_g: number | null;
   log_serving_size_id: string | null;
   log_quantity: number | null;

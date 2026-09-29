@@ -16,7 +16,7 @@ export const STAGES: { name: SandboxStageName; label: string; kind: string }[] =
     { name: "extract", label: "Extract", kind: "LLM" },
     { name: "retrieve", label: "Retrieve", kind: "code" },
     { name: "resolve", label: "Resolve", kind: "LLM" },
-    { name: "draft", label: "Draft", kind: "database" },
+    { name: "draft", label: "Draft", kind: "preview" },
   ];
 
 export type Run = {
@@ -187,6 +187,18 @@ function StageRow({
             {stage.summary}
           </p>
         ) : null}
+        {stage?.warnings?.length ? (
+          <ul className="grid gap-1 rounded-md bg-amber-500/10 p-2">
+            {stage.warnings.map((warning) => (
+              <li
+                key={warning}
+                className="text-sm text-amber-700 dark:text-amber-400"
+              >
+                {warning}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {jev ? (
           <div className="mt-1 rounded-md border p-3">
             <JevAnswers jev={jev} />
@@ -271,6 +283,18 @@ export function PipelineRun({ run }: { run: Run }) {
         <p className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
           {run.done.message}
         </p>
+      ) : null}
+      {run.done?.warnings?.length ? (
+        <ul className="grid gap-1 rounded-md bg-amber-500/10 p-3">
+          {run.done.warnings.map((warning) => (
+            <li
+              key={warning}
+              className="text-sm text-amber-700 dark:text-amber-400"
+            >
+              {warning}
+            </li>
+          ))}
+        </ul>
       ) : null}
       {run.error ? (
         <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
