@@ -5,6 +5,8 @@ A draft row looks like:
     {
       "id": "r0",
       "said": "cotolette AIA",               # the user's words
+      "dish": null,                          # the dish this is a component of, if several
+      "assumed": false,                      # a usual component nobody mentioned
       "alternatives": [                      # what the user may pick from
         {"key": "c0", "kind": "ingredient", "id": "…", "name": "AIA chicken cutlet",
          "brand": "AIA", "state": "raw", "per_100g": {...},
@@ -33,8 +35,11 @@ import re
 
 from src.pipeline.models import (
     DraftError,
+    ExtractedDish,
     ExtractedItem,
+    Extraction,
     Resolution,
+    ResolvedRecipe,
     ResolvedRow,
     StageStep,
 )
@@ -116,6 +121,16 @@ def amount(item: ExtractedItem) -> str:
             return f"{item.quantity:g} {label}{plural}"
 
 
+def extraction_summary(extraction: Extraction) -> str:
+    def dish(d: ExtractedDish) -> str:
+        parts = ", ".join(
+            f"{amount(c)} {c.name}{' (assumed)' if c.assumed else ''}" for c in d.components
+        )
+        return parts if len(d.components) == 1 else f"{d.name} ({parts})"
+
+    return "; ".join(dish(d) for d in extraction.dishes)
+
+
 # ── Routing ───────────────────────────────────────────────────────────────────
 
 ROUTE_INTENTS = {
@@ -193,6 +208,14 @@ def search_queries(item: ExtractedItem) -> list[str]:
     return list(dict.fromkeys(q for q in (item.said.strip(), normalized) if q))
 
 
+def dish_queries(dish: ExtractedDish) -> list[str]:
+    """Where a dish is more than one food, its saved recipes are searched by
+    the dish's name; a single food is searched like any other item."""
+    if len(dish.components) < 2:
+        return []
+    return list(dict.fromkeys(q for q in (dish.said.strip(), dish.name) if q))
+
+
 def closest(found: list) -> list:
     """Dedupe results from several queries, keeping each entry's best distance."""
     best: dict = {}
@@ -238,26 +261,42 @@ def recipe_candidate(key: str, r, nutrition: dict | None) -> dict:
     }
 
 
-def resolver_foods(
-    items: list[ExtractedItem], candidates: list[list[dict]]
+def resolver_dishes(
+    extraction: Extraction,
+    candidates: list[list[dict]],
+    dish_recipes: list[list[dict]],
 ) -> list[dict]:
-    """What the resolver sees: each food with its candidates, ids replaced by keys."""
-    foods = []
-    for item, cands in zip(items, candidates):
-        foods.append(
-            {
-                "said": item.said or None,
-                "name": item.name,
-                "brand": item.brand,
-                "amount": amount(item),
-                "estimated_grams": item.grams,
-                "estimated_state": item.state,
-                "meal_type": item.meal_type,
-                "time": item.time,
-                "candidates": [_resolver_candidate(c) for c in cands],
-            }
-        )
-    return foods
+    """What the resolver sees: each dish with its saved-recipe candidates and
+    its components with theirs, ids replaced by keys. A component's `item` is
+    its index among all components."""
+    dishes = []
+    index = 0
+    for dish, recipes in zip(extraction.dishes, dish_recipes):
+        components = []
+        for item in dish.components:
+            components.append(
+                {
+                    "item": index,
+                    "said": item.said or None,
+                    "name": item.name,
+                    "brand": item.brand,
+                    "amount": amount(item),
+                    "estimated_grams": item.grams,
+                    "estimated_state": item.state,
+                    "assumed": item.assumed,
+                    "meal_type": item.meal_type,
+                    "time": item.time,
+                    "candidates": [_resolver_candidate(c) for c in candidates[index]],
+                }
+            )
+            index += 1
+        entry = {"said": dish.said or None, "name": dish.name}
+        if recipes:
+            entry["estimated_total_grams"] = round(sum(c.grams for c in dish.components))
+            entry["saved_recipes"] = [_resolver_candidate(c) for c in recipes]
+        entry["components"] = components
+        dishes.append(entry)
+    return dishes
 
 
 def _resolver_candidate(c: dict) -> dict:
@@ -362,49 +401,116 @@ def _validated(
     return fields, repairs
 
 
+def _when(
+    resolved_time: str | None,
+    resolved_meal: str | None,
+    item: ExtractedItem,
+    day: str,
+    now_hhmm: str,
+    is_today: bool,
+) -> tuple[str, str]:
+    """(meal type, 'day HH:MM') from the resolver's answer, then the extraction's."""
+    hhmm = parse_hhmm(resolved_time) or parse_hhmm(item.time)
+    if not hhmm:
+        meal = item.meal_type
+        hhmm = now_hhmm if is_today else (MEAL_DEFAULT_TIMES[meal] if meal else "12:00")
+    meal_type = (
+        resolved_meal if resolved_meal in MEAL_TYPES
+        else item.meal_type or infer_meal_type(hhmm)
+    )
+    return meal_type, f"{day} {hhmm}"
+
+
+def _recipe_row(
+    dish: ExtractedDish,
+    recipes: list[dict],
+    resolved: ResolvedRecipe | None,
+    day: str,
+    now_hhmm: str,
+    is_today: bool,
+) -> dict | None:
+    """The row for a dish the resolver matched to a saved recipe, or None when
+    it didn't or the match isn't valid, so the dish is logged by its components."""
+    if resolved is None or not math.isfinite(resolved.quantity) or resolved.quantity <= 0:
+        return None
+    if not any(r["key"] == resolved.target for r in recipes):
+        return None
+    alternatives = [{k: r[k] for k in _ALTERNATIVE_FIELDS if k in r} for r in recipes]
+    alternatives.sort(key=lambda a: a["key"] != resolved.target)
+    meal_type, log_for = _when(
+        resolved.time, resolved.meal_type, dish.components[0], day, now_hhmm, is_today
+    )
+    return {
+        "said": dish.said,
+        "dish": dish.name,
+        "alternatives": alternatives,
+        "auto_target": resolved.target,
+        "target": resolved.target,
+        "unit": "recipe",
+        "serving_size_id": None,
+        "quantity": resolved.quantity,
+        "item_state": "cooked",
+        "confidence": resolved.confidence,
+        "note": resolved.note,
+        "meal_type": meal_type,
+        "log_for": log_for,
+        "grams_estimated": False,
+    }
+
+
 def draft_rows(
-    items: list[ExtractedItem],
+    extraction: Extraction,
     candidates: list[list[dict]],
+    dish_recipes: list[list[dict]],
     resolution: Resolution,
     day: str,
     now_hhmm: str,
     is_today: bool,
 ) -> list[dict]:
     by_item = {r.item: r for r in resolution.rows}
+    by_dish = {r.dish: r for r in resolution.recipes}
     rows = []
-    for i, (item, cands) in enumerate(zip(items, candidates)):
-        alternatives = [
-            {k: c[k] for k in _ALTERNATIVE_FIELDS if k in c} for c in cands
-        ] + [_new_alternative(item)]
-        resolved = by_item.get(i)
-        fields, repairs = _validated(resolved, item, alternatives)
-
-        hhmm = parse_hhmm(resolved.time if resolved else None) or parse_hhmm(item.time)
-        if not hhmm:
-            meal = item.meal_type
-            hhmm = now_hhmm if is_today else (MEAL_DEFAULT_TIMES[meal] if meal else "12:00")
-        meal_type = (
-            resolved.meal_type if resolved and resolved.meal_type in MEAL_TYPES
-            else item.meal_type or infer_meal_type(hhmm)
+    index = 0
+    for d, dish in enumerate(extraction.dishes):
+        recipe = _recipe_row(
+            dish, dish_recipes[d], by_dish.get(d), day, now_hhmm, is_today
         )
+        if recipe:
+            rows.append(recipe)
+            index += len(dish.components)
+            continue
+        for item in dish.components:
+            cands = candidates[index]
+            alternatives = [
+                {k: c[k] for k in _ALTERNATIVE_FIELDS if k in c} for c in cands
+            ] + [_new_alternative(item)]
+            resolved = by_item.get(index)
+            fields, repairs = _validated(resolved, item, alternatives)
+            meal_type, log_for = _when(
+                resolved.time if resolved else None,
+                resolved.meal_type if resolved else None,
+                item, day, now_hhmm, is_today,
+            )
 
-        # The chosen match first, then the other candidates in retrieval order.
-        alternatives.sort(key=lambda a: a["key"] != fields["target"])
-        rows.append(
-            {
-                "id": f"r{i}",
-                "said": item.said,
-                "alternatives": alternatives,
-                "auto_target": fields["target"],
-                **fields,
-                "confidence": "low" if repairs else (resolved.confidence if resolved else "low"),
-                "note": "; ".join(repairs) + "." if repairs else (resolved.note if resolved else None),
-                "meal_type": meal_type,
-                "log_for": f"{day} {hhmm}",
-                "grams_estimated": fields["unit"] == "grams" and item.unit != "g",
-            }
-        )
-    return rows
+            # The chosen match first, then the other candidates in retrieval order.
+            alternatives.sort(key=lambda a: a["key"] != fields["target"])
+            rows.append(
+                {
+                    "said": item.said,
+                    "dish": dish.name if len(dish.components) > 1 else None,
+                    "assumed": item.assumed,
+                    "alternatives": alternatives,
+                    "auto_target": fields["target"],
+                    **fields,
+                    "confidence": "low" if repairs else (resolved.confidence if resolved else "low"),
+                    "note": "; ".join(repairs) + "." if repairs else (resolved.note if resolved else None),
+                    "meal_type": meal_type,
+                    "log_for": log_for,
+                    "grams_estimated": fields["unit"] == "grams" and item.unit != "g",
+                }
+            )
+            index += 1
+    return [{"id": f"r{n}", **row} for n, row in enumerate(rows)]
 
 
 def alternative(row: dict, key: str | None = None) -> dict:
@@ -454,6 +560,8 @@ def row_flags(row: dict) -> list[str]:
         flags.append(
             f"Amount is {row['item_state']} weight, but the entry is {target['state']}"
         )
+    if row.get("assumed") and untouched:
+        flags.append("Assumed: not mentioned, but usual for this dish")
     if row["grams_estimated"] and not row.get("user_edited"):
         flags.append("Weight is estimated")
     return flags

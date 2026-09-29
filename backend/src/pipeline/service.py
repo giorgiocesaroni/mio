@@ -40,7 +40,6 @@ from src.pipeline.models import (
     DoneStep,
     DraftError,
     DraftVia,
-    ExtractedItem,
     Extraction,
     Resolution,
     PipelineInput,
@@ -53,20 +52,33 @@ from src.pipeline.models import (
 # effort, so it's generous; only the tokens used are paid for.
 LLM_MAX_COMPLETION_TOKENS = 16384
 
-EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured items for a nutrition tracker. The user's local time is {now}.
+EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured foods for a nutrition tracker. The user's local time is {now}.
 
-- One item per distinct food or drink. Split a meal into its components only when the user lists them; keep a dish they name (e.g. "lasagna", "espresso zuccherato") as one item, since it may be one of their saved recipes.
-- Keep the user's quantities. When they give none, assume a typical single portion.
-- Fill every field following its description. `per_100g` must be realistic for the food in the given `state`.
-- If the message does not describe anything eaten or drunk, return an empty `items` list."""
+Return `dishes`: what the user calls each thing they ate ("pasta al pomodoro", "a cheeseburger with fries" is two dishes), each broken into its `components`.
+- Never estimate a composite dish as one food. Break it into the foods it is made of, one component each: spaghetti with tomato sauce is dry spaghetti, tomato sauce, olive oil and parmesan. Give every component its own eaten weight and nutrition, so the weights add up to the portion eaten.
+- A single food or drink is a dish with one component ("a banana", "an espresso", "a slice of bread", a branded packaged product): don't split it further.
+- Use the user's own words for a component only when they used them (`said`); leave it empty for components you derived.
+- When the user gives a weight or amount for the whole dish ("300 g of lasagna", "half a pizza"), spread it over the components in the dish's usual proportions. When they give one for a component, keep it exactly. When they give none, assume a typical single portion.
+- Photos: name each visible component and estimate its weight from the portion, the plate and the cutlery.
+- Use good sense about what a dish is really made of but nobody says or a photo can't show: cooking oil or butter, a drizzle of olive oil, dressing on a salad, sugar in a coffee, grated cheese on pasta, mayonnaise in a sandwich, bread served with the meal. Add the ones this dish normally has, in a realistic modest amount, and mark them `assumed`. Skip anything the user ruled out ("no oil", "senza zucchero"), anything already listed, and trace amounts such as salt, spices and herbs. Add few, only when you're fairly sure.
+- When the message corrects an entry already logged, return that entry as corrected as a single-component dish, and add nothing the correction doesn't ask for.
+- Fill every field following its description. `per_100g` must be realistic for the component in the given `state`.
+- If the message does not describe anything eaten or drunk, return an empty `dishes` list."""
 
 RESOLVE_PROMPT = """You decide how foods a user ate are logged in their nutrition tracker. The user's local time is {now}; the log is for {day}. Their message was: {message}
 
-For each food in `foods` (by index), return exactly one row:
+`dishes` lists what they ate, each broken into `components`. A dish made of several components also lists `saved_recipes`, the user's saved recipes that look like it.
+
+First, for each dish with `saved_recipes`: when the dish is one of them (the user named it, or it is clearly the same dish), add one entry to `recipes` and return no rows for that dish's components. Otherwise add nothing for it.
+- `target`: the key of that saved recipe. A recipe that merely resembles the dish, with different substance, is not a match.
+- `quantity`: the fraction of the whole recipe eaten: as the user said it (half = 0.5, a portion of a multi-portion dish is a fraction); otherwise the dish's `estimated_total_grams` divided by the recipe's `total_grams`.
+- `meal_type`, `time`, `confidence` and `note`: as below.
+
+Then, for every component of the other dishes (by `item` index), return exactly one row:
 - `target`: the key of the candidate that is the same food, or "new" when none is. The user's own entries come first: a matching brand is strong evidence, and raw vs cooked entries of the same food are still the same food. A saved recipe matches when the user names that dish.
 - `unit` and `quantity`: when the user stated a weight, "grams" with exactly that weight. Otherwise "serving" with the target's `serving` key when they counted units the entry defines (slices, pieces, cutlets...); "recipe" with a fraction when they ate part of a saved recipe (half = 0.5, a portion of a multi-portion dish is a fraction); otherwise "grams" with the eaten weight, starting from `estimated_grams`.
 - `weight_state`: whether the logged amount is raw or cooked weight. If the target is raw but the user ate it cooked (or the reverse), convert the grams to the target's state and set `weight_state` to it.
-- `meal_type` and `time` (HH:MM): as stated in the message; otherwise infer them sensibly from the local time.
+- `meal_type` and `time` (HH:MM): as stated in the message; otherwise infer them sensibly from the local time. Every component of a dish shares them.
 - `confidence`: "high" when the match and amount are clear; "medium" when you had to assume something; "low" when unsure.
 - `note`: when confidence isn't high, one short sentence for the user, in the language of their message, saying what you assumed (e.g. which variant, or an estimated weight). Otherwise null."""
 
@@ -193,30 +205,40 @@ async def _extract(
     return await _complete(user_id, _extract_model(images), messages, Extraction)
 
 
-async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]]:
-    async def search(query: str) -> tuple[list, list]:
+async def _retrieve(
+    user_id: str, extraction: Extraction
+) -> tuple[list[list[dict]], list[list[dict]]]:
+    """Candidates for every component (ingredients and recipes), and the saved
+    recipes similar to each multi-component dish (none for a single food)."""
+
+    async def search(query: str, ingredients: bool) -> tuple[list, list]:
         # One embedding per query, shared by both searches.
         embedding = await asyncio.to_thread(embeddings.generate_embedding, query)
-        return await asyncio.gather(
+        found = await asyncio.gather(
             asyncio.to_thread(
                 agent_repository.search_ingredients,
                 query, logic.CANDIDATES_PER_KIND, user_id, embedding,
-            ),
+            )
+            if ingredients
+            else asyncio.sleep(0, []),
             asyncio.to_thread(
                 agent_repository.search_recipes,
                 query, logic.CANDIDATES_PER_KIND, user_id, embedding,
             ),
         )
+        return found[0], found[1]
 
-    async def candidates_for(item: ExtractedItem) -> list[dict]:
-        results = await asyncio.gather(*(search(q) for q in logic.search_queries(item)))
-        ingredients = logic.closest([i for found, _ in results for i in found])
+    async def candidates_for(queries: list[str], ingredients: bool) -> list[dict]:
+        if not queries:
+            return []
+        results = await asyncio.gather(*(search(q, ingredients) for q in queries))
+        found_ingredients = logic.closest([i for found, _ in results for i in found])
         recipes = logic.closest([r for _, found in results for r in found])
         nutrition = await asyncio.to_thread(
             repository.recipe_nutrition, [str(r.id) for r in recipes], user_id
         )
         candidates = [
-            logic.ingredient_candidate(f"c{n}", i) for n, i in enumerate(ingredients)
+            logic.ingredient_candidate(f"c{n}", i) for n, i in enumerate(found_ingredients)
         ]
         candidates += [
             logic.recipe_candidate(f"c{len(candidates) + n}", r, nutrition.get(str(r.id)))
@@ -224,19 +246,28 @@ async def _retrieve(user_id: str, items: list[ExtractedItem]) -> list[list[dict]
         ]
         return candidates
 
-    return list(await asyncio.gather(*(candidates_for(item) for item in items)))
+    items, dishes = await asyncio.gather(
+        asyncio.gather(
+            *(candidates_for(logic.search_queries(i), True) for i in extraction.items)
+        ),
+        asyncio.gather(
+            *(candidates_for(logic.dish_queries(d), False) for d in extraction.dishes)
+        ),
+    )
+    return list(items), list(dishes)
 
 
 async def _resolve(
     user_id: str,
     text: str,
-    items: list[ExtractedItem],
+    extraction: Extraction,
     candidates: list[list[dict]],
+    dish_recipes: list[list[dict]],
     day: str,
     now: str,
 ) -> tuple[Resolution, float, dict]:
     """Match each food to a candidate and decide how to log it, in one call."""
-    foods = logic.resolver_foods(items, candidates)
+    dishes = logic.resolver_dishes(extraction, candidates, dish_recipes)
     messages = [
         {
             "role": "system",
@@ -244,12 +275,12 @@ async def _resolve(
                 now=now, day=day, message=json.dumps(text or "(photo only)")
             ),
         },
-        {"role": "user", "content": json.dumps({"foods": foods}, ensure_ascii=False)},
+        {"role": "user", "content": json.dumps({"dishes": dishes}, ensure_ascii=False)},
     ]
     resolution, cost, usage = await _complete(
         user_id, providers.RESOLVE_MODEL, messages, Resolution
     )
-    return resolution, cost, {"foods": foods, "usage": usage}
+    return resolution, cost, {"dishes": dishes, "usage": usage}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -329,12 +360,11 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         yield StageStep(
             name=stage,
             status="ok",
-            summary=f"{len(items)} item(s): "
-            + ", ".join(f"{logic.amount(i)} {i.name}" for i in items),
+            summary=f"{len(items)} item(s): {logic.extraction_summary(extraction)}",
             ms=_ms(t),
             cost=cost,
             model=_extract_model(images),
-            data={"items": [i.model_dump() for i in items], "usage": usage},
+            data={"dishes": [d.model_dump() for d in extraction.dishes], "usage": usage},
         )
         if not items:
             yield done("nothing", "No food found in the message.")
@@ -343,13 +373,25 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 4. Retrieve
         stage = "retrieve"
         t = time.perf_counter()
-        candidates = await _retrieve(input.user_id, items)
+        candidates, dish_recipes = await _retrieve(input.user_id, extraction)
+        dish_searches = [
+            (dish, found)
+            for dish, found in zip(extraction.dishes, dish_recipes)
+            if logic.dish_queries(dish)
+        ]
         yield StageStep(
             name=stage,
             status="ok",
-            summary=", ".join(f"{item.name}: {len(c)}" for item, c in zip(items, candidates)),
+            summary=", ".join(
+                [f"{dish.name}: {len(found)}" for dish, found in dish_searches]
+                + [f"{item.name}: {len(c)}" for item, c in zip(items, candidates)]
+            ),
             ms=_ms(t),
             data=[
+                {"dish": dish.name, "queries": logic.dish_queries(dish), "candidates": found}
+                for dish, found in dish_searches
+            ]
+            + [
                 {"item": item.name, "queries": logic.search_queries(item), "candidates": c}
                 for item, c in zip(items, candidates)
             ],
@@ -361,14 +403,16 @@ async def run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
-            items,
+            extraction,
             candidates,
+            dish_recipes,
             day,
             now.strftime("%Y-%m-%d %H:%M"),
         )
         total_cost += cost
         rows = logic.draft_rows(
-            items, candidates, resolution, day, now.strftime("%H:%M"), day == today
+            extraction, candidates, dish_recipes, resolution, day,
+            now.strftime("%H:%M"), day == today,
         )
         enriched = [logic.enrich_row(row) for row in rows]
         yield StageStep(
@@ -488,14 +532,14 @@ async def _revise(
     )
     if not extraction.items:
         raise DraftError("Couldn't tell what to change; try rephrasing.")
-    candidates = await _retrieve(user_id, extraction.items)
+    candidates, dish_recipes = await _retrieve(user_id, extraction)
     resolution, _, _ = await _resolve(
-        user_id, message, extraction.items, candidates, day,
+        user_id, message, extraction, candidates, dish_recipes, day,
         now.strftime("%Y-%m-%d %H:%M"),
     )
     return logic.draft_rows(
-        extraction.items, candidates, resolution, day, now.strftime("%H:%M"),
-        day == now.strftime("%Y-%m-%d"),
+        extraction, candidates, dish_recipes, resolution, day,
+        now.strftime("%H:%M"), day == now.strftime("%Y-%m-%d"),
     )
 
 

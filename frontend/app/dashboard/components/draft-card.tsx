@@ -118,6 +118,11 @@ function DraftEntryCard({ draft, row }: { draft: LogDraft; row: DraftRow }) {
             <p className="min-w-0 truncate font-medium text-foreground">
               <EntryPill>Draft</EntryPill>
               {target.name}
+              {row.dish ? (
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {row.dish}
+                </span>
+              ) : null}
               {row.flags.length ? (
                 <Tooltip>
                   <TooltipTrigger asChild>

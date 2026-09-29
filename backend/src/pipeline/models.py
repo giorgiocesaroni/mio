@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 import src.agent.models as agent_models
 
@@ -50,12 +50,39 @@ class ExtractedItem(BaseModel):
     per_100g: Per100g = Field(
         description="Typical nutrition facts per 100 g of this food in that state."
     )
+    assumed: bool = Field(
+        description="True when this component was added because the dish normally has it (cooking oil, dressing, cheese on top...) but the user didn't mention it and it isn't visible in a photo. False for everything the user said or the photo shows."
+    )
+
+
+class ExtractedDish(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    said: str = Field(
+        description="The user's own words for the dish, copied verbatim in their language, e.g. 'pasta al pomodoro'. Empty string when the dish is only visible in a photo."
+    )
+    name: str = Field(
+        description="Short, generic, English, lowercase name of the dish, e.g. 'spaghetti with tomato sauce'. For a single food or drink, the same as its component's name."
+    )
+    components: list[ExtractedItem] = Field(
+        description="The foods the dish is made of, each with its own eaten weight and nutrition. A single food or drink is a dish with exactly one component."
+    )
 
 
 class Extraction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[ExtractedItem]
+    dishes: list[ExtractedDish]
+
+    @model_validator(mode="after")
+    def _drop_empty_dishes(self):
+        self.dishes = [d for d in self.dishes if d.components]
+        return self
+
+    @property
+    def items(self) -> list[ExtractedItem]:
+        """Every component of every dish, in order; an item's index is its position here."""
+        return [c for d in self.dishes for c in d.components]
 
 
 # ── Resolution ────────────────────────────────────────────────────────────────
@@ -86,9 +113,26 @@ class ResolvedRow(BaseModel):
     )
 
 
+class ResolvedRecipe(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dish: int = Field(description="Index of the dish in `dishes`.")
+    target: str = Field(description="Key of the dish's saved recipe that is the same dish.")
+    quantity: float = Field(description="Fraction of the whole recipe eaten.")
+    meal_type: agent_models.MealType
+    time: str = Field(description="Local time of the meal, HH:MM.")
+    confidence: Literal["high", "medium", "low"]
+    note: str | None = Field(
+        description="When confidence isn't high: one short sentence for the user, in their language, saying what was assumed. Otherwise null."
+    )
+
+
 class Resolution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    recipes: list[ResolvedRecipe] = Field(
+        description="Dishes logged as one of the user's saved recipes; their components get no row."
+    )
     rows: list[ResolvedRow]
 
 

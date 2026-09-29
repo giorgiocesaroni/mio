@@ -156,6 +156,8 @@ export type DraftUnit = "grams" | "serving" | "recipe";
 export type DraftRow = {
   id: string;
   said: string;
+  // The dish this row is a component of, when it was logged as several foods.
+  dish?: string | null;
   alternatives: DraftAlternative[];
   target: string;
   quantity: number;
