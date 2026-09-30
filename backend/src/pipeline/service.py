@@ -606,34 +606,129 @@ def list_day_entries(user_id: str, day: str) -> dict:
 
 async def _revise(
     user_id: str, day: str, current: str, meal_type: str, hhmm: str,
-    said: str | None, instruction: str,
+    said: str | None, instruction: str, draft_id: UUID | None = None,
 ) -> list[dict]:
     """Rows for an entry after a correction in the user's words.
 
     The entry and the correction go through the same extract → retrieve →
     resolve steps as a new log, so the correction can switch to a food that
     wasn't among the original matches, and foods it adds become extra rows.
+    Only extraction sees the correction; the resolver gets its result.
+
+    Every revision is recorded in `pipeline_runs`, the correction as its
+    message, so a bad edit can be read back.
     """
     instruction = instruction.strip()
     if not instruction:
         raise DraftError("Describe what should change.")
-    timezone = agent_repository.get_user_timezone(user_id)
-    now = datetime.datetime.now(tz=ZoneInfo(timezone))
-    message = logic.revision_message(current, meal_type, hhmm, said, instruction)
-    extraction, _, _ = await _extract(
-        user_id, message, [], now.strftime("%Y-%m-%d %H:%M")
+    started = time.perf_counter()
+    steps: list[StageStep] = []
+    stage: StageName = "extract"
+    t = started
+    try:
+        timezone = agent_repository.get_user_timezone(user_id)
+        now = datetime.datetime.now(tz=ZoneInfo(timezone))
+        message = logic.revision_message(current, meal_type, hhmm, said, instruction)
+        extraction, cost, usage = await _extract(
+            user_id, message, [], now.strftime("%Y-%m-%d %H:%M")
+        )
+        steps.append(
+            StageStep(
+                name=stage,
+                status="ok",
+                summary=logic.extraction_summary(extraction),
+                ms=_ms(t),
+                cost=cost,
+                model=_extract_model([]),
+                data={
+                    "message": message,
+                    "dishes": [d.model_dump() for d in extraction.dishes],
+                    "usage": usage,
+                },
+            )
+        )
+        if not extraction.items:
+            raise DraftError("Couldn't tell what to change; try rephrasing.")
+
+        stage = "retrieve"
+        t = time.perf_counter()
+        candidates, dish_recipes = await _retrieve(user_id, extraction)
+        steps.append(
+            StageStep(
+                name=stage,
+                status="ok",
+                summary=", ".join(
+                    f"{item.name}: {len(c)}" for item, c in zip(extraction.items, candidates)
+                ),
+                ms=_ms(t),
+            )
+        )
+
+        stage = "resolve"
+        t = time.perf_counter()
+        resolve_message = logic.revision_resolve_message(current, meal_type, hhmm, said)
+        resolution, cost, debug = await _resolve(
+            user_id, resolve_message, extraction, candidates, dish_recipes, day,
+            now.strftime("%Y-%m-%d %H:%M"),
+        )
+        rows = logic.draft_rows(
+            extraction, candidates, dish_recipes, resolution, day,
+            now.strftime("%H:%M"), day == now.strftime("%Y-%m-%d"),
+        )
+        steps.append(
+            StageStep(
+                name=stage,
+                status="ok",
+                summary=", ".join(
+                    f"{logic.row_label(row)} ({row['confidence']})" for row in rows
+                ),
+                ms=_ms(t),
+                cost=cost,
+                model=providers.RESOLVE_MODEL,
+                data={
+                    "message": resolve_message,
+                    "resolution": resolution.model_dump(),
+                    "rows": [logic.enrich_row(row) for row in rows],
+                    **debug,
+                },
+            )
+        )
+    except Exception as e:
+        steps.append(StageStep(name=stage, status="error", summary=str(e), ms=_ms(t)))
+        await asyncio.to_thread(
+            _record_revision, user_id, day, instruction, steps, started, draft_id, str(e)
+        )
+        raise
+    await asyncio.to_thread(
+        _record_revision, user_id, day, instruction, steps, started, draft_id, None
     )
-    if not extraction.items:
-        raise DraftError("Couldn't tell what to change; try rephrasing.")
-    candidates, dish_recipes = await _retrieve(user_id, extraction)
-    resolution, _, _ = await _resolve(
-        user_id, message, extraction, candidates, dish_recipes, day,
-        now.strftime("%Y-%m-%d %H:%M"),
-    )
-    return logic.draft_rows(
-        extraction, candidates, dish_recipes, resolution, day,
-        now.strftime("%H:%M"), day == now.strftime("%Y-%m-%d"),
-    )
+    return rows
+
+
+def _record_revision(
+    user_id: str,
+    day: str,
+    instruction: str,
+    steps: list[StageStep],
+    started: float,
+    draft_id: UUID | None,
+    error: str | None,
+) -> None:
+    """Persist one revision; best-effort, since it only serves debugging."""
+    try:
+        repository.insert_pipeline_run(
+            user_id=user_id,
+            day=day,
+            message=instruction,
+            steps=[s.model_dump(mode="json") for s in steps],
+            outcome="revision_error" if error else "revised",
+            outcome_message=error or steps[-1].summary,
+            total_ms=_ms(started),
+            total_cost=sum(s.cost for s in steps),
+            draft_id=str(draft_id) if draft_id else None,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Could not record the revision")
 
 
 async def revise_draft_dish(
@@ -650,7 +745,8 @@ async def revise_draft_dish(
         raise DraftError(f"Unknown dish '{dish_id}'.")
     current, meal_type, hhmm, said = logic.describe_rows(rows)
     new_rows = await _revise(
-        user_id, draft["day"].isoformat(), current, meal_type, hhmm, said, instruction
+        user_id, draft["day"].isoformat(), current, meal_type, hhmm, said, instruction,
+        draft_id,
     )
     updated = await asyncio.to_thread(
         repository.update_pending_rows,

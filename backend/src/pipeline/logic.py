@@ -398,10 +398,19 @@ def _validated(
             quantity=item.quantity if item.unit == "g" else item.grams,
             item_state=item.state,
         )
-    elif item.unit == "g" and fields["unit"] != "grams":
+    elif item.unit == "g" and (
+        fields["unit"] != "grams" or fields["item_state"] == item.state
+    ):
         # A weight the user stated is logged as that weight, even when the
-        # resolver re-expressed it as servings or a recipe fraction.
-        fields.update(unit="grams", serving_size_id=None, quantity=item.quantity)
+        # resolver re-expressed it as servings or a recipe fraction, or changed
+        # the grams without converting between raw and cooked (e.g. applying a
+        # revision's correction a second time).
+        fields.update(
+            unit="grams",
+            serving_size_id=None,
+            quantity=item.quantity,
+            item_state=item.state,
+        )
     return fields, repairs
 
 
@@ -665,6 +674,23 @@ def revision_message(
         f'Correction: "{instruction}"\n'
         "Log the entry as it should be after the correction; keep what the "
         "correction doesn't change."
+    )
+
+
+def revision_resolve_message(
+    current: str, meal_type: str, hhmm: str, said: str | None
+) -> str:
+    """The message the resolver reads in a revision.
+
+    Extraction has already applied the correction to the components, so the
+    resolver must not see it: it would apply it again (subtracting bones from
+    a weight that already excludes them)."""
+    originally = f', originally described as "{said}"' if said else ""
+    return (
+        f"A corrected entry of their food log, previously {current} "
+        f"({meal_type}, {hhmm}){originally}. The components already include "
+        "the user's correction: log their amounts as given, as amounts the "
+        "user stated."
     )
 
 

@@ -99,7 +99,7 @@ def insert_pipeline_run(
     total_cost: float,
     draft_id: str | None,
 ) -> None:
-    """Record a sandbox run, every stage included, for debugging."""
+    """Record a sandbox run or a revision, every stage included, for debugging."""
     with psycopg.connect(**db_connection_params) as conn:
         conn.execute(
             """
