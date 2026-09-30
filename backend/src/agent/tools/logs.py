@@ -26,7 +26,7 @@ def get_daily_summary_tool(user_id: str, day: str) -> dict:
     daily_macros = repository.get_daily_macros(day, user_id)
     latest_measurement = repository.get_latest_measurement(user_id)
     return {
-        "logs": [log.model_dump() for log in logs],
+        "logs": [log.model_dump(mode="json") for log in logs],
         "daily_macros": daily_macros,
         "latest_measurement": (
             latest_measurement.model_dump(mode="json") if latest_measurement else None

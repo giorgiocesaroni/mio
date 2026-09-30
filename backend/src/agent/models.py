@@ -378,6 +378,10 @@ class LogWithEntry(BaseModel):
     def serialize_recipe_id(self, v: Optional[UUID]) -> Optional[str]:
         return str(v) if v is not None else None
 
+    @field_serializer("dish_id")
+    def serialize_dish_id(self, v: Optional[UUID]) -> Optional[str]:
+        return str(v) if v is not None else None
+
     @field_serializer("log_for")
     def serialize_log_for(self, v: datetime) -> str:
         return v.isoformat()
