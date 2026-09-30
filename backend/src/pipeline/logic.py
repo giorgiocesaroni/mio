@@ -25,11 +25,12 @@ A draft row looks like:
     }
 
 `enrich_row` adds the derived `grams`, `macros`, and `flags`. Rows only
-change through the pipeline (a revision re-runs it), and alternatives are
-always what retrieval found for this user, so a client can never introduce
-an id of its own.
+change through the pipeline or the entry editor, and alternatives are always
+what retrieval found for this user, so a client can never introduce an id of
+its own.
 """
 
+import copy
 import json
 import math
 import re
@@ -326,6 +327,13 @@ def _resolver_candidate(c: dict) -> dict:
     }
 
 
+# How each kind of target can be measured.
+UNITS_BY_KIND = {
+    "ingredient": ("grams", "serving"),
+    "new": ("grams",),
+    "recipe": ("grams", "recipe"),
+}
+
 _ALTERNATIVE_FIELDS = (
     "key", "kind", "id", "name", "brand", "state", "per_100g", "serving_sizes", "total_g"
 )
@@ -375,8 +383,7 @@ def _validated(
         "item_state": resolved.weight_state,
     }
     repairs = []
-    allowed = {"ingredient": ("grams", "serving"), "new": ("grams",), "recipe": ("grams", "recipe")}
-    if resolved.unit not in allowed[target["kind"]]:
+    if resolved.unit not in UNITS_BY_KIND[target["kind"]]:
         repairs.append(f"Unit '{resolved.unit}' doesn't apply")
     elif resolved.unit == "serving":
         sizes = target.get("serving_sizes", [])
@@ -628,11 +635,15 @@ def enrich_row(row: dict) -> dict:
     }
 
 
-def row_label(row: dict) -> str:
-    target = alternative(row)
+def amount_label(row: dict) -> str:
+    """The row's amount as the user would read it, e.g. '2 slices'."""
     if row["unit"] == "serving":
         serving = next(
-            (s for s in target["serving_sizes"] if s["id"] == row["serving_size_id"]),
+            (
+                s
+                for s in alternative(row)["serving_sizes"]
+                if s["id"] == row["serving_size_id"]
+            ),
             None,
         )
         label = (
@@ -640,12 +651,14 @@ def row_label(row: dict) -> str:
             if serving
             else "serving"
         )
-        quantity = f"{row['quantity']:g} {label}"
-    elif row["unit"] == "recipe":
-        quantity = f"{row['quantity']:g} × recipe"
-    else:
-        quantity = f"{row['quantity']:g} g"
-    return f"{quantity} {target['name']}"
+        return f"{row['quantity']:g} {label}"
+    if row["unit"] == "recipe":
+        return f"{row['quantity']:g} × recipe"
+    return f"{row['quantity']:g} g"
+
+
+def row_label(row: dict) -> str:
+    return f"{amount_label(row)} {alternative(row)['name']}"
 
 
 def draft_message(rows: list[dict]) -> str:
@@ -659,77 +672,62 @@ def draft_message(rows: list[dict]) -> str:
     )
 
 
-# ── Revisions and confirmation ────────────────────────────────────────────────
+# ── Editing and confirmation ──────────────────────────────────────────────────
 
 
-def revision_message(
-    current: str, meal_type: str, hhmm: str, said: str | None, instruction: str
-) -> str:
-    """The message a revision runs through the pipeline: the entry as it is,
-    plus the user's correction, so unchanged details carry over."""
-    originally = f', originally described as "{said}"' if said else ""
-    return (
-        "The user is correcting one entry of their food log.\n"
-        f"Current entry: {current} ({meal_type}, {hhmm}){originally}.\n"
-        f'Correction: "{instruction}"\n'
-        "Log the entry as it should be after the correction; keep what the "
-        "correction doesn't change."
-    )
-
-
-def revision_resolve_message(
-    current: str, meal_type: str, hhmm: str, said: str | None
-) -> str:
-    """The message the resolver reads in a revision.
-
-    Extraction has already applied the correction to the components, so the
-    resolver must not see it: it would apply it again (subtracting bones from
-    a weight that already excludes them)."""
-    originally = f', originally described as "{said}"' if said else ""
-    return (
-        f"A corrected entry of their food log, previously {current} "
-        f"({meal_type}, {hhmm}){originally}. The components already include "
-        "the user's correction: log their amounts as given, as amounts the "
-        "user stated."
-    )
-
-
-def describe_logs(logs: list) -> tuple[str, str, str]:
-    """(description, meal type, HH:MM) of logged entries shown as one card:
-    a single ingredient log, or the ingredient logs of one recipe."""
+def log_rows(logs: list) -> list[dict]:
+    """Draft rows for logged entries shown as one card (a single log, a dish,
+    or the logs a saved recipe was dispatched into), so the entry editor can
+    edit them like a draft dish. A recipe's logs become a dish named after it."""
     first = logs[0]
-    hhmm = (first.log_for_local or "")[-5:] or first.log_for.strftime("%H:%M")
-
-    def grams(log) -> float:
-        if log.serving_size_id and log.ingredient:
-            serving = next(
-                (s for s in log.ingredient.serving_sizes if s.id == log.serving_size_id),
-                None,
-            )
-            if serving:
-                return (log.quantity or 0) * serving.grams
-        return float(log.quantity_g or 0)
-
-    if first.recipe_id and first.recipe:
-        total = sum(grams(log) for log in logs)
-        return f"{total:.0f} g of the saved recipe {first.recipe.name}", first.meal_type, hhmm
-    if first.dish_id and first.dish_name:
-        total = sum(grams(log) for log in logs)
-        components = ", ".join(
-            f"{grams(log):.0f} g {log.ingredient.name if log.ingredient else 'food'}"
-            for log in logs
-        )
-        return f"{first.dish_name} ({total:.0f} g: {components})", first.meal_type, hhmm
-    name = first.ingredient.name if first.ingredient else "food"
-    if first.serving_size_id and first.ingredient:
+    dish = first.dish_name or (first.recipe.name if first.recipe else None)
+    rows = []
+    for n, log in enumerate(logs):
+        food = log.ingredient
+        if food is None:
+            raise DraftError("This entry can't be edited: one of its foods is missing.")
         serving = next(
-            (s for s in first.ingredient.serving_sizes if s.id == first.serving_size_id),
-            None,
+            (s for s in food.serving_sizes if s.id == log.serving_size_id), None
         )
-        if serving:
-            label = serving.label if first.quantity == 1 else serving.label_plural
-            return f"{first.quantity:g} {label} {name}", first.meal_type, hhmm
-    return f"{grams(first):.0f} g {name}", first.meal_type, hhmm
+        rows.append(
+            {
+                "id": f"r{n}",
+                "log_id": str(log.id),
+                "said": "",
+                "dish_id": "d0" if len(logs) > 1 else None,
+                "dish": dish if len(logs) > 1 else None,
+                "assumed": False,
+                "alternatives": [
+                    {
+                        "key": "c0",
+                        "kind": "ingredient",
+                        "id": str(food.id),
+                        "name": food.name,
+                        "brand": food.brand,
+                        "state": food.state,
+                        "per_100g": {
+                            "calories_kcal": float(food.calories_kcal),
+                            "protein_g": float(food.protein_g),
+                            "carbs_g": float(food.carbs_g),
+                            "fat_g": float(food.fat_g),
+                        },
+                        "serving_sizes": [s.model_dump() for s in food.serving_sizes],
+                    }
+                ],
+                "target": "c0",
+                "auto_target": "c0",
+                "confidence": "high",
+                "note": None,
+                "quantity": float(log.quantity or 0) if serving else float(log.quantity_g or 0),
+                "unit": "serving" if serving else "grams",
+                "serving_size_id": str(serving.id) if serving else None,
+                "meal_type": log.meal_type,
+                "log_for": log.log_for_local or log.log_for.strftime("%Y-%m-%d %H:%M"),
+                "item_state": food.state,
+                "grams_estimated": False,
+            }
+        )
+    return rows
 
 
 def group_key(row: dict) -> str:
@@ -738,23 +736,299 @@ def group_key(row: dict) -> str:
     return row.get("dish_id") or row["id"]
 
 
-def describe_rows(rows: list[dict]) -> tuple[str, str, str, str | None]:
-    """(description, meal type, HH:MM, said) of a draft dish shown as one card."""
-    first = rows[0]
-    if len(rows) == 1:
-        current = row_label(first)
-    else:
-        current = f"{first.get('dish') or 'the dish'} (" + ", ".join(
-            row_label(r) for r in rows
-        ) + ")"
-    return current, first["meal_type"], first["log_for"][-5:], first.get("said")
+class EntryEditor:
+    """A working copy of one entry's rows (a draft dish, or a logged card)
+    that a correction edits one operation at a time.
+
+    Whatever no operation touches is carried over exactly, so a correction
+    can't drift the foods or amounts it doesn't mention. Foods have keys ('f0',
+    'f1', ...) shared across rows: every row's alternatives, plus whatever a
+    search found or the editor created, so an operation can only reference a
+    food the user's search results or the entry already contain.
+    """
+
+    def __init__(self, rows: list[dict]):
+        if not rows:
+            raise DraftError("Nothing to edit.")
+        self.original = copy.deepcopy(rows)
+        self.rows = copy.deepcopy(rows)
+        self.dish_name: str | None = next((r["dish"] for r in rows if r.get("dish")), None)
+        self.foods: dict[str, dict] = {}
+        # (row id, alternative key) → food key
+        self._links: dict[tuple[str, str], str] = {}
+        self._next_row = max(int(r["id"][1:]) for r in rows) + 1
+        for row in self.rows:
+            for alt in row["alternatives"]:
+                self._links[(row["id"], alt["key"])] = self.register(alt)
+
+    # ── Foods ──
+
+    def register(self, food: dict) -> str:
+        """The key of a food, registering it the first time it's seen. A food
+        with an id is one food wherever it appears."""
+        if food.get("id"):
+            for key, known in self.foods.items():
+                if known.get("id") == food["id"] and known["kind"] == food["kind"]:
+                    return key
+        key = f"f{len(self.foods)}"
+        self.foods[key] = {k: food[k] for k in _ALTERNATIVE_FIELDS if k in food and k != "key"}
+        return key
+
+    def create(self, name: str, brand: str | None, state: str, per_100g: dict) -> str:
+        return self.register(
+            {
+                "kind": "new",
+                "id": None,
+                "name": name,
+                "brand": brand,
+                "state": state,
+                "per_100g": per_100g,
+                "serving_sizes": [],
+            }
+        )
+
+    def food_view(self, key: str) -> dict:
+        food = self.foods[key]
+        view = {
+            "key": key,
+            "kind": {
+                "ingredient": "food",
+                "recipe": "saved recipe",
+                "new": "new food (estimated nutrition)",
+            }[food["kind"]],
+            "name": food["name"],
+            "brand": food.get("brand"),
+            "state": food.get("state"),
+            "per_100g": {k: round(v, 1) for k, v in food["per_100g"].items()},
+        }
+        if food["kind"] == "recipe":
+            view["total_grams"] = round(food.get("total_g") or 0)
+        if food.get("serving_sizes"):
+            view["serving_sizes"] = [
+                {"key": f"s{n}", "label": s["label"], "grams": round(s["grams"], 1)}
+                for n, s in enumerate(food["serving_sizes"])
+            ]
+        return view
+
+    def _food(self, key: str) -> dict:
+        if key not in self.foods:
+            raise DraftError(f"Unknown food '{key}': use a key from the entry or a search.")
+        return self.foods[key]
+
+    # ── Rows ──
+
+    def _row(self, row_id: str) -> dict:
+        for row in self.rows:
+            if row["id"] == row_id:
+                return row
+        raise DraftError(f"Unknown row '{row_id}'.")
+
+    def _food_key(self, row: dict) -> str:
+        return self._links[(row["id"], row["target"])]
+
+    def _link(self, row: dict, food_key: str) -> str:
+        """The row's alternative for a food, added when the row lacks it."""
+        for alt in row["alternatives"]:
+            if self._links.get((row["id"], alt["key"])) == food_key:
+                return alt["key"]
+        food = self.foods[food_key]
+        if food["kind"] == "new":
+            # A row has at most one "new" alternative; the created food replaces it.
+            row["alternatives"] = [a for a in row["alternatives"] if a["key"] != "new"]
+            key = "new"
+        else:
+            taken = {a["key"] for a in row["alternatives"]}
+            key = next(f"x{n}" for n in range(len(taken) + 1) if f"x{n}" not in taken)
+        row["alternatives"].append({"key": key, **copy.deepcopy(food)})
+        self._links[(row["id"], key)] = food_key
+        return key
+
+    def _amount(
+        self,
+        food: dict,
+        quantity: float,
+        unit: str,
+        serving: str | None,
+        weight_state: str | None,
+        default_state: str,
+    ) -> dict:
+        """Validated amount fields for a row logging `food`."""
+        if unit not in UNITS_BY_KIND[food["kind"]]:
+            raise DraftError(
+                f"Unit '{unit}' doesn't apply to {food['name']}; "
+                f"use {' or '.join(UNITS_BY_KIND[food['kind']])}."
+            )
+        if not math.isfinite(quantity) or quantity <= 0:
+            raise DraftError("The quantity must be a positive number.")
+        serving_size_id = None
+        if unit == "serving":
+            sizes = food.get("serving_sizes", [])
+            index = int(serving[1:]) if serving and serving[1:].isdigit() else -1
+            if not 0 <= index < len(sizes):
+                raise DraftError(f"Unknown serving '{serving}' for {food['name']}.")
+            serving_size_id = sizes[index]["id"]
+        return {
+            "quantity": quantity,
+            "unit": unit,
+            "serving_size_id": serving_size_id,
+            "item_state": (
+                "cooked" if food["kind"] == "recipe" else weight_state or default_state
+            ),
+        }
+
+    @staticmethod
+    def _trusted(row: dict) -> None:
+        """The user said so: nothing about the row is a guess anymore."""
+        row.update(auto_target=row["target"], confidence="high", note=None)
+
+    # ── Operations ──
+
+    def swap_food(self, row_id: str, food_key: str) -> None:
+        row = self._row(row_id)
+        food = self._food(food_key)
+        grams = row_grams(row)
+        row["target"] = self._link(row, food_key)
+        # Servings and recipe fractions belong to the old food: keep the weight.
+        if row["unit"] != "grams" or "grams" not in UNITS_BY_KIND[food["kind"]]:
+            row.update(unit="grams", quantity=round(grams, 1), serving_size_id=None)
+        if food["kind"] == "recipe":
+            row["item_state"] = "cooked"
+        self._trusted(row)
+
+    def set_amount(
+        self,
+        row_id: str,
+        quantity: float,
+        unit: str,
+        serving: str | None,
+        weight_state: str | None,
+    ) -> None:
+        row = self._row(row_id)
+        row.update(
+            self._amount(
+                alternative(row), quantity, unit, serving, weight_state, row["item_state"]
+            ),
+            grams_estimated=False,
+        )
+        self._trusted(row)
+
+    def add_food(
+        self,
+        food_key: str,
+        quantity: float,
+        unit: str,
+        serving: str | None,
+        weight_state: str | None,
+    ) -> str:
+        food = self._food(food_key)
+        template = (self.rows or self.original)[0]
+        row = {
+            "id": f"r{self._next_row}",
+            "said": "",
+            "dish_id": None,
+            "dish": None,
+            "assumed": False,
+            "alternatives": [],
+            "meal_type": template["meal_type"],
+            "log_for": template["log_for"],
+            "grams_estimated": False,
+            **self._amount(food, quantity, unit, serving, weight_state, food.get("state") or "raw"),
+        }
+        self._next_row += 1
+        row["target"] = self._link(row, food_key)
+        self._trusted(row)
+        self.rows.append(row)
+        return row["id"]
+
+    def remove_food(self, row_id: str) -> None:
+        self.rows.remove(self._row(row_id))
+
+    def scale(self, factor: float) -> None:
+        if not math.isfinite(factor) or factor <= 0:
+            raise DraftError("The factor must be a positive number.")
+        for row in self.rows:
+            row["quantity"] = round(row["quantity"] * factor, 3)
+            row["grams_estimated"] = False
+
+    def set_time(self, hhmm: str | None, meal_type: str | None) -> None:
+        time = parse_hhmm(hhmm) if hhmm else None
+        if hhmm and not time:
+            raise DraftError(f"Invalid time '{hhmm}': use HH:MM.")
+        if meal_type is not None and meal_type not in MEAL_TYPES:
+            raise DraftError(f"Invalid meal type '{meal_type}'.")
+        for row in self.rows:
+            if time:
+                row["log_for"] = f"{row['log_for'][:10]} {time}"
+            if meal_type:
+                row["meal_type"] = meal_type
+
+    def rename_dish(self, name: str) -> None:
+        if not name.strip():
+            raise DraftError("The dish needs a name.")
+        self.dish_name = dish_label(name.strip())
+
+    # ── State ──
+
+    def view(self) -> dict:
+        """The entry as the model sees it after each operation."""
+        first = (self.rows or self.original)[0]
+        rows = []
+        for row in self.rows:
+            grams = row_grams(row)
+            per_100g = alternative(row)["per_100g"]
+            current = self._food_key(row)
+            others = [
+                self._links[(row["id"], a["key"])]
+                for a in row["alternatives"]
+                if self._links[(row["id"], a["key"])] != current
+            ]
+            rows.append(
+                {
+                    "row": row["id"],
+                    "food": current,
+                    "name": alternative(row)["name"],
+                    "amount": amount_label(row),
+                    "grams": round(grams, 1),
+                    "weight_state": row["item_state"],
+                    "kcal": round(per_100g["calories_kcal"] * grams / 100),
+                    "user_said": row.get("said") or None,
+                    "other_matches": others,
+                }
+            )
+        return {
+            "dish": self.dish_name if len(self.rows) > 1 else None,
+            "meal_type": first["meal_type"],
+            "time": first["log_for"][-5:],
+            "rows": rows,
+        }
+
+    def changed(self) -> bool:
+        return self.rows != self.original or (
+            len(self.rows) > 1 and self.dish_name != self.original[0].get("dish")
+        )
+
+    def result(self) -> list[dict]:
+        """The edited rows, grouped as one dish when there are several."""
+        rows = copy.deepcopy(self.rows)
+        if len(rows) > 1:
+            dish_id = next((r["dish_id"] for r in rows if r.get("dish_id")), "d0")
+            name = self.dish_name or dish_label(
+                " and ".join(alternative(r)["name"] for r in rows)
+            )
+            for row in rows:
+                row.update(dish_id=dish_id, dish=name)
+        elif rows:
+            rows[0]["dish_id"] = None
+            if alternative(rows[0])["kind"] != "recipe":
+                rows[0]["dish"] = None
+        return rows
 
 
 def replace_dish(rows: list[dict], key: str, new_rows: list[dict]) -> list[dict]:
     """Put `new_rows` where the `key` group was, dropping its old rows.
 
-    A revision re-runs the pipeline, so `new_rows` carries fresh row and dish
-    ids; both are remapped so they can't collide with the rows that stay."""
+    `new_rows` may carry ids of their own (from the editor, or a pipeline
+    run); both are remapped so they can't collide with the rows that stay."""
     indices = [n for n, r in enumerate(rows) if group_key(r) == key]
     if not indices:
         raise DraftError(f"Unknown dish '{key}'.")

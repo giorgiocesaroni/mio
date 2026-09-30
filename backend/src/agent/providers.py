@@ -20,6 +20,8 @@ AGENT_MODEL = os.getenv("AGENT_MODEL", "openai/gpt-6-luna")
 PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
 TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
 RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "deepseek/deepseek-v4.1-flash")
+# Applying a correction to an entry through small editing tools.
+EDIT_MODEL = os.getenv("EDIT_MODEL", "deepseek/deepseek-v4.1-flash")
 
 # Every call reasons at low effort unless its model is listed here.
 REASONING_EFFORT = "low"

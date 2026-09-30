@@ -236,12 +236,12 @@ export function getDayEntries(day: string): Promise<DayEntries> {
   return requestJSON(`/entries?day=${encodeURIComponent(day)}`);
 }
 
-/** Applies a correction in the user's words to one dish of a draft. */
+/** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */
 export function reviseDraftDish(
   id: string,
   dishId: string,
   instruction: string,
-): Promise<LogDraft> {
+): Promise<LogDraft | null> {
   return requestJSON(`/drafts/${id}/dishes/${encodeURIComponent(dishId)}/revise`, {
     method: "POST",
     body: JSON.stringify({ instruction }),

@@ -145,7 +145,10 @@ class PipelineInput(BaseModel):
     via: DraftVia = "sandbox"
 
 
-StageName = Literal["normalize", "route", "extract", "retrieve", "resolve", "draft"]
+# "edit" is a correction applied to an existing entry, not a stage of a new log.
+StageName = Literal[
+    "normalize", "route", "extract", "retrieve", "resolve", "draft", "edit"
+]
 
 
 class StageStep(BaseModel):
@@ -182,3 +185,119 @@ PipelineStep = StageStep | DoneStep
 
 class DraftError(ValueError):
     """An invalid edit or state transition; surfaced to the client as a 400."""
+
+
+# ── Entry editing ─────────────────────────────────────────────────────────────
+# The arguments of the editor's tools. Every field is required (nullable where
+# optional), as strict tool schemas demand.
+
+EditUnit = Literal["grams", "serving", "recipe"]
+
+
+class SearchFoods(BaseModel):
+    """Search the user's foods and the food database. Returns matching foods
+    with their keys, the user's own entries first."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(
+        description="The food as it would be named in a food database, e.g. 'greek yogurt 0%' or 'Barilla spaghetti'."
+    )
+
+
+class CreateFood(BaseModel):
+    """Create a food that no search found, with realistic nutrition facts.
+    Returns its key; it is saved only when the entry is logged."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="Short English name, e.g. 'Greek yogurt 0% fat'.")
+    brand: str | None = Field(description="Brand, only if the user named one.")
+    state: agent_models.IngredientState = Field(
+        description="Whether `per_100g` describes the raw or cooked food."
+    )
+    per_100g: Per100g
+
+
+class SwapFood(BaseModel):
+    """Log a row as a different food, keeping its amount."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row: str = Field(description="The row to change, e.g. 'r0'.")
+    food: str = Field(description="Key of the food to log it as, e.g. 'f3'.")
+
+
+class SetAmount(BaseModel):
+    """Change how much of a row's food was eaten."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row: str = Field(description="The row to change, e.g. 'r0'.")
+    quantity: float = Field(
+        description="Grams for 'grams', number of servings for 'serving', fraction of the whole recipe for 'recipe'."
+    )
+    unit: EditUnit = Field(
+        description="'serving' only for a food with serving sizes, 'recipe' only for a saved recipe."
+    )
+    serving: str | None = Field(
+        description="With unit 'serving': the key of one of the food's serving sizes, e.g. 's0'. Otherwise null."
+    )
+    weight_state: agent_models.IngredientState | None = Field(
+        description="With unit 'grams': whether the grams are raw or cooked weight. Null keeps the row's."
+    )
+
+
+class AddFood(BaseModel):
+    """Add a food to the entry, eaten at the same meal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    food: str = Field(description="Key of the food, e.g. 'f3'.")
+    quantity: float = Field(
+        description="Grams for 'grams', number of servings for 'serving', fraction of the whole recipe for 'recipe'."
+    )
+    unit: EditUnit
+    serving: str | None = Field(
+        description="With unit 'serving': the key of one of the food's serving sizes. Otherwise null."
+    )
+    weight_state: agent_models.IngredientState | None = Field(
+        description="With unit 'grams': whether the grams are raw or cooked weight. Null uses the food's."
+    )
+
+
+class RemoveFood(BaseModel):
+    """Remove a row the user didn't eat."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row: str = Field(description="The row to remove, e.g. 'r1'.")
+
+
+class ScaleEntry(BaseModel):
+    """Multiply the amount of every row, e.g. 0.5 when they ate half of it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    factor: float = Field(description="What to multiply every amount by.")
+
+
+class SetTime(BaseModel):
+    """Change when the whole entry was eaten."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    time: str | None = Field(description="Local time as HH:MM. Null keeps the current one.")
+    meal_type: agent_models.MealType | None = Field(
+        description="Null keeps the current one."
+    )
+
+
+class RenameDish(BaseModel):
+    """Rename the dish an entry of several foods is shown as."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        description="The dish as a person would say it, capitalized, e.g. 'Greek yogurt with honey'."
+    )

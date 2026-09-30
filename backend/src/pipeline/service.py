@@ -38,15 +38,24 @@ from src.agent.utils import extract_tokens, get_openrouter_cost, inline_image_ur
 from pydantic import BaseModel
 
 from src.pipeline.models import (
+    AddFood,
+    CreateFood,
     DoneStep,
     DraftError,
     DraftVia,
     Extraction,
+    RemoveFood,
+    RenameDish,
     Resolution,
     PipelineInput,
     PipelineStep,
+    ScaleEntry,
+    SearchFoods,
+    SetAmount,
+    SetTime,
     StageName,
     StageStep,
+    SwapFood,
 )
 
 # Reasoning counts toward this, and some models reason at length whatever the
@@ -84,6 +93,32 @@ Then, for every component of the other dishes (by `item` index), return exactly 
 - `meal_type` and `time` (HH:MM): as stated in the message; otherwise infer them sensibly from the local time. Every component of a dish shares them.
 - `confidence`: "high" when the match and amount are clear; "medium" when you had to assume something; "low" when unsure.
 - `note`: when confidence isn't high, one short sentence for the user, in the language of their message, saying what you assumed (e.g. which variant, or an estimated weight). Otherwise null."""
+
+EDIT_PROMPT = """You apply a user's correction to one entry of their nutrition tracker. The user's local time is {now}.
+
+`entry` lists its rows: each is a `food` (a key into `foods`) with an amount. Change exactly what the correction asks for, with the tools, and nothing else: whatever you don't touch stays as it is.
+- A different food or variant ("it was Greek", "whole milk, not skimmed", "the Barilla one"): `search_foods` for it and `swap_food` the row to the food that is exactly what they said. A row's `other_matches` may already include it. The user's own foods come first in results. Only when nothing found is that food, `create_food` it with realistic nutrition and swap to it. Swapping keeps the amount.
+- A different amount: `set_amount`. A weight they state is exact. When they describe the amount ("without the bones", "I left a third"), work it out from the current amount. `scale_entry` when every food changes by the same factor ("I ate half").
+- A food they also had: `add_food` (search for it first). A food they didn't have: `remove_food`. When a single food becomes several, `rename_dish` it as the user would name the dish ("Greek yogurt with honey").
+- A different time or meal: `set_time`.
+- Each tool returns the updated entry, or an error to fix.
+When done, reply with one short sentence in the language of the correction saying what changed. If the correction can't be applied, change nothing and say why in one sentence."""
+
+# The entry editor's tools: name → arguments (whose docstring describes it).
+EDIT_TOOLS: dict[str, type[BaseModel]] = {
+    "search_foods": SearchFoods,
+    "create_food": CreateFood,
+    "swap_food": SwapFood,
+    "set_amount": SetAmount,
+    "add_food": AddFood,
+    "remove_food": RemoveFood,
+    "scale_entry": ScaleEntry,
+    "set_time": SetTime,
+    "rename_dish": RenameDish,
+}
+
+# Model turns before an edit gives up; most corrections need two or three.
+EDIT_MAX_TURNS = 8
 
 
 _Output = TypeVar("_Output", bound=BaseModel)
@@ -212,13 +247,11 @@ async def _extract(
     return await _complete(user_id, _extract_model(images), messages, Extraction)
 
 
-async def _retrieve(
-    user_id: str, extraction: Extraction
-) -> tuple[list[list[dict]], list[list[dict]]]:
-    """Candidates for every component (ingredients and recipes), and the saved
-    recipes similar to each multi-component dish (none for a single food)."""
+async def _candidates(user_id: str, queries: list[str], ingredients: bool) -> list[dict]:
+    """The user's ingredients (unless `ingredients` is False) and saved recipes
+    closest to any of `queries`, keyed c0, c1, ..."""
 
-    async def search(query: str, ingredients: bool) -> tuple[list, list]:
+    async def search(query: str) -> tuple[list, list]:
         # One embedding per query, shared by both searches.
         embedding = await asyncio.to_thread(embeddings.generate_embedding, query)
         found = await asyncio.gather(
@@ -235,30 +268,41 @@ async def _retrieve(
         )
         return found[0], found[1]
 
-    async def candidates_for(queries: list[str], ingredients: bool) -> list[dict]:
-        if not queries:
-            return []
-        results = await asyncio.gather(*(search(q, ingredients) for q in queries))
-        found_ingredients = logic.closest([i for found, _ in results for i in found])
-        recipes = logic.closest([r for _, found in results for r in found])
-        nutrition = await asyncio.to_thread(
-            repository.recipe_nutrition, [str(r.id) for r in recipes], user_id
-        )
-        candidates = [
-            logic.ingredient_candidate(f"c{n}", i) for n, i in enumerate(found_ingredients)
-        ]
-        candidates += [
-            logic.recipe_candidate(f"c{len(candidates) + n}", r, nutrition.get(str(r.id)))
-            for n, r in enumerate(recipes)
-        ]
-        return candidates
+    if not queries:
+        return []
+    results = await asyncio.gather(*(search(q) for q in queries))
+    found_ingredients = logic.closest([i for found, _ in results for i in found])
+    recipes = logic.closest([r for _, found in results for r in found])
+    nutrition = await asyncio.to_thread(
+        repository.recipe_nutrition, [str(r.id) for r in recipes], user_id
+    )
+    candidates = [
+        logic.ingredient_candidate(f"c{n}", i) for n, i in enumerate(found_ingredients)
+    ]
+    candidates += [
+        logic.recipe_candidate(f"c{len(candidates) + n}", r, nutrition.get(str(r.id)))
+        for n, r in enumerate(recipes)
+    ]
+    return candidates
 
+
+async def _retrieve(
+    user_id: str, extraction: Extraction
+) -> tuple[list[list[dict]], list[list[dict]]]:
+    """Candidates for every component (ingredients and recipes), and the saved
+    recipes similar to each multi-component dish (none for a single food)."""
     items, dishes = await asyncio.gather(
         asyncio.gather(
-            *(candidates_for(logic.search_queries(i), True) for i in extraction.items)
+            *(
+                _candidates(user_id, logic.search_queries(i), True)
+                for i in extraction.items
+            )
         ),
         asyncio.gather(
-            *(candidates_for(logic.dish_queries(d), False) for d in extraction.dishes)
+            *(
+                _candidates(user_id, logic.dish_queries(d), False)
+                for d in extraction.dishes
+            )
         ),
     )
     return list(items), list(dishes)
@@ -604,137 +648,215 @@ def list_day_entries(user_id: str, day: str) -> dict:
     return {"drafts": [_serialize(d) for d in drafts], "logs": logs}
 
 
-async def _revise(
-    user_id: str, day: str, current: str, meal_type: str, hhmm: str,
-    said: str | None, instruction: str, draft_id: UUID | None = None,
+def _edit_tools() -> list[dict]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": " ".join((args.__doc__ or "").split()),
+                "parameters": logic.inline_refs(args.model_json_schema()),
+                "strict": True,
+            },
+        }
+        for name, args in EDIT_TOOLS.items()
+    ]
+
+
+async def _edit_call(user_id: str, editor: logic.EntryEditor, name: str, raw: str) -> dict:
+    """Run one of the editor's tool calls; a bad call returns the error for
+    the model to fix instead of failing the edit."""
+    try:
+        args = EDIT_TOOLS[name].model_validate_json(raw or "{}")
+    except KeyError:
+        return {"error": f"Unknown tool '{name}'."}
+    except ValueError as e:
+        return {"error": f"Invalid arguments: {e}"}
+    try:
+        match args:
+            case SearchFoods():
+                found = await _candidates(user_id, [args.query], True)
+                return {"foods": [editor.food_view(editor.register(c)) for c in found]}
+            case CreateFood():
+                key = editor.create(
+                    args.name, args.brand, args.state, args.per_100g.model_dump()
+                )
+                return {"food": editor.food_view(key)}
+            case SwapFood():
+                editor.swap_food(args.row, args.food)
+            case SetAmount():
+                editor.set_amount(
+                    args.row, args.quantity, args.unit, args.serving, args.weight_state
+                )
+            case AddFood():
+                editor.add_food(
+                    args.food, args.quantity, args.unit, args.serving, args.weight_state
+                )
+            case RemoveFood():
+                editor.remove_food(args.row)
+            case ScaleEntry():
+                editor.scale(args.factor)
+            case SetTime():
+                editor.set_time(args.time, args.meal_type)
+            case RenameDish():
+                editor.rename_dish(args.name)
+    except DraftError as e:
+        return {"error": str(e)}
+    return {"entry": editor.view()}
+
+
+async def _edit(
+    user_id: str, day: str, rows: list[dict], instruction: str, draft_id: UUID | None = None
 ) -> list[dict]:
-    """Rows for an entry after a correction in the user's words.
+    """The rows of an entry after a correction in the user's words.
 
-    The entry and the correction go through the same extract → retrieve →
-    resolve steps as a new log, so the correction can switch to a food that
-    wasn't among the original matches, and foods it adds become extra rows.
-    Only extraction sees the correction; the resolver gets its result.
-
-    Every revision is recorded in `pipeline_runs`, the correction as its
-    message, so a bad edit can be read back.
+    A model applies the correction with small editing tools (swap a food,
+    set an amount, add or remove a food...), so what the correction doesn't
+    mention is carried over exactly instead of being re-derived. Every edit is
+    recorded in `pipeline_runs`, the correction as its message, so a bad one
+    can be read back.
     """
     instruction = instruction.strip()
     if not instruction:
         raise DraftError("Describe what should change.")
     started = time.perf_counter()
-    steps: list[StageStep] = []
-    stage: StageName = "extract"
-    t = started
+    editor = logic.EntryEditor(rows)
+    before = editor.view()
+    timezone = await asyncio.to_thread(agent_repository.get_user_timezone, user_id)
+    now = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d %H:%M")
+    messages: list[dict] = [
+        {"role": "system", "content": EDIT_PROMPT.format(now=now)},
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "correction": instruction,
+                    "entry": before,
+                    "foods": [editor.food_view(key) for key in editor.foods],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+    client = providers.get_client()
+    model_id = providers.EDIT_MODEL
+    cost = 0.0
+    reply = ""
+    error: str | None = None
     try:
-        timezone = agent_repository.get_user_timezone(user_id)
-        now = datetime.datetime.now(tz=ZoneInfo(timezone))
-        message = logic.revision_message(current, meal_type, hhmm, said, instruction)
-        extraction, cost, usage = await _extract(
-            user_id, message, [], now.strftime("%Y-%m-%d %H:%M")
-        )
-        steps.append(
-            StageStep(
-                name=stage,
-                status="ok",
-                summary=logic.extraction_summary(extraction),
-                ms=_ms(t),
-                cost=cost,
-                model=_extract_model([]),
-                data={
-                    "message": message,
-                    "dishes": [d.model_dump() for d in extraction.dishes],
-                    "usage": usage,
-                },
+        for _ in range(EDIT_MAX_TURNS):
+            response = await client.chat.completions.create(
+                model=model_id,
+                messages=messages,  # type: ignore[arg-type]
+                tools=_edit_tools(),  # type: ignore[arg-type]
+                max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
+                temperature=0,
+                extra_body=providers.reasoning_extra_body(model_id),
             )
-        )
-        if not extraction.items:
-            raise DraftError("Couldn't tell what to change; try rephrasing.")
-
-        stage = "retrieve"
-        t = time.perf_counter()
-        candidates, dish_recipes = await _retrieve(user_id, extraction)
-        steps.append(
-            StageStep(
-                name=stage,
-                status="ok",
-                summary=", ".join(
-                    f"{item.name}: {len(c)}" for item, c in zip(extraction.items, candidates)
-                ),
-                ms=_ms(t),
+            usage = response.usage.model_dump() if response.usage else {}
+            if usage:
+                call_cost = await get_openrouter_cost(model_id=model_id, usage=usage)
+                cost += call_cost
+                repository.record_invocation(
+                    user_id, model_id, call_cost, usage, extract_tokens(usage)
+                )
+            message = response.choices[0].message
+            calls = message.tool_calls or []
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    **(
+                        {
+                            "tool_calls": [
+                                {
+                                    "id": c.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": c.function.name,
+                                        "arguments": c.function.arguments,
+                                    },
+                                }
+                                for c in calls
+                            ]
+                        }
+                        if calls
+                        else {}
+                    ),
+                }
             )
-        )
-
-        stage = "resolve"
-        t = time.perf_counter()
-        resolve_message = logic.revision_resolve_message(current, meal_type, hhmm, said)
-        resolution, cost, debug = await _resolve(
-            user_id, resolve_message, extraction, candidates, dish_recipes, day,
-            now.strftime("%Y-%m-%d %H:%M"),
-        )
-        rows = logic.draft_rows(
-            extraction, candidates, dish_recipes, resolution, day,
-            now.strftime("%H:%M"), day == now.strftime("%Y-%m-%d"),
-        )
-        steps.append(
-            StageStep(
-                name=stage,
-                status="ok",
-                summary=", ".join(
-                    f"{logic.row_label(row)} ({row['confidence']})" for row in rows
-                ),
-                ms=_ms(t),
-                cost=cost,
-                model=providers.RESOLVE_MODEL,
-                data={
-                    "message": resolve_message,
-                    "resolution": resolution.model_dump(),
-                    "rows": [logic.enrich_row(row) for row in rows],
-                    **debug,
-                },
-            )
-        )
+            if not calls:
+                reply = (message.content or "").strip()
+                break
+            for call in calls:
+                result = await _edit_call(
+                    user_id, editor, call.function.name, call.function.arguments
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+        else:
+            raise DraftError("The correction took too many steps; try rephrasing it.")
+        if not editor.changed():
+            raise DraftError(reply or "Couldn't tell what to change; try rephrasing.")
+        return editor.result()
     except Exception as e:
-        steps.append(StageStep(name=stage, status="error", summary=str(e), ms=_ms(t)))
-        await asyncio.to_thread(
-            _record_revision, user_id, day, instruction, steps, started, draft_id, str(e)
-        )
+        error = str(e)
         raise
-    await asyncio.to_thread(
-        _record_revision, user_id, day, instruction, steps, started, draft_id, None
-    )
-    return rows
+    finally:
+        step = StageStep(
+            name="edit",
+            status="error" if error else "ok",
+            summary=error or reply,
+            ms=_ms(started),
+            cost=cost,
+            model=model_id,
+            data={
+                "before": before,
+                "after": editor.view(),
+                "reply": reply,
+                "messages": messages[1:],
+            },
+        )
+        await asyncio.to_thread(
+            _record_edit, user_id, day, instruction, step, draft_id, error
+        )
 
 
-def _record_revision(
+def _record_edit(
     user_id: str,
     day: str,
     instruction: str,
-    steps: list[StageStep],
-    started: float,
+    step: StageStep,
     draft_id: UUID | None,
     error: str | None,
 ) -> None:
-    """Persist one revision; best-effort, since it only serves debugging."""
+    """Persist one edit; best-effort, since it only serves debugging."""
     try:
         repository.insert_pipeline_run(
             user_id=user_id,
             day=day,
             message=instruction,
-            steps=[s.model_dump(mode="json") for s in steps],
+            steps=[step.model_dump(mode="json")],
             outcome="revision_error" if error else "revised",
-            outcome_message=error or steps[-1].summary,
-            total_ms=_ms(started),
-            total_cost=sum(s.cost for s in steps),
+            outcome_message=step.summary,
+            total_ms=step.ms,
+            total_cost=step.cost,
             draft_id=str(draft_id) if draft_id else None,
         )
     except Exception:
-        logging.getLogger(__name__).exception("Could not record the revision")
+        logging.getLogger(__name__).exception("Could not record the edit")
 
 
 async def revise_draft_dish(
     user_id: str, draft_id: UUID, dish_id: str, instruction: str
-) -> dict:
-    """Apply a correction in the user's words to one dish of a draft.
+) -> dict | None:
+    """Apply a correction in the user's words to one dish of a draft; returns
+    the draft, or None when the correction removed its last dish.
 
     A dish is a component's group, or a standalone row; `dish_id` is what
     `logic.group_key` returns for it.
@@ -743,11 +865,11 @@ async def revise_draft_dish(
     rows = [r for r in draft["rows"] if logic.group_key(r) == dish_id]
     if not rows:
         raise DraftError(f"Unknown dish '{dish_id}'.")
-    current, meal_type, hhmm, said = logic.describe_rows(rows)
-    new_rows = await _revise(
-        user_id, draft["day"].isoformat(), current, meal_type, hhmm, said, instruction,
-        draft_id,
+    new_rows = await _edit(
+        user_id, draft["day"].isoformat(), rows, instruction, draft_id
     )
+    if not new_rows:
+        return await asyncio.to_thread(delete_draft_dish, user_id, draft_id, dish_id)
     updated = await asyncio.to_thread(
         repository.update_pending_rows,
         user_id,
@@ -773,15 +895,17 @@ async def revise_logs(
     ]
     if not logs or len(logs) != len(wanted):
         raise DraftError("Entry not found; it may have been deleted.")
-    current, meal_type, hhmm = logic.describe_logs(logs)
-    new_rows = await _revise(
-        user_id, day, current, meal_type, hhmm, None, instruction
+    new_rows = await _edit(user_id, day, logic.log_rows(logs), instruction)
+    result = (
+        await asyncio.to_thread(_write_rows, user_id, new_rows)
+        if new_rows
+        else {"created_ingredients": [], "results": [], "updated_totals": {}}
     )
-    result = await asyncio.to_thread(_write_rows, user_id, new_rows)
     if any(not r["success"] for r in result["results"]):
         return result
     deleted = await asyncio.to_thread(tools.delete_logs_tool, user_id, list(wanted))
-    return {**result, "deleted": deleted["results"]}
+    # The totals once both the writes and the deletes are in.
+    return {**result, "deleted": deleted["results"], "updated_totals": deleted["updated_totals"]}
 
 
 def delete_logs(user_id: str, log_ids: list[str]) -> dict:
