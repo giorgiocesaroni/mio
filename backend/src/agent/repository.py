@@ -684,7 +684,7 @@ def get_logs_by_day(day: str, user_id: str) -> list[models.LogWithEntry]:
                     recipe_id=row[5],
                     dish_id=row[22],
                     dish_name=row[23],
-                    meal_type=row[8],
+                    meal_type=row[6],
                     log_for=log_for_utc,
                     log_for_local=log_for_local,
                 )
