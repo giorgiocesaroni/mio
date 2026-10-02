@@ -593,13 +593,16 @@ def _serialize(draft: dict) -> dict:
         "status": draft["status"],
         "message": draft["message"],
         "via": draft.get("via"),
-        "rows": [logic.enrich_row(row) for row in draft["rows"]],
+        "rows": draft["rows"],
     }
 
 
 def create_draft(
     user_id: str, day: str, message: str, rows: list[dict], cost: float, via: DraftVia
 ) -> dict:
+    # Rows are stored with their derived fields, so the frontend can read
+    # drafts straight from Supabase (`get_day_entries`).
+    rows = [logic.enrich_row(row) for row in rows]
     return _serialize(repository.insert_draft(user_id, day, message, rows, cost, via))
 
 
@@ -640,12 +643,6 @@ def get_log_costs() -> list[dict]:
         {**row, "cost_per_log": row["total_cost"] / row["logs"]}
         for row in repository.get_log_costs()
     ]
-
-
-def list_day_entries(user_id: str, day: str) -> dict:
-    """A day's pending drafts and logs, in one response so they update together."""
-    drafts, logs = repository.get_day_entries(user_id, day)
-    return {"drafts": [_serialize(d) for d in drafts], "logs": logs}
 
 
 def _edit_tools() -> list[dict]:
@@ -874,7 +871,9 @@ async def revise_draft_dish(
         repository.update_pending_rows,
         user_id,
         draft_id,
-        lambda rows: logic.replace_dish(rows, dish_id, new_rows),
+        lambda rows: [
+            logic.enrich_row(row) for row in logic.replace_dish(rows, dish_id, new_rows)
+        ],
     )
     return _serialize(updated)
 

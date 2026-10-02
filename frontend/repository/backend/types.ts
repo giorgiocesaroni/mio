@@ -173,7 +173,7 @@ export type DraftRow = {
   serving_size_id: string | null;
   meal_type: MealType;
   log_for: string;
-  // Derived by the backend.
+  // Derived by the backend when it writes the rows.
   grams: number;
   macros: Per100g;
   flags: string[];

@@ -193,15 +193,6 @@ async def sandbox_log_endpoint(
     )
 
 
-@app.get("/entries")
-async def list_entries_endpoint(
-    day: str,
-    user_id: str = Depends(_get_user_id_from_jwt),
-):
-    """Pending log drafts and logs for a day, read together."""
-    return await asyncio.to_thread(pipeline.list_day_entries, user_id, day)
-
-
 @app.post("/drafts/{draft_id}/dishes/{dish_id}/revise")
 async def revise_draft_dish_endpoint(
     draft_id: UUID,

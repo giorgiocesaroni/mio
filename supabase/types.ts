@@ -530,7 +530,10 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      get_day_entries: {
+        Args: { p_day: string }
+        Returns: Json
+      }
     }
     Enums: {
       ingredient_state: "raw" | "cooked"

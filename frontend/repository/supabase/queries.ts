@@ -1,5 +1,6 @@
 import { createClient } from "./client";
 import { Database } from "./types";
+import type { DayEntries } from "@/repository/backend/types";
 
 export const supabase = createClient<Database>();
 
@@ -17,6 +18,16 @@ export const getDailyMacrosView = async (day: string) => {
     .lt("day", nextDay(day));
   if (error) throw error;
   return data?.[0] ?? null;
+};
+
+/**
+ * A day's pending drafts and logs, read from one snapshot so a draft being
+ * confirmed is never shown alongside its log.
+ */
+export const getDayEntries = async (day: string): Promise<DayEntries> => {
+  const { data, error } = await supabase.rpc("get_day_entries", { p_day: day });
+  if (error) throw error;
+  return data as unknown as DayEntries;
 };
 
 export const getDailyMacrosTrend = async (startDay: string) => {

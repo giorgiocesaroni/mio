@@ -1,6 +1,6 @@
 "use client";
 
-import { getDayEntries } from "@/repository/backend/queries";
+import { getDayEntries } from "@/repository/supabase/queries";
 import { useQuery } from "@tanstack/react-query";
 
 export const DAY_ENTRIES_QUERY_KEY = ["entries"] as const;

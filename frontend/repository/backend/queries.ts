@@ -1,7 +1,6 @@
 import { supabase } from "@/repository/supabase/queries";
 import type {
   ConfirmDraftResult,
-  DayEntries,
   LogDraft,
   ModelsResponse,
   RunAgentStep,
@@ -230,10 +229,6 @@ async function requestJSON<T>(
     throw new Error(body?.detail ?? `HTTP ${res.status}`);
   }
   return res.json();
-}
-
-export function getDayEntries(day: string): Promise<DayEntries> {
-  return requestJSON(`/entries?day=${encodeURIComponent(day)}`);
 }
 
 /** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */
