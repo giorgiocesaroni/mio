@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  getModels,
-  getUsage,
-  type UsageLogCost,
-} from "@/repository/backend/queries";
+import type { UsageLogCost } from "@/repository/backend/queries";
+import { getUsage } from "@/repository/supabase/queries";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { ChartTooltip } from "@/app/dashboard/components/chart";
@@ -25,7 +22,15 @@ import {
   XAxis,
 } from "recharts";
 
-const EXTRA_MODEL_NAMES: Record<string, string> = {
+// Display names, including models used in the past.
+const MODEL_NAMES: Record<string, string> = {
+  "google/gemini-3.8-flash": "Gemini 3.8 Flash",
+  "typesafe/jev-1.13-20260917": "Jev 1.13",
+  "openai/gpt-6-luna": "GPT-6 Luna",
+  "deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
+  "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
+  "xiaomi/mimo-v2.6-pro": "MiMo-V2.6-Pro",
+  "xiaomi/mimo-v2.6-flash": "MiMo-V2.6-Flash",
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite (transcription)",
   "meta/muse-voice-transcribe-1.0": "Muse Voice Transcribe 1.0 (transcription)",
   "openai/gpt-transcribe": "GPT Transcribe (transcription)",
@@ -66,15 +71,6 @@ export default function UsagePage() {
     queryKey: ["usage"],
     queryFn: getUsage,
   });
-  const { data: modelsData } = useQuery({
-    queryKey: ["models"],
-    queryFn: getModels,
-    staleTime: Infinity,
-  });
-
-  const modelNames = new Map(
-    (modelsData?.models ?? []).map((m) => [m.id, m.name]),
-  );
   const logCount = (usage?.logs ?? []).reduce((sum, r) => sum + r.logs, 0);
   const logCost = (usage?.logs ?? []).reduce((sum, r) => sum + r.total_cost, 0);
   const days = getLastSevenDays();
@@ -101,7 +97,7 @@ export default function UsagePage() {
       dataKey: `model${index}`,
       color: CHART_COLORS[index % CHART_COLORS.length],
       opacity: index < CHART_COLORS.length ? 1 : 0.5,
-      name: modelNames.get(modelId) ?? EXTRA_MODEL_NAMES[modelId] ?? modelId,
+      name: MODEL_NAMES[modelId] ?? modelId,
     }));
 
   const dailyData = days.map(({ key, label }) => {
@@ -120,9 +116,7 @@ export default function UsagePage() {
     return point;
   });
   const labeledModels = (usage?.models ?? []).filter((model) =>
-    Boolean(
-      modelNames.get(model.model_id) ?? EXTRA_MODEL_NAMES[model.model_id],
-    ),
+    Boolean(MODEL_NAMES[model.model_id]),
   );
 
   return (
@@ -274,7 +268,7 @@ export default function UsagePage() {
       <div className="grid gap-4">
         {labeledModels.flatMap((m) => {
           const name =
-            modelNames.get(m.model_id) ?? EXTRA_MODEL_NAMES[m.model_id];
+            MODEL_NAMES[m.model_id];
           if (!name) return [];
           return [
             <Card key={m.model_id}>

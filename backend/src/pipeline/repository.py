@@ -130,22 +130,6 @@ def add_draft_cost(draft_id: UUID, cost: float) -> None:
         )
 
 
-def get_log_costs() -> list[dict]:
-    """Drafts created from chat and what creating each one cost, by route."""
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                SELECT via, COUNT(*)::int AS logs, SUM(cost)::float AS total_cost
-                FROM log_drafts
-                WHERE cost IS NOT NULL AND via IN ('pipeline', 'agent')
-                GROUP BY via
-                ORDER BY via
-                """
-            )
-            return cur.fetchall()
-
-
 def get_draft(user_id: str, draft_id: UUID) -> dict | None:
     """A draft in any status."""
     with psycopg.connect(**db_connection_params) as conn:

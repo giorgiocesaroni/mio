@@ -530,8 +530,16 @@ export type Database = {
       }
     }
     Functions: {
+      get_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: Json
+      }
       get_day_entries: {
         Args: { p_day: string }
+        Returns: Json
+      }
+      get_usage_overview: {
+        Args: never
         Returns: Json
       }
     }

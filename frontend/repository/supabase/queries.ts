@@ -1,6 +1,12 @@
 import { createClient } from "./client";
 import { Database } from "./types";
-import type { DayEntries } from "@/repository/backend/types";
+import { conversationSteps } from "./conversation";
+import type {
+  DayEntries,
+  LogDraft,
+  RunAgentStep,
+  UsageOverview,
+} from "@/repository/backend/types";
 
 export const supabase = createClient<Database>();
 
@@ -28,6 +34,28 @@ export const getDayEntries = async (day: string): Promise<DayEntries> => {
   const { data, error } = await supabase.rpc("get_day_entries", { p_day: day });
   if (error) throw error;
   return data as unknown as DayEntries;
+};
+
+/** A conversation as the steps the chat shows, drafts as they are now. */
+export const getConversationMessages = async (
+  conversationId: string,
+): Promise<RunAgentStep[]> => {
+  const { data, error } = await supabase.rpc("get_conversation", {
+    p_conversation_id: conversationId,
+  });
+  if (error) throw error;
+  const { messages, drafts } = data as unknown as {
+    messages: Parameters<typeof conversationSteps>[0];
+    drafts: LogDraft[];
+  };
+  return conversationSteps(messages, drafts);
+};
+
+/** What the LLM calls cost: in total, by model, by day, and per log. */
+export const getUsage = async (): Promise<UsageOverview> => {
+  const { data, error } = await supabase.rpc("get_usage_overview");
+  if (error) throw error;
+  return data as unknown as UsageOverview;
 };
 
 export const getDailyMacrosTrend = async (startDay: string) => {

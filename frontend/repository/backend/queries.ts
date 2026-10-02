@@ -2,10 +2,8 @@ import { supabase } from "@/repository/supabase/queries";
 import type {
   ConfirmDraftResult,
   LogDraft,
-  ModelsResponse,
   RunAgentStep,
   SandboxStep,
-  UsageOverview,
 } from "./types";
 import { queryClient } from "@/app/providers";
 
@@ -29,8 +27,6 @@ export type {
   MessageStep,
   UserMessageStep,
   RunAgentStep,
-  Model,
-  ModelsResponse,
   UsageLogCost,
   UsageOverview,
   SandboxStep,
@@ -105,36 +101,6 @@ export async function transcribeAudio(file: File): Promise<{ text: string }> {
       `Transcription failed: HTTP ${res.status}${detail ? ` ${detail}` : ""}`,
     );
   }
-  return res.json();
-}
-
-export async function getConversationMessages(
-  conversationId: string,
-): Promise<RunAgentStep[]> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(
-    `${BACKEND_BASE_PATH}/conversations/${conversationId}/messages`,
-    { headers },
-  );
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-export async function getModels(): Promise<ModelsResponse> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(`${BACKEND_BASE_PATH}/models`, {
-    headers,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-export async function getUsage(): Promise<UsageOverview> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(`${BACKEND_BASE_PATH}/usage`, {
-    headers,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 

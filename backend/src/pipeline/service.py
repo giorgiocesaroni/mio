@@ -636,15 +636,6 @@ def draft_food(
     )
 
 
-def get_log_costs() -> list[dict]:
-    """What creating a draft from chat costs on average, by route: straight
-    through the pipeline, or through the agent (its turn included)."""
-    return [
-        {**row, "cost_per_log": row["total_cost"] / row["logs"]}
-        for row in repository.get_log_costs()
-    ]
-
-
 def _edit_tools() -> list[dict]:
     return [
         {

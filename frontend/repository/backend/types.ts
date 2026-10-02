@@ -45,16 +45,6 @@ export type StatusStep = {
 
 export type RunAgentStep = ToolCallStep | MessageStep | UserMessageStep | ContentTokenStep | ToolCallStartStep | ErrorStep | DraftStep | StatusStep;
 
-/** Display names of the models the app uses or has used. */
-export type Model = {
-  id: string;
-  name: string;
-};
-
-export type ModelsResponse = {
-  models: Model[];
-};
-
 export type UsageModel = {
   model_id: string;
   invocations: number;

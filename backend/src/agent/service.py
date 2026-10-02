@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-import mimetypes
 import uuid
 from typing import AsyncGenerator
 from uuid import UUID
@@ -229,42 +228,6 @@ async def run_agent(
                     )
 
 
-def get_total_usage() -> dict:
-    return repository.get_total_llm_usage()
-
-
-def get_usage_overview() -> dict:
-    total = repository.get_total_llm_usage()
-    by_model = repository.get_llm_usage_by_model()
-    models = [
-        {
-            **m,
-            "cost_per_message": (
-                m["total_cost"] / m["invocations"] if m["invocations"] else 0
-            ),
-        }
-        for m in by_model
-    ]
-    return {
-        "total": total,
-        "models": models,
-        "daily": repository.get_daily_llm_usage(),
-        "logs": pipeline.get_log_costs(),
-    }
-
-
-def get_conversation_usage(conversation_id: UUID) -> dict:
-    return repository.get_conversation_llm_usage(conversation_id)
-
-
-def get_conversations(user_id: str) -> list[models.Conversation]:
-    return repository.get_conversations(user_id)
-
-
-def _mime_type_from_url(url: str) -> str | None:
-    return mimetypes.guess_type(url.split("?", 1)[0])[0]
-
-
 def _routing_context(
     contents: list[dict], user_id: str
 ) -> tuple[str | None, list[str] | None]:
@@ -372,91 +335,3 @@ def _drafted(tool_message: dict, user_id: str) -> dict | None:
     if not isinstance(result, dict) or not result.get("draft_id"):
         return None
     return pipeline.get_draft(user_id, UUID(result["draft_id"]))
-
-
-def get_conversation_history(
-    conversation_id: UUID, user_id: str
-) -> list[models.RunAgentStep]:
-    messages = repository.get_messages_by_conversation_id(conversation_id, user_id)
-    steps: list[models.RunAgentStep] = []
-    for msg in messages:
-        role = msg.get("role")
-        if role == "user":
-            content = msg.get("content")
-            if isinstance(content, str):
-                steps.append(models.UserMessageStep(type="user_message", text=content))
-            elif isinstance(content, list):
-                for part in content:
-                    if part.get("type") == "text":
-                        steps.append(
-                            models.UserMessageStep(
-                                type="user_message", text=part["text"]
-                            )
-                        )
-                    elif part.get("type") == "image_url":
-                        url = part.get("image_url", {}).get("url", "")
-                        label = "Image"
-                        if url.startswith("data:"):
-                            header, _ = url.split(",", 1)
-                            mime = header.split(":")[1].split(";")[0]
-                            label = (
-                                "Image"
-                                if mime.startswith("image/")
-                                else "Audio"
-                                if mime.startswith("audio/")
-                                else "File"
-                            )
-                        steps.append(
-                            models.UserMessageStep(
-                                type="user_message",
-                                text=label,
-                                data=url,
-                                mime_type=(
-                                    _mime_type_from_url(url)
-                                    if not url.startswith("data:")
-                                    else None
-                                ),
-                            )
-                        )
-                    elif part.get("type") == "input_audio":
-                        url = part.get("input_audio", {}).get("data", "")
-                        label = "Audio"
-                        if url.startswith("data:"):
-                            header, _ = url.split(",", 1)
-                            mime = header.split(":")[1].split(";")[0]
-                        else:
-                            mime = "audio/ogg"
-                        steps.append(
-                            models.UserMessageStep(
-                                type="user_message",
-                                text=label,
-                                data=url,
-                                mime_type=(
-                                    _mime_type_from_url(url)
-                                    if not url.startswith("data:")
-                                    else mime
-                                ),
-                            )
-                        )
-        elif role == "tool":
-            draft = _drafted(msg, user_id)
-            if draft:
-                steps.append(models.DraftStep(draft=draft))
-        elif role == "assistant":
-            content = msg.get("content")
-            if content:
-                steps.append(models.MessageStep(type="message", text=content))
-            for tc in msg.get("tool_calls") or []:
-                func = tc["function"]
-                try:
-                    args = json.loads(func["arguments"])
-                except json.JSONDecodeError:
-                    args = {}
-                steps.append(
-                    models.ToolCallStep(
-                        type="tool_call",
-                        name=func["name"],
-                        args=args,
-                    )
-                )
-    return steps

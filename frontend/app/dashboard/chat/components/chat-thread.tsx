@@ -8,11 +8,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import {
   type RunAgentStep,
-  getConversationMessages,
   streamChat,
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
+import { getConversationMessages } from "@/repository/supabase/queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Cog, Loader2 } from "lucide-react";
 import { toast } from "sonner";

@@ -413,18 +413,6 @@ class InsertGoalInput(BaseModel):
     goal: Literal["lose_weight", "maintain_weight", "gain_weight"]
 
 
-# ── Conversations ─────────────────────────────────────────────────────────────
-
-class Conversation(BaseModel):
-    id: UUID
-    title: Optional[str] = None
-    created_at: datetime
-
-    @field_serializer("id")
-    def serialize_id(self, id: UUID) -> str:
-        return str(id)
-
-
 # ── Measurements ──────────────────────────────────────────────────────────────
 
 class InsertMeasurementInput(BaseModel):

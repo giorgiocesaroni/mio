@@ -87,21 +87,6 @@ def update_conversation_title(conversation_id: UUID, title: str) -> None:
             )
 
 
-def get_conversations(user_id: str) -> list[models.Conversation]:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor(row_factory=class_row(models.Conversation)) as cur:
-            cur.execute(
-                """
-                SELECT id, title, created_at
-                FROM conversations
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-                """,
-                (user_id,),
-            )
-            return cur.fetchall()
-
-
 def insert_conversation_message(
     conversation_id: UUID, content: dict, user_id: str
 ) -> None:
@@ -148,114 +133,6 @@ def insert_llm_invocation(
                     user_id,
                 ),
             )
-
-
-def get_total_llm_usage() -> dict:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*)::int as total_invocations,
-                    COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0) + COALESCE(cached_input_tokens, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) as total_completion_tokens
-                FROM llm_invocations
-                """,
-            )
-            row = cur.fetchone()
-            if not row:
-                raise ValueError("Failed to retrieve LLM usage data.")
-            return {
-                "total_invocations": row[0],
-                "total_cost": float(row[1]),
-                "prompt_tokens": row[2],
-                "completion_tokens": row[3],
-            }
-
-
-def get_daily_llm_usage() -> list[dict]:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    created_at::date AS day,
-                    COALESCE(model_id, 'unknown') AS model_id,
-                    COALESCE(SUM(total_cost), 0) AS total_cost
-                FROM llm_invocations
-                WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
-                GROUP BY created_at::date, model_id
-                ORDER BY day, total_cost DESC
-                """
-            )
-            days: dict[str, dict] = {}
-            for day, model_id, total_cost in cur.fetchall():
-                key = day.isoformat()
-                entry = days.setdefault(key, {"day": key, "total_cost": 0.0, "models": []})
-                cost = float(total_cost)
-                entry["total_cost"] += cost
-                entry["models"].append({"model_id": model_id, "cost": cost})
-            return list(days.values())
-
-
-def get_conversation_llm_usage(conversation_id: UUID) -> dict:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*)::int as total_invocations,
-                    COALESCE(SUM(total_cost), 0) as total_cost,
-                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0) + COALESCE(cached_input_tokens, 0)), 0) as total_prompt_tokens,
-                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) as total_completion_tokens
-                FROM llm_invocations
-                WHERE conversation_id = %s
-                """,
-                (str(conversation_id),),
-            )
-            row = cur.fetchone()
-            if row is None:
-                raise ValueError(
-                    "No LLM invocations found for the given conversation ID."
-                )
-            return {
-                "total_invocations": row[0],
-                "total_cost": float(row[1]),
-                "prompt_tokens": row[2],
-                "completion_tokens": row[3],
-            }
-
-
-def get_llm_usage_by_model() -> list[dict]:
-    with psycopg.connect(**db_connection_params) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    COALESCE(model_id, 'unknown') AS model_id,
-                    COUNT(*)::int AS invocations,
-                    COALESCE(SUM(total_cost), 0) AS total_cost,
-                    COALESCE(SUM(COALESCE(uncached_input_tokens, 0)), 0) AS uncached_input_tokens,
-                    COALESCE(SUM(COALESCE(cached_input_tokens, 0)), 0) AS cached_input_tokens,
-                    COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS output_tokens
-                FROM llm_invocations
-                GROUP BY model_id
-                ORDER BY total_cost DESC
-                """,
-            )
-            rows = cur.fetchall()
-            return [
-                {
-                    "model_id": row[0],
-                    "invocations": row[1],
-                    "total_cost": float(row[2]),
-                    "uncached_input_tokens": row[3],
-                    "cached_input_tokens": row[4],
-                    "output_tokens": row[5],
-                }
-                for row in rows
-            ]
 
 
 def _embedding_to_str(embedding: list[float]) -> str:

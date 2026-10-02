@@ -40,17 +40,6 @@ def reasoning_extra_body(model_id: str) -> dict:
     return {"reasoning": {"effort": REASONING_EFFORT}}
 
 
-# Display names, including models used in the past, for the usage page.
-MODEL_NAMES = {
-    "google/gemini-3.8-flash": "Gemini 3.8 Flash",
-    "typesafe/jev-1.13-20260917": "Jev 1.13",
-    "openai/gpt-6-luna": "GPT-6 Luna",
-    "deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
-    "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
-    "xiaomi/mimo-v2.6-pro": "MiMo-V2.6-Pro",
-    "xiaomi/mimo-v2.6-flash": "MiMo-V2.6-Flash",
-}
-
 _clients: dict[str, AsyncOpenAI] = {}
 
 

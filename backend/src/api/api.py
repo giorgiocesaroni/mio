@@ -13,7 +13,6 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
-import src.agent.providers as providers
 import src.agent.repository as repository
 import src.api.media as media
 import src.pipeline.service as pipeline
@@ -108,23 +107,6 @@ def _parse_message(msg: dict) -> models.MessageType:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.get("/models")
-async def list_models():
-    """Display names of the models the app uses or has used, for the usage page."""
-    return {
-        "models": [
-            {"id": id, "name": name} for id, name in sorted(providers.MODEL_NAMES.items())
-        ],
-    }
-
-
-@app.get("/usage")
-async def usage_endpoint(
-    user_id: str = Depends(_get_user_id_from_jwt),
-):
-    return service.get_usage_overview()
 
 
 @app.post("/chat")
@@ -344,25 +326,6 @@ async def transcribe_voice_memo(
         conversation_id=None,
     )
     return {"text": result.text}
-
-
-@app.get("/conversations")
-async def list_conversations(
-    user_id: str = Depends(_get_user_id_from_jwt),
-):
-    conversations = service.get_conversations(user_id)
-    return [c.model_dump() for c in conversations]
-
-
-@app.get("/conversations/{conversation_id}/messages")
-async def get_conversation_messages(
-    conversation_id: UUID,
-    user_id: str = Depends(
-        _get_user_id_from_jwt,
-    ),
-):
-    steps = service.get_conversation_history(conversation_id, user_id)
-    return [step.model_dump() for step in steps]
 
 
 if __name__ == "__main__":
