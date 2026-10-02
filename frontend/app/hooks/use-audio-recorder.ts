@@ -63,8 +63,8 @@ export function useAudioRecorder() {
       }
       streamRef.current = stream;
 
-      // Let the browser choose its native audio format. The backend normalizes
-      // it with ffmpeg before sending it to the transcription API.
+      // Let the browser choose its native audio format (WebM/Opus, MP4/AAC):
+      // the transcription API takes it as recorded.
       let mediaRecorder: MediaRecorder;
       try {
         mediaRecorder = new MediaRecorder(stream);

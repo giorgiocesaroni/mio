@@ -9,8 +9,8 @@ import { queryClient } from "@/app/providers";
 
 const BACKEND_BASE_PATH = "/backend";
 
-// Direct backend URL (bypasses the Next.js proxy). Used for multipart uploads
-// (transcription, file uploads): the browser POSTs straight to FastAPI.
+// Direct backend URL (bypasses the Next.js proxy). Used for file uploads:
+// the browser POSTs straight to FastAPI.
 // Falls back to the proxy path when the public env var is not configured.
 function directBaseUrl(): string {
   return (
@@ -90,7 +90,8 @@ export async function transcribeAudio(file: File): Promise<{ text: string }> {
   const headers = await getAuthHeaders();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${directBaseUrl()}/transcribe`, {
+  // Served by the Next.js route in app/backend/transcribe, not by FastAPI.
+  const res = await fetch(`${BACKEND_BASE_PATH}/transcribe`, {
     method: "POST",
     headers,
     body: formData,
