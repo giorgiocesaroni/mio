@@ -104,7 +104,10 @@ export function ChatThread({
   conversationId: string | null;
   onStart?: (id: string) => void;
 }) {
-  const isNew = initialId === null;
+  // Fixed at mount: once the first message starts the conversation, the URL
+  // (and so `initialId`) becomes its id, but there's still no history to load
+  // over the reply being streamed.
+  const [isNew] = useState(initialId === null);
   const [conversationId, setConversationId] = useState(initialId);
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<RunAgentStep[]>([]);

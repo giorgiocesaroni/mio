@@ -88,7 +88,7 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   onClick={() => {
                     closeMobile();
-                    router.push(`/dashboard/chat/${crypto.randomUUID()}`);
+                    router.push("/dashboard/chat/new");
                   }}
                 >
                   <MessageCircle />
