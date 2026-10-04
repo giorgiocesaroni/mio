@@ -19,7 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { deleteLogs, reviseLogs } from "@/repository/backend/queries";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   Check,
   Loader2,
   MoreVertical,
@@ -95,14 +94,12 @@ export function ReviseDialog({
   open,
   onOpenChange,
   description,
-  flags = [],
   pending,
   onApply,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   description: string;
-  flags?: string[];
   pending: boolean;
   onApply: (instruction: string) => void;
 }) {
@@ -117,19 +114,6 @@ export function ReviseDialog({
           <DialogTitle>Edit entry</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {flags.length ? (
-          <div className="grid gap-1">
-            {flags.map((flag) => (
-              <p
-                key={flag}
-                className="flex items-start gap-1.5 text-sm text-amber-700 dark:text-amber-400"
-              >
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                {flag}
-              </p>
-            ))}
-          </div>
-        ) : null}
         <Textarea
           autoFocus
           value={instruction}

@@ -18,7 +18,7 @@ import {
   type Per100g,
 } from "@/repository/backend/queries";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { getElapsedTime } from "@/app/utils";
@@ -189,9 +189,9 @@ function DraftDishCard({
               {flags.length ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <AlertTriangle
+                    <Sparkles
                       className="ml-2 inline size-4 align-[-2px] text-amber-600 dark:text-amber-400"
-                      aria-label="Needs review"
+                      aria-label="AI notes"
                     />
                   </TooltipTrigger>
                   <TooltipContent>{flags.join(" · ")}</TooltipContent>
@@ -249,7 +249,6 @@ function DraftDishCard({
           open
           onOpenChange={(open) => !open && close()}
           description={description}
-          flags={flags}
           pending={revise.isPending}
           onApply={(instruction) =>
             revise.mutate({ dishId, instruction }, { onSuccess: close })
