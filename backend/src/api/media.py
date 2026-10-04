@@ -7,6 +7,10 @@ from pathlib import Path
 
 import supabase
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
+
+# iPhone photos are HEIC by default; let Pillow decode them like any image.
+register_heif_opener()
 
 _supabase_client: supabase.Client | None = None
 
@@ -33,15 +37,26 @@ MIMO_AUDIO_TYPES = {"audio/mpeg", "audio/wav", "audio/flac", "audio/x-m4a", "aud
 IMAGE_MAX_DIMENSION = 1600
 IMAGE_JPEG_QUALITY = 82
 
+# What every model and browser reads; any other image (HEIC, AVIF, TIFF...)
+# is always converted to JPEG.
+PORTABLE_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+class UnreadableImageError(ValueError):
+    """An image in a format that can't be decoded, so it can't be converted."""
+
 
 def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
     """Re-encode an image to a compressed JPEG capped at IMAGE_MAX_DIMENSION px.
 
-    Returns (compressed_bytes, stored_mime_type). Returns the input unchanged
-    when the image can't be processed or compression wouldn't help.
+    Returns (compressed_bytes, stored_mime_type). A portable image (see
+    PORTABLE_IMAGE_TYPES) is returned unchanged when it can't be processed or
+    compression wouldn't help; any other image is always converted, and
+    raises UnreadableImageError when it can't be decoded.
     """
     if not mime_type.startswith("image/") or mime_type == "image/gif":
         return data, mime_type
+    portable = mime_type in PORTABLE_IMAGE_TYPES
     try:
         with Image.open(io.BytesIO(data)) as img:
             img.load()
@@ -62,10 +77,11 @@ def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
             output = io.BytesIO()
             img.save(output, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
             compressed = output.getvalue()
-            if len(compressed) < len(data) or has_orientation:
+            if len(compressed) < len(data) or has_orientation or not portable:
                 return compressed, "image/jpeg"
-    except (UnidentifiedImageError, OSError, ValueError):
-        pass
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        if not portable:
+            raise UnreadableImageError(f"Can't read this {mime_type} image.") from e
     return data, mime_type
 
 

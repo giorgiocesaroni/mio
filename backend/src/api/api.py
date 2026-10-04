@@ -317,6 +317,8 @@ async def upload_file(
         url, mime_type = media.upload_media(
             user_id, data, file.content_type or "application/octet-stream"
         )
+    except media.UnreadableImageError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
     return {"url": url, "mime_type": mime_type}
