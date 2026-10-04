@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
 import src.agent.providers as providers
-import src.agent.repository as agent_repository
 from src.agent.utils import fetch_openrouter_models
 import src.api.media as media
 import src.pipeline.service as pipeline
@@ -117,12 +116,14 @@ async def chat_endpoint(
     ),
 ):
     body = await request.json()
+    picked = await _models(body)
     inp = models.RunAgentInput(
         conversation_id=body["conversation_id"],
         user_id=user_id,
         message=_parse_message(body["message"]),
         thinking=body.get("thinking", True),
         day=body.get("day"),
+        models=picked,
     )
 
     async def event_stream():
@@ -151,38 +152,27 @@ async def model_defaults_endpoint(
     return providers.TASK_DEFAULTS
 
 
-async def _check_models(picked: dict) -> None:
-    """Reject a pick that isn't a task, or a model OpenRouter doesn't list
-    as able to do the task."""
+async def _models(body: dict) -> dict[str, str]:
+    """The models a request picked, as {task: model id}: the app's settings,
+    kept in the browser, or the sandbox's own picks. Rejects a task that
+    doesn't exist, or a model OpenRouter doesn't list as able to do it."""
+    picked = body.get("models") or {}
+    if not isinstance(picked, dict):
+        raise HTTPException(status_code=400, detail="`models` must be {task: model}.")
+    picked = {task: model for task, model in picked.items() if model}
+    if not picked:
+        return {}
     available = await fetch_openrouter_models()
     for task, model in picked.items():
         if task not in providers.TASK_DEFAULTS:
             raise HTTPException(status_code=400, detail=f"Unknown task '{task}'.")
-        if model is None:
-            continue
         if not isinstance(model, str) or model not in available:
             raise HTTPException(status_code=400, detail=f"Unknown model '{model}'.")
         if not providers.supports(available[model], task):
             raise HTTPException(
                 status_code=400, detail=f"{model} can't be used for {task}."
             )
-
-
-@app.put("/preferences/models")
-async def set_model_preferences_endpoint(
-    request: Request,
-    user_id: str = Depends(_get_user_id_from_jwt),
-):
-    """Saves the models the user picked for the app, as {task: model id};
-    a null or missing task uses the configured model. The sandbox doesn't
-    read them."""
-    body = await request.json()
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Expected {task: model}.")
-    await _check_models(body)
-    preferences = {task: model for task, model in body.items() if model}
-    await asyncio.to_thread(agent_repository.set_model_preferences, user_id, preferences)
-    return preferences
+    return picked
 
 
 @app.post("/sandbox/log")
@@ -192,15 +182,10 @@ async def sandbox_log_endpoint(
 ):
     """Runs the logging pipeline and streams every stage, for debugging.
 
-    `extract_model` and `resolve_model` override the configured models for
-    this run only; the user's preferences don't apply here.
+    `models` are the sandbox's own picks, apart from the app's settings.
     """
     body = await request.json()
-    overrides = {k: body.get(k) or None for k in ("extract_model", "resolve_model")}
-    # The extract override also reads photos.
-    await _check_models(
-        {"extract_photo": overrides["extract_model"], "resolve": overrides["resolve_model"]}
-    )
+    models = await _models(body)
     message = await service.preprocess_message(
         _parse_message(body["message"]), user_id, None
     )
@@ -209,7 +194,7 @@ async def sandbox_log_endpoint(
         message=message,
         day=body.get("day"),
         via="sandbox",
-        **overrides,
+        models=models,
     )
 
     async def event_stream():
@@ -238,7 +223,7 @@ async def revise_draft_dish_endpoint(
     body = await request.json()
     try:
         return await pipeline.revise_draft_dish(
-            user_id, draft_id, dish_id, body.get("instruction", "")
+            user_id, draft_id, dish_id, body.get("instruction", ""), await _models(body)
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -303,6 +288,7 @@ async def revise_logs_endpoint(
             body["day"],
             body["log_ids"],
             body.get("instruction", ""),
+            await _models(body),
         )
     except DraftError as e:
         raise HTTPException(status_code=400, detail=str(e))

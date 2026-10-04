@@ -194,6 +194,7 @@ async def run_agent(
         system_prompt=system_prompt,
         contents=contents,
         thinking=input.thinking,
+        models=input.models,
     )
     async for chunk in agent(agent_input):
         if isinstance(
@@ -279,6 +280,7 @@ async def _draft_directly(
             last_reply=last_reply,
             pending_draft=pending,
             via="pipeline",
+            models=input.models,
         )
     ):
         if step.type == "stage":

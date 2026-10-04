@@ -9,16 +9,17 @@ PROVIDERS = {
 }
 
 # Every LLM call but transcription and embeddings uses one of these, picked for
-# its task; the environment variables are for trying others. Messages are
+# its task, unless the request picks another (the app's settings, or the
+# sandbox's); the environment variables are for trying others. Messages are
 # routed by Jev (`src/pipeline/jev.py`), which has its own model.
 #
 # The agent: chat, questions, and whatever depends on the conversation.
-AGENT_MODEL = os.getenv("AGENT_MODEL", "openai/gpt-6-luna")
-# Extracting foods from a message and resolving them against the database:
-# DeepSeek without reasoning, since both are mechanical and its reasoning only
-# adds latency and tokens.
-PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
-TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "deepseek/deepseek-v4.1-flash")
+AGENT_MODEL = os.getenv("AGENT_MODEL", "deepseek/deepseek-v4.1-flash")
+# Extracting foods from a message, then resolving them against the database
+# (DeepSeek without reasoning, since it's mechanical and its reasoning only
+# adds latency and tokens).
+PHOTO_EXTRACT_MODEL = os.getenv("PHOTO_EXTRACT_MODEL", "google/gemini-3.8-flash")
+TEXT_EXTRACT_MODEL = os.getenv("TEXT_EXTRACT_MODEL", "google/gemini-3.8-flash")
 RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "deepseek/deepseek-v4.1-flash")
 # Applying a correction to an entry through small editing tools.
 EDIT_MODEL = os.getenv("EDIT_MODEL", "deepseek/deepseek-v4.1-flash")
@@ -58,9 +59,10 @@ def supports(model: dict, task: str) -> bool:
     )
 
 
-def model_for(task: str, preferences: dict) -> str:
-    """The model a task runs with: the user's pick, or the configured one."""
-    return preferences.get(task) or TASK_DEFAULTS[task]
+def model_for(task: str, models: dict[str, str]) -> str:
+    """The model a task runs with: the one picked for the request (the app's
+    settings, or the sandbox's), or the configured one."""
+    return models.get(task) or TASK_DEFAULTS[task]
 
 
 # Every call reasons at low effort unless its model is listed here.

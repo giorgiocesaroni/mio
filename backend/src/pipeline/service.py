@@ -186,20 +186,6 @@ async def _route(
     }, cost
 
 
-def _models(input: PipelineInput) -> dict[str, str]:
-    """The models this run picks, as {task: model id}: the sandbox's own
-    overrides, kept apart from the user's preferences so QA doesn't change
-    the app; otherwise the user's preferences."""
-    if input.via == "sandbox":
-        picked = {
-            "extract_photo": input.extract_model,
-            "extract_text": input.extract_model,
-            "resolve": input.resolve_model,
-        }
-        return {task: model for task, model in picked.items() if model}
-    return agent_repository.get_model_preferences(input.user_id)
-
-
 async def _complete(
     user_id: str, model_id: str, messages: list[dict], output: type[_Output]
 ) -> tuple[_Output, float, dict]:
@@ -398,7 +384,6 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
 
     try:
         timezone = agent_repository.get_user_timezone(input.user_id)
-        models = await asyncio.to_thread(_models, input)
         now = datetime.datetime.now(tz=ZoneInfo(timezone))
         today = now.strftime("%Y-%m-%d")
         day = input.day or today
@@ -448,7 +433,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         stage = "extract"
         t = time.perf_counter()
         extract_model = providers.model_for(
-            "extract_photo" if images else "extract_text", models
+            "extract_photo" if images else "extract_text", input.models
         )
         extraction, cost, usage = await _extract(
             input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M"), extract_model
@@ -498,7 +483,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
-        resolve_model = providers.model_for("resolve", models)
+        resolve_model = providers.model_for("resolve", input.models)
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
@@ -635,7 +620,11 @@ def get_draft(user_id: str, draft_id: UUID) -> dict | None:
 
 
 def draft_food(
-    user_id: str, description: str, image_urls: list[str], day: str | None
+    user_id: str,
+    description: str,
+    image_urls: list[str],
+    day: str | None,
+    models: dict[str, str],
 ) -> AsyncGenerator[PipelineStep, None]:
     """Draft a food log from the agent's description, skipping the router;
     streams the run like `run`.
@@ -649,7 +638,12 @@ def draft_food(
     message = agent_models.RunAgentUserMessage(parts=parts)
     return run(
         PipelineInput(
-            user_id=user_id, message=message, day=day, skip_route=True, via="agent"
+            user_id=user_id,
+            message=message,
+            day=day,
+            skip_route=True,
+            via="agent",
+            models=models,
         )
     )
 
@@ -863,31 +857,28 @@ def _record_edit(
 
 
 async def revise_draft_dish(
-    user_id: str, draft_id: UUID, dish_id: str, instruction: str
+    user_id: str,
+    draft_id: UUID,
+    dish_id: str,
+    instruction: str,
+    models: dict[str, str],
 ) -> dict | None:
     """Apply a correction in the user's words to one dish of a draft; returns
     the draft, or None when the correction removed its last dish.
 
     A dish is a component's group, or a standalone row; `dish_id` is what
-    `logic.group_key` returns for it.
+    `logic.group_key` returns for it. `models` picks the editor's model.
     """
     draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
     rows = [r for r in draft["rows"] if logic.group_key(r) == dish_id]
     if not rows:
         raise DraftError(f"Unknown dish '{dish_id}'.")
-    # A sandbox draft is edited with the configured model, like the sandbox
-    # runs without the user's preferences.
-    preferences = (
-        {}
-        if draft["via"] == "sandbox"
-        else await asyncio.to_thread(agent_repository.get_model_preferences, user_id)
-    )
     new_rows = await _edit(
         user_id,
         draft["day"].isoformat(),
         rows,
         instruction,
-        providers.model_for("edit", preferences),
+        providers.model_for("edit", models),
         draft_id,
     )
     if not new_rows:
@@ -904,7 +895,11 @@ async def revise_draft_dish(
 
 
 async def revise_logs(
-    user_id: str, day: str, log_ids: list[str], instruction: str
+    user_id: str,
+    day: str,
+    log_ids: list[str],
+    instruction: str,
+    models: dict[str, str],
 ) -> dict:
     """Apply a correction in the user's words to logged entries (one card).
 
@@ -919,13 +914,12 @@ async def revise_logs(
     ]
     if not logs or len(logs) != len(wanted):
         raise DraftError("Entry not found; it may have been deleted.")
-    preferences = await asyncio.to_thread(agent_repository.get_model_preferences, user_id)
     new_rows = await _edit(
         user_id,
         day,
         logic.log_rows(logs),
         instruction,
-        providers.model_for("edit", preferences),
+        providers.model_for("edit", models),
     )
     result = (
         await asyncio.to_thread(_write_rows, user_id, new_rows)

@@ -4,7 +4,6 @@ import { conversationSteps } from "./conversation";
 import type {
   DayEntries,
   LogDraft,
-  ModelChoices,
   RunAgentStep,
   UsageOverview,
 } from "@/repository/backend/types";
@@ -85,16 +84,6 @@ export const getConversations = async () => {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
-};
-
-/** The models the user picked for the app; empty when none. */
-export const getModelPreferences = async (): Promise<ModelChoices> => {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("model_preferences")
-    .maybeSingle();
-  if (error) throw error;
-  return (data?.model_preferences ?? {}) as ModelChoices;
 };
 
 export const getCurrentGoal = async () => {

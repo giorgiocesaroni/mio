@@ -95,8 +95,12 @@ export default function SandboxPage() {
         { parts },
         {
           day,
-          extractModel: extractModel ?? undefined,
-          resolveModel: resolveModel ?? undefined,
+          models: {
+            ...(extractModel
+              ? { extract_photo: extractModel, extract_text: extractModel }
+              : {}),
+            ...(resolveModel ? { resolve: resolveModel } : {}),
+          },
         },
         controller.signal,
         (step) => {

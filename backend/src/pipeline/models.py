@@ -143,9 +143,9 @@ class PipelineInput(BaseModel):
     skip_route: bool = False
     # What started the run, stored with the draft for the usage page.
     via: DraftVia = "sandbox"
-    # The sandbox's model overrides for QA; None uses the configured model.
-    extract_model: str | None = None
-    resolve_model: str | None = None
+    # The model picked for each task, as {task: model id}: the app's settings,
+    # or the sandbox's own picks; see `providers.model_for`.
+    models: dict[str, str] = {}
 
 
 # "edit" is a correction applied to an existing entry, not a stage of a new log.

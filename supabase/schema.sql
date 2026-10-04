@@ -107,7 +107,6 @@ CREATE TABLE public.profiles (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   user_id uuid NOT NULL,
   timezone text NOT NULL DEFAULT 'Europe/Rome'::text,
-  model_preferences jsonb NOT NULL DEFAULT '{}'::jsonb,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );

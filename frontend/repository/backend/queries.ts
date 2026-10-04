@@ -156,6 +156,7 @@ async function streamSSE<T extends { type: string } = RunAgentStep>(
 export async function streamChat(
   conversationId: string,
   payload: object,
+  models: ModelChoices,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
@@ -164,6 +165,7 @@ export async function streamChat(
     {
       conversation_id: conversationId,
       message: payload,
+      models,
     },
     signal,
     onStep,
@@ -172,7 +174,7 @@ export async function streamChat(
 
 export async function streamSandboxLog(
   payload: object,
-  options: { day: string; extractModel?: string; resolveModel?: string },
+  options: { day: string; models: ModelChoices },
   signal: AbortSignal,
   onStep: (step: SandboxStep) => void,
 ): Promise<void> {
@@ -181,8 +183,7 @@ export async function streamSandboxLog(
     {
       message: payload,
       day: options.day,
-      extract_model: options.extractModel,
-      resolve_model: options.resolveModel,
+      models: options.models,
     },
     signal,
     onStep,
@@ -217,23 +218,17 @@ export function getModelDefaults(): Promise<Required<ModelChoices>> {
   return requestJSON("/models/defaults");
 }
 
-/** Saves the models the app uses; a task left out uses the configured model. */
-export function setModelPreferences(preferences: ModelChoices): Promise<ModelChoices> {
-  return requestJSON("/preferences/models", {
-    method: "PUT",
-    body: JSON.stringify(preferences),
-  });
-}
 
 /** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */
 export function reviseDraftDish(
   id: string,
   dishId: string,
   instruction: string,
+  models: ModelChoices,
 ): Promise<LogDraft | null> {
   return requestJSON(`/drafts/${id}/dishes/${encodeURIComponent(dishId)}/revise`, {
     method: "POST",
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction, models }),
   });
 }
 
@@ -267,6 +262,7 @@ export function reviseLogs(
   day: string,
   logIds: string[],
   instruction: string,
+  models: ModelChoices,
 ): Promise<ConfirmDraftResult> {
   return requestJSON(`/logs/revise`, {
     method: "POST",
@@ -274,6 +270,7 @@ export function reviseLogs(
       day,
       log_ids: logIds,
       instruction,
+      models,
     }),
   });
 }

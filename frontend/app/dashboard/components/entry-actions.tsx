@@ -29,6 +29,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { DAY_ENTRIES_QUERY_KEY } from "./day-entries";
+import { readModelPreferences } from "@/lib/model-preferences";
 
 /** The label before an entry's name, e.g. "Recipe" or "Draft". */
 export function EntryPill({ children }: { children: React.ReactNode }) {
@@ -214,7 +215,7 @@ export function useLogEntryActions(day: string, logIds: string[]) {
 
   const revise = useMutation({
     mutationFn: (instruction: string) =>
-      reviseLogs(day, logIds, instruction),
+      reviseLogs(day, logIds, instruction, readModelPreferences()),
     onSuccess: async (result) => {
       const failed = result.results.filter((r) => !r.success);
       if (failed.length)

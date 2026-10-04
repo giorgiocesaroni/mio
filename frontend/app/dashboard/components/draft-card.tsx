@@ -32,6 +32,7 @@ import {
 } from "./entry-actions";
 import { dayEntriesQueryKey, useDayEntries } from "./day-entries";
 import { FoodBadges, type Macros } from "./food-badges";
+import { readModelPreferences } from "@/lib/model-preferences";
 
 function targetOf(row: DraftRow): DraftAlternative {
   return row.alternatives.find((a) => a.key === row.target)!;
@@ -111,7 +112,14 @@ function useDraftMutations(draft: LogDraft) {
     }: {
       dishId: string;
       instruction: string;
-    }) => reviseDraftDish(draft.id, dishId, instruction),
+    }) =>
+      reviseDraftDish(
+        draft.id,
+        dishId,
+        instruction,
+        // A sandbox draft keeps to the configured models, like its run.
+        draft.via === "sandbox" ? {} : readModelPreferences(),
+      ),
     onSuccess: (updated) => setDraft(updated),
     onError: (err) => toast.error(err.message),
   });

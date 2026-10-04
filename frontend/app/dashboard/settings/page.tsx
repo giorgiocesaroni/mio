@@ -11,16 +11,11 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
-  getModelDefaults,
-  setModelPreferences,
-  type ModelChoices,
-  type ModelTask,
-} from "@/repository/backend/queries";
-import { getModelPreferences } from "@/repository/supabase/queries";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-
-const PREFERENCES_QUERY_KEY = ["getModelPreferences"];
+  useModelPreferences,
+  writeModelPreferences,
+} from "@/lib/model-preferences";
+import { getModelDefaults, type ModelTask } from "@/repository/backend/queries";
+import { useQuery } from "@tanstack/react-query";
 
 const TASKS: { task: ModelTask; label: string; description: string }[] = [
   {
@@ -51,37 +46,18 @@ const TASKS: { task: ModelTask; label: string; description: string }[] = [
 ];
 
 export default function SettingsPage() {
-  const queryClient = useQueryClient();
-  const { data: preferences, error } = useQuery({
-    queryKey: PREFERENCES_QUERY_KEY,
-    queryFn: getModelPreferences,
-  });
+  const preferences = useModelPreferences();
   const { data: defaults } = useQuery({
     queryKey: ["getModelDefaults"],
     queryFn: getModelDefaults,
     staleTime: Infinity,
   });
 
-  const save = useMutation({
-    mutationFn: setModelPreferences,
-    onMutate: async (next: ModelChoices) => {
-      await queryClient.cancelQueries({ queryKey: PREFERENCES_QUERY_KEY });
-      const previous = queryClient.getQueryData<ModelChoices>(PREFERENCES_QUERY_KEY);
-      queryClient.setQueryData(PREFERENCES_QUERY_KEY, next);
-      return { previous };
-    },
-    onError: (err, _next, context) => {
-      queryClient.setQueryData(PREFERENCES_QUERY_KEY, context?.previous);
-      toast.error(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: PREFERENCES_QUERY_KEY }),
-  });
-
   const pick = (task: ModelTask, model: string | null) => {
     const next = { ...preferences };
     if (model) next[task] = model;
     else delete next[task];
-    save.mutate(next);
+    writeModelPreferences(next);
   };
 
   return (
@@ -90,16 +66,12 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Models</CardTitle>
           <CardDescription>
-            The models the app uses for each task, from OpenRouter. Only models
-            that can do a task are listed. The sandbox picks its own.
+            The models the app uses for each task, from OpenRouter, saved in
+            this browser. Only models that can do a task are listed. The
+            sandbox picks its own.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
-          {error ? (
-            <p className="text-sm text-destructive">
-              Couldn&apos;t load your models: {error.message}
-            </p>
-          ) : null}
           {TASKS.map(({ task, label, description }) => (
             <div
               key={task}
@@ -112,10 +84,9 @@ export default function SettingsPage() {
               <ModelCombobox
                 id={`model-${task}`}
                 task={task}
-                value={preferences?.[task] ?? null}
+                value={preferences[task] ?? null}
                 onChange={(model) => pick(task, model)}
                 defaultModel={defaults?.[task]}
-                disabled={!preferences || save.isPending}
               />
             </div>
           ))}
