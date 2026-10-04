@@ -88,6 +88,7 @@ First, for each dish with `saved_recipes`: when the dish is one of them (the use
 
 Then, for every component of the other dishes (by `item` index), return exactly one row:
 - `target`: the key of the candidate that is the same food, or "new" when none is. The user's own entries come first: a matching brand is strong evidence, and raw vs cooked entries of the same food are still the same food. A saved recipe matches when the user names that dish.
+- A preparation is not its main ingredient: a sauce, ragù, pesto, soup or filling made with sausage is not sausage. Choose "new" rather than a candidate that only shares a word with the component.
 - `unit` and `quantity`: when the user stated a weight, "grams" with exactly that weight. Otherwise "serving" with the target's `serving` key when they counted units the entry defines (slices, pieces, cutlets...); "recipe" with a fraction when they ate part of a saved recipe (half = 0.5, a portion of a multi-portion dish is a fraction); otherwise "grams" with the eaten weight, starting from `estimated_grams`.
 - `weight_state`: whether the logged amount is raw or cooked weight. If the target is raw but the user ate it cooked (or the reverse), convert the grams to the target's state and set `weight_state` to it.
 - `meal_type` and `time` (HH:MM): as stated in the message; otherwise infer them sensibly from the local time. Every component of a dish shares them.

@@ -54,6 +54,12 @@ CANDIDATES_PER_KIND = 4
 ROUTE_MIN_CONFIDENCE = 0.5
 CONTEXT_MAX_NOUL = 0.5
 
+# A matched ingredient whose calories differ from the extraction's estimate
+# (same state) by both this factor and this many kcal per 100 g is likely a
+# different food, e.g. a sausage ragù matched to plain sausage.
+MISMATCH_KCAL_RATIO = 2.0
+MISMATCH_KCAL_MIN_DIFF = 100
+
 # Drafts created by the earlier Jev resolver store a numeric confidence.
 LEGACY_MATCH_MIN_CONFIDENCE = 0.6
 
@@ -421,6 +427,25 @@ def _validated(
     return fields, repairs
 
 
+def nutrition_mismatch(item: ExtractedItem, target: dict) -> str | None:
+    """A note when the matched ingredient's calories are far from what the
+    extraction estimated for the food, so the match is likely wrong.
+
+    Only compares the same state: raw and cooked weights legitimately differ.
+    """
+    if target["kind"] != "ingredient" or target.get("state") != item.state:
+        return None
+    estimated = item.per_100g.calories_kcal
+    matched = target["per_100g"]["calories_kcal"]
+    low, high = sorted((estimated, matched))
+    if high - low < MISMATCH_KCAL_MIN_DIFF or high < low * MISMATCH_KCAL_RATIO:
+        return None
+    return (
+        f"{target['name']} has {matched:.0f} kcal/100 g, but {item.name} "
+        f"is usually about {estimated:.0f}: check it's the same food."
+    )
+
+
 def _when(
     resolved_time: str | None,
     resolved_meal: str | None,
@@ -541,6 +566,11 @@ def draft_rows(
             ] + [_new_alternative(item)]
             resolved = by_item.get(index)
             fields, repairs = _validated(resolved, item, alternatives)
+            mismatch = nutrition_mismatch(
+                item, next(a for a in alternatives if a["key"] == fields["target"])
+            )
+            if mismatch:
+                repairs.append(mismatch.rstrip("."))
             meal_type, log_for = _when(
                 resolved.time if resolved else None,
                 resolved.meal_type if resolved else None,
