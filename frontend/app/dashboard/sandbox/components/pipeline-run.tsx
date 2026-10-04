@@ -8,6 +8,7 @@ import type {
   SandboxStageStep,
 } from "@/repository/backend/queries";
 import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export const STAGES: { name: SandboxStageName; label: string; kind: string }[] =
   [
@@ -24,9 +25,25 @@ export type Run = {
   text: string;
   images: string[];
   stages: SandboxStageStep[];
+  // When the last stage arrived (or the run started): the pending stage's start.
+  stepAt: number;
   done?: SandboxDoneStep;
   error?: string;
 };
+
+/** Seconds since `since`, ticking, so a slow model doesn't look stuck. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+      {Math.max(0, Math.floor((now - since) / 1000))} s…
+    </span>
+  );
+}
 
 export function formatCost(cost: number): string {
   return cost === 0 ? "$0" : `$${cost.toFixed(cost < 0.001 ? 6 : 4)}`;
@@ -144,11 +161,13 @@ function StageRow({
   kind,
   stage,
   isPending,
+  pendingSince,
 }: {
   label: string;
   kind: string;
   stage?: SandboxStageStep;
   isPending: boolean;
+  pendingSince: number;
 }) {
   const jev = stage ? jevOf(stage) : null;
   return (
@@ -173,7 +192,10 @@ function StageRow({
             <Badge variant="destructive">error</Badge>
           ) : null}
           {isPending ? (
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+            <>
+              <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              <Elapsed since={pendingSince} />
+            </>
           ) : null}
           {stage ? (
             <span className="ml-auto text-xs tabular-nums text-muted-foreground">
@@ -276,6 +298,7 @@ export function PipelineRun({ run }: { run: Run }) {
             kind={s.kind}
             stage={byName.get(s.name)}
             isPending={isRunning && STAGES.indexOf(s) === nextIndex}
+            pendingSince={run.stepAt}
           />
         ))}
       </ol>

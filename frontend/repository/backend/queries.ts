@@ -176,7 +176,12 @@ export async function streamChat(
 
 export async function streamSandboxLog(
   payload: object,
-  options: { day: string; models: ModelChoices },
+  options: {
+    day: string;
+    models: ModelChoices;
+    // Request parameters per stage ("extract", "resolve"), sent as they are.
+    parameters: Record<string, Record<string, unknown>>;
+  },
   signal: AbortSignal,
   onStep: (step: SandboxStep) => void,
 ): Promise<void> {
@@ -186,6 +191,7 @@ export async function streamSandboxLog(
       message: payload,
       day: options.day,
       models: options.models,
+      parameters: options.parameters,
     },
     signal,
     onStep,
@@ -218,6 +224,11 @@ export function searchModels(task: ModelTask, query: string): Promise<ModelOptio
 /** OpenRouter's catalog entry for one model, as it lists it. */
 export function getModelInfo(id: string): Promise<ModelInfo> {
   return requestJSON(`/models/info?${new URLSearchParams({ id })}`);
+}
+
+/** The request parameters extraction and resolution send to `model`. */
+export function getModelParameters(model: string): Promise<Record<string, unknown>> {
+  return requestJSON(`/models/parameters?${new URLSearchParams({ model })}`);
 }
 
 /** The configured model of each task, used when the user picked none. */

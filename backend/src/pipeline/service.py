@@ -186,10 +186,30 @@ async def _route(
     }, cost
 
 
+async def default_parameters(model_id: str) -> dict:
+    """The request parameters extraction and resolution send to `model_id`,
+    as OpenRouter's request body has them; the sandbox can replace them."""
+    return {
+        "max_completion_tokens": LLM_MAX_COMPLETION_TOKENS,
+        # Extraction and resolution are estimation, not writing: sampling at a
+        # non-zero temperature makes the same message draft differently every
+        # run. Greedy keeps the draft reproducible, for the models that take
+        # a temperature (OpenRouter drops it for the others).
+        "temperature": 0,
+        **await providers.reasoning_extra_body(model_id),
+    }
+
+
 async def _complete(
-    user_id: str, model_id: str, messages: list[dict], output: type[_Output]
+    user_id: str,
+    model_id: str,
+    messages: list[dict],
+    output: type[_Output],
+    parameters: dict,
 ) -> tuple[_Output, float, dict]:
-    """One structured-output completion, validated into `output`."""
+    """One structured-output completion, validated into `output`.
+    `parameters` go into the request body as they are (see
+    `default_parameters`)."""
     client = providers.get_client()
     response = await client.chat.completions.create(
         model=model_id,
@@ -202,12 +222,7 @@ async def _complete(
                 "schema": logic.inline_refs(output.model_json_schema()),
             },
         },
-        max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
-        # Extraction and resolution are estimation, not writing: sampling at a
-        # non-zero temperature makes the same message draft differently every
-        # run. Greedy keeps the draft reproducible.
-        temperature=0,
-        extra_body=providers.reasoning_extra_body(model_id),
+        extra_body=parameters,
     )
     usage = response.usage.model_dump() if response.usage else {}
     cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
@@ -218,9 +233,10 @@ async def _complete(
     if choice.finish_reason == "length":
         reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
         spent = f", {reasoning} of them reasoning" if reasoning else ""
+        limit = parameters.get("max_completion_tokens", "its limit")
         raise RuntimeError(
             f"{model_id} ran out of output tokens "
-            f"({LLM_MAX_COMPLETION_TOKENS}{spent}) before finishing its answer"
+            f"({limit}{spent}) before finishing its answer"
         )
     if not raw.strip():
         raise RuntimeError(
@@ -230,7 +246,12 @@ async def _complete(
 
 
 async def _extract(
-    user_id: str, text: str, images: list[str], now: str, model_id: str
+    user_id: str,
+    text: str,
+    images: list[str],
+    now: str,
+    model_id: str,
+    parameters: dict,
 ) -> tuple[Extraction, float, dict]:
     content: list[dict] = []
     if text:
@@ -241,7 +262,7 @@ async def _extract(
         {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
         {"role": "user", "content": content},
     ]
-    return await _complete(user_id, model_id, messages, Extraction)
+    return await _complete(user_id, model_id, messages, Extraction, parameters)
 
 
 async def _candidates(user_id: str, queries: list[str], ingredients: bool) -> list[dict]:
@@ -314,6 +335,7 @@ async def _resolve(
     day: str,
     now: str,
     model_id: str,
+    parameters: dict,
 ) -> tuple[Resolution, float, dict]:
     """Match each food to a candidate and decide how to log it, in one call.
 
@@ -332,7 +354,7 @@ async def _resolve(
         {"role": "user", "content": json.dumps({"dishes": dishes}, ensure_ascii=False)},
     ]
     resolution, cost, usage = await _complete(
-        user_id, model_id, messages, Resolution
+        user_id, model_id, messages, Resolution, parameters
     )
     missing = logic.missing_rows(extraction, resolution, dish_recipes)
     if missing:
@@ -350,6 +372,7 @@ async def _resolve(
                 }
             ],
             Resolution,
+            parameters,
         )
         cost += retry_cost
         usage = retry_usage
@@ -435,8 +458,18 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         extract_model = providers.model_for(
             "extract_photo" if images else "extract_text", input.models
         )
+        extract_parameters = (
+            input.parameters["extract"]
+            if "extract" in input.parameters
+            else await default_parameters(extract_model)
+        )
         extraction, cost, usage = await _extract(
-            input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M"), extract_model
+            input.user_id,
+            text,
+            images,
+            now.strftime("%Y-%m-%d %H:%M"),
+            extract_model,
+            extract_parameters,
         )
         total_cost += cost
         items = extraction.items
@@ -447,7 +480,11 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ms=_ms(t),
             cost=cost,
             model=extract_model,
-            data={"dishes": [d.model_dump() for d in extraction.dishes], "usage": usage},
+            data={
+                "dishes": [d.model_dump() for d in extraction.dishes],
+                "usage": usage,
+                "sent": extract_parameters,
+            },
         )
         if not items:
             yield done("nothing", "No food found in the message.")
@@ -484,6 +521,11 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         stage = "resolve"
         t = time.perf_counter()
         resolve_model = providers.model_for("resolve", input.models)
+        resolve_parameters = (
+            input.parameters["resolve"]
+            if "resolve" in input.parameters
+            else await default_parameters(resolve_model)
+        )
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
@@ -493,6 +535,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             day,
             now.strftime("%Y-%m-%d %H:%M"),
             resolve_model,
+            resolve_parameters,
         )
         total_cost += cost
         rows = logic.draft_rows(
@@ -517,7 +560,12 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ms=_ms(t),
             cost=cost,
             model=resolve_model,
-            data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
+            data={
+                "resolution": resolution.model_dump(),
+                "rows": enriched,
+                **debug,
+                "sent": resolve_parameters,
+            },
             warnings=stage_warnings,
         )
 
@@ -755,7 +803,7 @@ async def _edit(
                 tools=_edit_tools(),  # type: ignore[arg-type]
                 max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
                 temperature=0,
-                extra_body=providers.reasoning_extra_body(model_id),
+                extra_body=await providers.reasoning_extra_body(model_id),
             )
             usage = response.usage.model_dump() if response.usage else {}
             if usage:

@@ -152,6 +152,48 @@ async def model_defaults_endpoint(
     return providers.TASK_DEFAULTS
 
 
+@app.get("/models/parameters")
+async def model_parameters_endpoint(
+    model: str,
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """The request parameters extraction and resolution send to `model`."""
+    return await pipeline.default_parameters(model)
+
+
+# What the sandbox may set in a stage's request: how the model samples,
+# reasons and is routed, never the messages or the schema.
+SANDBOX_PARAMETERS = {
+    "reasoning",
+    "temperature",
+    "top_p",
+    "top_k",
+    "seed",
+    "max_completion_tokens",
+    "provider",
+}
+
+
+def _sandbox_parameters(body: dict) -> dict[str, dict]:
+    """The sandbox's request parameters per stage, as {stage: parameters}."""
+    picked = body.get("parameters") or {}
+    if not isinstance(picked, dict):
+        raise HTTPException(status_code=400, detail="`parameters` must be {stage: {...}}.")
+    for stage, parameters in picked.items():
+        if stage not in ("extract", "resolve"):
+            raise HTTPException(status_code=400, detail=f"Unknown stage '{stage}'.")
+        if not isinstance(parameters, dict):
+            raise HTTPException(status_code=400, detail=f"{stage}: expected an object.")
+        unknown = set(parameters) - SANDBOX_PARAMETERS
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{stage}: can't set {', '.join(sorted(unknown))}; "
+                f"only {', '.join(sorted(SANDBOX_PARAMETERS))}.",
+            )
+    return picked
+
+
 async def _models(body: dict) -> dict[str, str]:
     """The models a request picked, as {task: model id}: the app's settings,
     kept in the browser, or the sandbox's own picks. Rejects a task that
@@ -186,6 +228,7 @@ async def sandbox_log_endpoint(
     """
     body = await request.json()
     models = await _models(body)
+    parameters = _sandbox_parameters(body)
     message = await service.preprocess_message(
         _parse_message(body["message"]), user_id, None
     )
@@ -195,6 +238,7 @@ async def sandbox_log_endpoint(
         day=body.get("day"),
         via="sandbox",
         models=models,
+        parameters=parameters,
     )
 
     async def event_stream():

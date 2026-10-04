@@ -146,6 +146,9 @@ class PipelineInput(BaseModel):
     # The model picked for each task, as {task: model id}: the app's settings,
     # or the sandbox's own picks; see `providers.model_for`.
     models: dict[str, str] = {}
+    # The sandbox's request parameters for "extract" and "resolve", sent as
+    # they are instead of `service.default_parameters`.
+    parameters: dict[str, dict] = {}
 
 
 # "edit" is a correction applied to an existing entry, not a stage of a new log.

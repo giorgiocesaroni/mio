@@ -121,7 +121,7 @@ async def _invoke_model(
         tools=_to_openai_tools(TOOL_DECLARATIONS),
         max_completion_tokens=MAX_COMPLETION_TOKENS,
         stream=True,
-        extra_body=providers.reasoning_extra_body(model_id),
+        extra_body=await providers.reasoning_extra_body(model_id),
     )
     for _ in range(3):
         try:

@@ -8,15 +8,6 @@ import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { ModelCombobox } from "@/app/components/model-combobox";
-import {
   getModelDefaults,
   streamSandboxLog,
   transcribeAudio,
@@ -27,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DAY_ENTRIES_QUERY_KEY, useDayEntries } from "@/app/dashboard/components/day-entries";
 import { DraftDishes } from "@/app/dashboard/components/draft-card";
-import { ModelSupport } from "./components/model-support";
+import { StageCard, parseParameters } from "./components/stage-card";
 import { PipelineRun, formatCost, type Run } from "./components/pipeline-run";
 
 function todayKey(): string {
@@ -47,6 +38,9 @@ export default function SandboxPage() {
   // null runs the configured model.
   const [extractModel, setExtractModel] = useState<string | null>(null);
   const [resolveModel, setResolveModel] = useState<string | null>(null);
+  // Request parameters typed per stage; null sends the backend's own.
+  const [extractParameters, setExtractParameters] = useState<string | null>(null);
+  const [resolveParameters, setResolveParameters] = useState<string | null>(null);
   const { data: defaults } = useQuery({
     queryKey: ["getModelDefaults"],
     queryFn: getModelDefaults,
@@ -81,6 +75,20 @@ export default function SandboxPage() {
     )
       return;
 
+    const parameters: Record<string, Record<string, unknown>> = {};
+    for (const [stage, typed] of [
+      ["extract", extractParameters],
+      ["resolve", resolveParameters],
+    ] as const) {
+      if (typed === null) continue;
+      const parsed = parseParameters(typed);
+      if ("error" in parsed) {
+        toast.error(`${stage} parameters: ${parsed.error}`);
+        return;
+      }
+      parameters[stage] = parsed.value;
+    }
+
     const parts: object[] = [];
     if (text) parts.push({ text });
     for (const att of pendingAttachments)
@@ -91,6 +99,7 @@ export default function SandboxPage() {
       text,
       images: pendingAttachments.map((a) => a.url),
       stages: [],
+      stepAt: Date.now(),
     };
     setRuns((prev) => [run, ...prev]);
     setInput("");
@@ -109,11 +118,16 @@ export default function SandboxPage() {
               : {}),
             ...(resolveModel ? { resolve: resolveModel } : {}),
           },
+          parameters,
         },
         controller.signal,
         (step) => {
           if (step.type === "stage")
-            updateRun(run.id, (r) => ({ ...r, stages: [...r.stages, step] }));
+            updateRun(run.id, (r) => ({
+              ...r,
+              stages: [...r.stages, step],
+              stepAt: Date.now(),
+            }));
           else if (step.type === "done")
             updateRun(run.id, (r) => ({ ...r, done: step }));
           else if (step.type === "error")
@@ -209,44 +223,37 @@ export default function SandboxPage() {
     >
       <div className="grid gap-3">
         <div className="grid gap-3">
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>
-                <Label htmlFor="sandbox-extract-model">Extract</Label>
-              </CardTitle>
-              <CardDescription>Reads the message and photos into foods.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <ModelCombobox
-                id="sandbox-extract-model"
-                task="extract_photo"
-                value={extractModel}
-                onChange={setExtractModel}
-                defaultModel={defaults?.extract_photo}
-                disabled={isRunning}
-              />
-              <ModelSupport model={extractModel ?? defaults?.extract_photo} />
-            </CardContent>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>
-                <Label htmlFor="sandbox-resolve-model">Resolve</Label>
-              </CardTitle>
-              <CardDescription>Matches each food to the database.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <ModelCombobox
-                id="sandbox-resolve-model"
-                task="resolve"
-                value={resolveModel}
-                onChange={setResolveModel}
-                defaultModel={defaults?.resolve}
-                disabled={isRunning}
-              />
-              <ModelSupport model={resolveModel ?? defaults?.resolve} />
-            </CardContent>
-          </Card>
+          <StageCard
+            id="sandbox-extract"
+            title="Extract"
+            description="Reads the message and photos into foods."
+            task="extract_photo"
+            model={extractModel}
+            onModelChange={(model) => {
+              setExtractModel(model);
+              // Parameters belong to a model: start over from the new one's.
+              setExtractParameters(null);
+            }}
+            defaultModel={defaults?.extract_photo}
+            parameters={extractParameters}
+            onParametersChange={setExtractParameters}
+            disabled={isRunning}
+          />
+          <StageCard
+            id="sandbox-resolve"
+            title="Resolve"
+            description="Matches each food to the database."
+            task="resolve"
+            model={resolveModel}
+            onModelChange={(model) => {
+              setResolveModel(model);
+              setResolveParameters(null);
+            }}
+            defaultModel={defaults?.resolve}
+            parameters={resolveParameters}
+            onParametersChange={setResolveParameters}
+            disabled={isRunning}
+          />
         </div>
         {finished.length ? (
           <span className="justify-self-end text-xs tabular-nums text-muted-foreground">

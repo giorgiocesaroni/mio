@@ -1,6 +1,8 @@
 import os
 from openai import AsyncOpenAI
 
+from src.agent.utils import fetch_openrouter_models
+
 PROVIDERS = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
@@ -65,22 +67,45 @@ def model_for(task: str, models: dict[str, str]) -> str:
     return models.get(task) or TASK_DEFAULTS[task]
 
 
-# Every call reasons at low effort unless its model is listed here.
+# Every call reasons briefly unless its model is listed here: at low effort,
+# or within REASONING_MAX_TOKENS for a model that only takes a budget.
 REASONING_EFFORT = "low"
 NO_REASONING_MODELS = {"deepseek/deepseek-v4.1-flash"}
+# Lowest first; "none" is left out, since these models should still reason.
+EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"]
+# Roughly what low effort spends; Qwen 3.8 Omni Flash, budget-only, spent
+# 6.5K reasoning tokens (79 s) on one extraction when asked for low effort.
+REASONING_MAX_TOKENS = 1024
 
 
-def reasoning_extra_body(model_id: str) -> dict:
+async def reasoning_extra_body(model_id: str) -> dict:
     """The OpenRouter `extra_body` that controls reasoning for one model.
 
     Turning it off is per model: a model used for both a reasoning-heavy and a
-    mechanical task would otherwise have to pick one. Set `effort` instead when
-    the model should reason, so its provider can spend the right amount.
+    mechanical task would otherwise have to pick one. Otherwise the model's
+    OpenRouter catalog entry (`reasoning`) says what it takes: an effort
+    level (low, or its lowest when it lacks low), or only a token budget.
+    Anything else, or no catalog, asks for low effort.
     """
     if model_id in NO_REASONING_MODELS:
         return {"reasoning": {"enabled": False}}
+    try:
+        entry = (await fetch_openrouter_models()).get(model_id) or {}
+    except Exception:
+        entry = {}
+    reasoning = entry.get("reasoning") or {}
+    efforts = reasoning.get("supported_efforts") or []
+    if efforts and REASONING_EFFORT not in efforts:
+        lowest = next((e for e in EFFORTS if e in efforts), None)
+        if lowest:
+            return {"reasoning": {"effort": lowest}}
+    if not efforts and reasoning.get("supports_max_tokens"):
+        return {"reasoning": {"max_tokens": REASONING_MAX_TOKENS}}
     return {"reasoning": {"effort": REASONING_EFFORT}}
 
+
+# How long one model call may take (for a stream, the wait for each chunk).
+LLM_TIMEOUT_SECONDS = 120
 
 _clients: dict[str, AsyncOpenAI] = {}
 
@@ -93,5 +118,9 @@ def get_client(provider: str = "openrouter") -> AsyncOpenAI:
         _clients[provider] = AsyncOpenAI(
             base_url=config["base_url"],
             api_key=os.getenv(config["api_key_env"]),
+            # The client's default is 10 minutes, with two retries: a model
+            # that never finishes would hold a chat for half an hour.
+            timeout=LLM_TIMEOUT_SECONDS,
+            max_retries=1,
         )
     return _clients[provider]
