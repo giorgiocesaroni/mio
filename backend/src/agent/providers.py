@@ -23,16 +23,45 @@ RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "deepseek/deepseek-v4.1-flash")
 # Applying a correction to an entry through small editing tools.
 EDIT_MODEL = os.getenv("EDIT_MODEL", "deepseek/deepseek-v4.1-flash")
 
-# What the sandbox can run extraction and resolution with instead, for QA;
-# all take photos. Cheapest first.
-SANDBOX_MODELS = [
-    "deepseek/deepseek-v4.1-flash",
-    "openai/gpt-6-luna",
-    "google/gemini-3.8-flash",
-    "anthropic/claude-haiku-4.5",
-    "openai/gpt-6-sol",
-    "anthropic/claude-sonnet-5.5",
-]
+# The tasks a user can pick a model for, and the configured model of each.
+TASK_DEFAULTS = {
+    "agent": AGENT_MODEL,
+    "extract_photo": PHOTO_EXTRACT_MODEL,
+    "extract_text": TEXT_EXTRACT_MODEL,
+    "resolve": RESOLVE_MODEL,
+    "edit": EDIT_MODEL,
+}
+
+# What a task's model must support, as OpenRouter's /models lists it: input
+# modalities, and request parameters (tools for tool calls, structured_outputs
+# for strict JSON schemas). The agent reads photos sent in chat. Mirrored by
+# the frontend's model search (frontend/app/backend/models/route.ts).
+TASK_REQUIREMENTS = {
+    "agent": {"input": ["image"], "parameters": ["tools"]},
+    "extract_photo": {"input": ["image"], "parameters": ["structured_outputs"]},
+    "extract_text": {"input": [], "parameters": ["structured_outputs"]},
+    "resolve": {"input": [], "parameters": ["structured_outputs"]},
+    "edit": {"input": [], "parameters": ["tools"]},
+}
+
+
+def supports(model: dict, task: str) -> bool:
+    """Whether an OpenRouter /models entry can run `task`. Batch variants
+    answer asynchronously, so they can't serve a request."""
+    required = TASK_REQUIREMENTS[task]
+    inputs = (model.get("architecture") or {}).get("input_modalities") or []
+    parameters = model.get("supported_parameters") or []
+    return (
+        not model["id"].endswith(":batch")
+        and all(i in inputs for i in required["input"])
+        and all(p in parameters for p in required["parameters"])
+    )
+
+
+def model_for(task: str, preferences: dict) -> str:
+    """The model a task runs with: the user's pick, or the configured one."""
+    return preferences.get(task) or TASK_DEFAULTS[task]
+
 
 # Every call reasons at low effort unless its model is listed here.
 REASONING_EFFORT = "low"

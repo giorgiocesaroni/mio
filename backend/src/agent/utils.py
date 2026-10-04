@@ -143,8 +143,8 @@ def get_google_genai_cost(
     return total_cost
 
 
-async def _fetch_openrouter_models() -> dict[str, dict]:
-    """Fetch OpenRouter model pricing, cached briefly. Returns {model_id: pricing}."""
+async def fetch_openrouter_models() -> dict[str, dict]:
+    """Fetch OpenRouter's models, cached briefly. Returns {model_id: model}."""
     global _OPENROUTER_MODELS_CACHE
     cached_at, cached = _OPENROUTER_MODELS_CACHE
     if cached and time.time() - cached_at < _OPENROUTER_MODELS_CACHE_TTL_SECONDS:
@@ -193,7 +193,7 @@ async def get_openrouter_cost(*, model_id: str, usage: dict) -> float:
     if isinstance(details, dict):
         cached_tokens = details.get("cached_tokens", 0) or 0
 
-    models = await _fetch_openrouter_models()
+    models = await fetch_openrouter_models()
     model = models.get(model_id)
     if model is None:
         return 0.0

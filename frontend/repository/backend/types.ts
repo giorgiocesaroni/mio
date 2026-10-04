@@ -114,11 +114,24 @@ export type SandboxDoneStep = {
 
 export type SandboxStep = SandboxStageStep | SandboxDoneStep | ErrorStep;
 
-// The models the sandbox can extract and resolve with, and the configured ones.
-export type SandboxModels = {
-  options: string[];
-  defaults: { extract_photo: string; extract_text: string; resolve: string };
+// The tasks a model can be picked for.
+export type ModelTask =
+  | "agent"
+  | "extract_photo"
+  | "extract_text"
+  | "resolve"
+  | "edit";
+
+// One OpenRouter model a task can run with; prices in USD per million tokens.
+export type ModelOption = {
+  id: string;
+  name: string;
+  input_per_million: number | null;
+  output_per_million: number | null;
 };
+
+// The model of each task, as {task: model id}.
+export type ModelChoices = Partial<Record<ModelTask, string>>;
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 

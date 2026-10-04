@@ -3,7 +3,9 @@ import type {
   ConfirmDraftResult,
   LogDraft,
   RunAgentStep,
-  SandboxModels,
+  ModelChoices,
+  ModelOption,
+  ModelTask,
   SandboxStep,
 } from "./types";
 import { queryClient } from "@/app/providers";
@@ -34,7 +36,9 @@ export type {
   SandboxStageStep,
   SandboxDoneStep,
   SandboxStageName,
-  SandboxModels,
+  ModelChoices,
+  ModelOption,
+  ModelTask,
   LogDraft,
   DayLog,
   DayEntries,
@@ -202,8 +206,23 @@ async function requestJSON<T>(
   return res.json();
 }
 
-export function getSandboxModels(): Promise<SandboxModels> {
-  return requestJSON("/sandbox/models");
+/** The models that can do `task` matching `query`, searched server-side. */
+export function searchModels(task: ModelTask, query: string): Promise<ModelOption[]> {
+  const params = new URLSearchParams({ task, q: query });
+  return requestJSON(`/models?${params}`);
+}
+
+/** The configured model of each task, used when the user picked none. */
+export function getModelDefaults(): Promise<Required<ModelChoices>> {
+  return requestJSON("/models/defaults");
+}
+
+/** Saves the models the app uses; a task left out uses the configured model. */
+export function setModelPreferences(preferences: ModelChoices): Promise<ModelChoices> {
+  return requestJSON("/preferences/models", {
+    method: "PUT",
+    body: JSON.stringify(preferences),
+  });
 }
 
 /** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */

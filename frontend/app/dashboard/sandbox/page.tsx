@@ -9,15 +9,9 @@ import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ModelCombobox } from "@/app/components/model-combobox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  getSandboxModels,
+  getModelDefaults,
   streamSandboxLog,
   transcribeAudio,
   uploadFile,
@@ -33,50 +27,6 @@ function todayKey(): string {
   return new Date().toLocaleDateString("en-CA");
 }
 
-// The pickers' value for "whatever the backend is configured with".
-const DEFAULT_MODEL = "default";
-
-function modelLabel(id: string): string {
-  return id.split("/").pop() ?? id;
-}
-
-function ModelPicker({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-  defaultLabel,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-  defaultLabel: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id} className="w-auto">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={DEFAULT_MODEL}>Default ({defaultLabel})</SelectItem>
-          {options.map((model) => (
-            <SelectItem key={model} value={model}>
-              {modelLabel(model)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
 export default function SandboxPage() {
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -85,11 +35,13 @@ export default function SandboxPage() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [day, setDay] = useState(todayKey);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [extractModel, setExtractModel] = useState(DEFAULT_MODEL);
-  const [resolveModel, setResolveModel] = useState(DEFAULT_MODEL);
-  const { data: models } = useQuery({
-    queryKey: ["getSandboxModels"],
-    queryFn: getSandboxModels,
+  // The sandbox's own picks, apart from the user's preferences for the app;
+  // null runs the configured model.
+  const [extractModel, setExtractModel] = useState<string | null>(null);
+  const [resolveModel, setResolveModel] = useState<string | null>(null);
+  const { data: defaults } = useQuery({
+    queryKey: ["getModelDefaults"],
+    queryFn: getModelDefaults,
     staleTime: Infinity,
   });
   const abortRef = useRef<AbortController | null>(null);
@@ -143,8 +95,8 @@ export default function SandboxPage() {
         { parts },
         {
           day,
-          extractModel: extractModel === DEFAULT_MODEL ? undefined : extractModel,
-          resolveModel: resolveModel === DEFAULT_MODEL ? undefined : resolveModel,
+          extractModel: extractModel ?? undefined,
+          resolveModel: resolveModel ?? undefined,
         },
         controller.signal,
         (step) => {
@@ -255,32 +207,28 @@ export default function SandboxPage() {
               className="h-8 w-auto"
             />
           </div>
-          {models ? (
-            <>
-              <ModelPicker
-                id="sandbox-extract-model"
-                label="Extract"
-                value={extractModel}
-                onChange={setExtractModel}
-                options={models.options}
-                defaultLabel={
-                  models.defaults.extract_photo === models.defaults.extract_text
-                    ? modelLabel(models.defaults.extract_photo)
-                    : `${modelLabel(models.defaults.extract_photo)} / ${modelLabel(models.defaults.extract_text)}`
-                }
-                disabled={isRunning}
-              />
-              <ModelPicker
-                id="sandbox-resolve-model"
-                label="Resolve"
-                value={resolveModel}
-                onChange={setResolveModel}
-                options={models.options}
-                defaultLabel={modelLabel(models.defaults.resolve)}
-                disabled={isRunning}
-              />
-            </>
-          ) : null}
+          <div className="flex items-center gap-2">
+            <Label htmlFor="sandbox-extract-model">Extract</Label>
+            <ModelCombobox
+              id="sandbox-extract-model"
+              task="extract_photo"
+              value={extractModel}
+              onChange={setExtractModel}
+              defaultModel={defaults?.extract_photo}
+              disabled={isRunning}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="sandbox-resolve-model">Resolve</Label>
+            <ModelCombobox
+              id="sandbox-resolve-model"
+              task="resolve"
+              value={resolveModel}
+              onChange={setResolveModel}
+              defaultModel={defaults?.resolve}
+              disabled={isRunning}
+            />
+          </div>
           {finished.length ? (
             <span className="ml-auto text-xs tabular-nums text-muted-foreground">
               {finished.length} run{finished.length === 1 ? "" : "s"} · avg{" "}

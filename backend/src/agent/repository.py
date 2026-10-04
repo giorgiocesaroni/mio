@@ -6,6 +6,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 import psycopg
 from psycopg.rows import class_row
+from psycopg.types.json import Jsonb
 import src.agent.models as models
 import src.agent.embeddings as embeddings
 
@@ -31,6 +32,30 @@ def get_user_timezone(user_id: str) -> str:
             )
             row = cur.fetchone()
             return row[0] if row and row[0] else "UTC"
+
+
+def get_model_preferences(user_id: str) -> dict[str, str]:
+    """The models the user picked, as {task: model id}; empty when none."""
+    with psycopg.connect(**db_connection_params) as conn:
+        row = conn.execute(
+            "SELECT model_preferences FROM profiles WHERE user_id = %s",
+            (user_id,),
+        ).fetchone()
+    return row[0] if row and row[0] else {}
+
+
+def set_model_preferences(user_id: str, preferences: dict[str, str]) -> None:
+    """Replace the user's model picks, creating their profile if needed."""
+    with psycopg.connect(**db_connection_params) as conn:
+        updated = conn.execute(
+            "UPDATE profiles SET model_preferences = %s WHERE user_id = %s",
+            (Jsonb(preferences), user_id),
+        ).rowcount
+        if not updated:
+            conn.execute(
+                "INSERT INTO profiles (user_id, model_preferences) VALUES (%s, %s)",
+                (user_id, Jsonb(preferences)),
+            )
 
 
 def _localize_to_utc(log_for: str, timezone: str) -> datetime:

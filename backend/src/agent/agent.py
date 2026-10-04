@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import src.agent.models as models
@@ -489,7 +490,9 @@ async def agent(
         {"role": "system", "content": input.system_prompt},
         *await _convert_history(input.contents),
     ]
-    model_id = providers.AGENT_MODEL
+    model_id = providers.model_for(
+        "agent", await asyncio.to_thread(repository.get_model_preferences, input.user_id)
+    )
     # What this turn cost, counted toward the drafts it creates.
     turn_cost = 0.0
     draft_ids: list[str] = []

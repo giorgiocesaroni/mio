@@ -186,10 +186,18 @@ async def _route(
     }, cost
 
 
-def _extract_model(images: list[str], override: str | None = None) -> str:
-    if override:
-        return override
-    return providers.PHOTO_EXTRACT_MODEL if images else providers.TEXT_EXTRACT_MODEL
+def _models(input: PipelineInput) -> dict[str, str]:
+    """The models this run picks, as {task: model id}: the sandbox's own
+    overrides, kept apart from the user's preferences so QA doesn't change
+    the app; otherwise the user's preferences."""
+    if input.via == "sandbox":
+        picked = {
+            "extract_photo": input.extract_model,
+            "extract_text": input.extract_model,
+            "resolve": input.resolve_model,
+        }
+        return {task: model for task, model in picked.items() if model}
+    return agent_repository.get_model_preferences(input.user_id)
 
 
 async def _complete(
@@ -390,6 +398,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
 
     try:
         timezone = agent_repository.get_user_timezone(input.user_id)
+        models = await asyncio.to_thread(_models, input)
         now = datetime.datetime.now(tz=ZoneInfo(timezone))
         today = now.strftime("%Y-%m-%d")
         day = input.day or today
@@ -438,7 +447,9 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 3. Extract
         stage = "extract"
         t = time.perf_counter()
-        extract_model = _extract_model(images, input.extract_model)
+        extract_model = providers.model_for(
+            "extract_photo" if images else "extract_text", models
+        )
         extraction, cost, usage = await _extract(
             input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M"), extract_model
         )
@@ -487,7 +498,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
-        resolve_model = input.resolve_model or providers.RESOLVE_MODEL
+        resolve_model = providers.model_for("resolve", models)
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
@@ -701,7 +712,12 @@ async def _edit_call(user_id: str, editor: logic.EntryEditor, name: str, raw: st
 
 
 async def _edit(
-    user_id: str, day: str, rows: list[dict], instruction: str, draft_id: UUID | None = None
+    user_id: str,
+    day: str,
+    rows: list[dict],
+    instruction: str,
+    model_id: str,
+    draft_id: UUID | None = None,
 ) -> list[dict]:
     """The rows of an entry after a correction in the user's words.
 
@@ -734,7 +750,6 @@ async def _edit(
         },
     ]
     client = providers.get_client()
-    model_id = providers.EDIT_MODEL
     cost = 0.0
     reply = ""
     error: str | None = None
@@ -860,8 +875,20 @@ async def revise_draft_dish(
     rows = [r for r in draft["rows"] if logic.group_key(r) == dish_id]
     if not rows:
         raise DraftError(f"Unknown dish '{dish_id}'.")
+    # A sandbox draft is edited with the configured model, like the sandbox
+    # runs without the user's preferences.
+    preferences = (
+        {}
+        if draft["via"] == "sandbox"
+        else await asyncio.to_thread(agent_repository.get_model_preferences, user_id)
+    )
     new_rows = await _edit(
-        user_id, draft["day"].isoformat(), rows, instruction, draft_id
+        user_id,
+        draft["day"].isoformat(),
+        rows,
+        instruction,
+        providers.model_for("edit", preferences),
+        draft_id,
     )
     if not new_rows:
         return await asyncio.to_thread(delete_draft_dish, user_id, draft_id, dish_id)
@@ -892,7 +919,14 @@ async def revise_logs(
     ]
     if not logs or len(logs) != len(wanted):
         raise DraftError("Entry not found; it may have been deleted.")
-    new_rows = await _edit(user_id, day, logic.log_rows(logs), instruction)
+    preferences = await asyncio.to_thread(agent_repository.get_model_preferences, user_id)
+    new_rows = await _edit(
+        user_id,
+        day,
+        logic.log_rows(logs),
+        instruction,
+        providers.model_for("edit", preferences),
+    )
     result = (
         await asyncio.to_thread(_write_rows, user_id, new_rows)
         if new_rows
