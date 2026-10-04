@@ -3,6 +3,7 @@ import type {
   ConfirmDraftResult,
   LogDraft,
   RunAgentStep,
+  SandboxModels,
   SandboxStep,
 } from "./types";
 import { queryClient } from "@/app/providers";
@@ -33,6 +34,7 @@ export type {
   SandboxStageStep,
   SandboxDoneStep,
   SandboxStageName,
+  SandboxModels,
   LogDraft,
   DayLog,
   DayEntries,
@@ -166,7 +168,7 @@ export async function streamChat(
 
 export async function streamSandboxLog(
   payload: object,
-  options: { day: string },
+  options: { day: string; extractModel?: string; resolveModel?: string },
   signal: AbortSignal,
   onStep: (step: SandboxStep) => void,
 ): Promise<void> {
@@ -175,6 +177,8 @@ export async function streamSandboxLog(
     {
       message: payload,
       day: options.day,
+      extract_model: options.extractModel,
+      resolve_model: options.resolveModel,
     },
     signal,
     onStep,
@@ -196,6 +200,10 @@ async function requestJSON<T>(
     throw new Error(body?.detail ?? `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+export function getSandboxModels(): Promise<SandboxModels> {
+  return requestJSON("/sandbox/models");
 }
 
 /** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */

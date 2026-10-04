@@ -23,6 +23,17 @@ RESOLVE_MODEL = os.getenv("RESOLVE_MODEL", "deepseek/deepseek-v4.1-flash")
 # Applying a correction to an entry through small editing tools.
 EDIT_MODEL = os.getenv("EDIT_MODEL", "deepseek/deepseek-v4.1-flash")
 
+# What the sandbox can run extraction and resolution with instead, for QA;
+# all take photos. Cheapest first.
+SANDBOX_MODELS = [
+    "deepseek/deepseek-v4.1-flash",
+    "openai/gpt-6-luna",
+    "google/gemini-3.8-flash",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-6-sol",
+    "anthropic/claude-sonnet-5.5",
+]
+
 # Every call reasons at low effort unless its model is listed here.
 REASONING_EFFORT = "low"
 NO_REASONING_MODELS = {"deepseek/deepseek-v4.1-flash"}

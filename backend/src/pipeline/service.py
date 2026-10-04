@@ -186,7 +186,9 @@ async def _route(
     }, cost
 
 
-def _extract_model(images: list[str]) -> str:
+def _extract_model(images: list[str], override: str | None = None) -> str:
+    if override:
+        return override
     return providers.PHOTO_EXTRACT_MODEL if images else providers.TEXT_EXTRACT_MODEL
 
 
@@ -234,7 +236,7 @@ async def _complete(
 
 
 async def _extract(
-    user_id: str, text: str, images: list[str], now: str
+    user_id: str, text: str, images: list[str], now: str, model_id: str
 ) -> tuple[Extraction, float, dict]:
     content: list[dict] = []
     if text:
@@ -245,7 +247,7 @@ async def _extract(
         {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
         {"role": "user", "content": content},
     ]
-    return await _complete(user_id, _extract_model(images), messages, Extraction)
+    return await _complete(user_id, model_id, messages, Extraction)
 
 
 async def _candidates(user_id: str, queries: list[str], ingredients: bool) -> list[dict]:
@@ -317,6 +319,7 @@ async def _resolve(
     dish_recipes: list[list[dict]],
     day: str,
     now: str,
+    model_id: str,
 ) -> tuple[Resolution, float, dict]:
     """Match each food to a candidate and decide how to log it, in one call.
 
@@ -335,13 +338,13 @@ async def _resolve(
         {"role": "user", "content": json.dumps({"dishes": dishes}, ensure_ascii=False)},
     ]
     resolution, cost, usage = await _complete(
-        user_id, providers.RESOLVE_MODEL, messages, Resolution
+        user_id, model_id, messages, Resolution
     )
     missing = logic.missing_rows(extraction, resolution, dish_recipes)
     if missing:
         retry, retry_cost, retry_usage = await _complete(
             user_id,
-            providers.RESOLVE_MODEL,
+            model_id,
             messages
             + [
                 {
@@ -435,8 +438,9 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 3. Extract
         stage = "extract"
         t = time.perf_counter()
+        extract_model = _extract_model(images, input.extract_model)
         extraction, cost, usage = await _extract(
-            input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M")
+            input.user_id, text, images, now.strftime("%Y-%m-%d %H:%M"), extract_model
         )
         total_cost += cost
         items = extraction.items
@@ -446,7 +450,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             summary=f"{len(items)} item(s): {logic.extraction_summary(extraction)}",
             ms=_ms(t),
             cost=cost,
-            model=_extract_model(images),
+            model=extract_model,
             data={"dishes": [d.model_dump() for d in extraction.dishes], "usage": usage},
         )
         if not items:
@@ -483,6 +487,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
+        resolve_model = input.resolve_model or providers.RESOLVE_MODEL
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
@@ -491,6 +496,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             dish_recipes,
             day,
             now.strftime("%Y-%m-%d %H:%M"),
+            resolve_model,
         )
         total_cost += cost
         rows = logic.draft_rows(
@@ -514,7 +520,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ),
             ms=_ms(t),
             cost=cost,
-            model=providers.RESOLVE_MODEL,
+            model=resolve_model,
             data={"resolution": resolution.model_dump(), "rows": enriched, **debug},
             warnings=stage_warnings,
         )

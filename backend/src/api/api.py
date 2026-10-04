@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import src.agent.service as service
 import src.agent.models as models
+import src.agent.providers as providers
 import src.api.media as media
 import src.pipeline.service as pipeline
 from src.pipeline.models import DraftError, PipelineInput
@@ -140,13 +141,36 @@ async def chat_endpoint(
     )
 
 
+@app.get("/sandbox/models")
+async def sandbox_models_endpoint(
+    user_id: str = Depends(_get_user_id_from_jwt),
+):
+    """The models the sandbox can extract and resolve with, and the defaults."""
+    return {
+        "options": providers.SANDBOX_MODELS,
+        "defaults": {
+            "extract_photo": providers.PHOTO_EXTRACT_MODEL,
+            "extract_text": providers.TEXT_EXTRACT_MODEL,
+            "resolve": providers.RESOLVE_MODEL,
+        },
+    }
+
+
 @app.post("/sandbox/log")
 async def sandbox_log_endpoint(
     request: Request,
     user_id: str = Depends(_get_user_id_from_jwt),
 ):
-    """Runs the logging pipeline and streams every stage, for debugging."""
+    """Runs the logging pipeline and streams every stage, for debugging.
+
+    `extract_model` and `resolve_model` override the configured models, from
+    `providers.SANDBOX_MODELS` only.
+    """
     body = await request.json()
+    overrides = {k: body.get(k) or None for k in ("extract_model", "resolve_model")}
+    for model in overrides.values():
+        if model and model not in providers.SANDBOX_MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown model '{model}'.")
     message = await service.preprocess_message(
         _parse_message(body["message"]), user_id, None
     )
@@ -155,6 +179,7 @@ async def sandbox_log_endpoint(
         message=message,
         day=body.get("day"),
         via="sandbox",
+        **overrides,
     )
 
     async def event_stream():

@@ -114,6 +114,12 @@ export type SandboxDoneStep = {
 
 export type SandboxStep = SandboxStageStep | SandboxDoneStep | ErrorStep;
 
+// The models the sandbox can extract and resolve with, and the configured ones.
+export type SandboxModels = {
+  options: string[];
+  defaults: { extract_photo: string; extract_text: string; resolve: string };
+};
+
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
 export type Per100g = {
