@@ -31,11 +31,19 @@ export function modelLabel(id: string): string {
   return id.split("/").pop() ?? id;
 }
 
-function formatPrice(option: ModelOption): string | null {
+function usd(value: number): string {
+  if (value === 0) return "$0";
+  if (value < 0.01) return "<$0.01";
+  if (value < 1) return `$${value.toFixed(2)}`;
+  if (value < 10) return `$${Number(value.toFixed(2))}`;
+  return `$${Math.round(value)}`;
+}
+
+/** e.g. '$0.10 / $0.50'; routers, priced as whatever they route to, vary. */
+function formatPrice(option: ModelOption): string {
   const { input_per_million: input, output_per_million: output } = option;
-  if (input === null || output === null) return null;
+  if (input === null || output === null) return "varies";
   if (input === 0 && output === 0) return "free";
-  const usd = (v: number) => `$${v < 1 ? v.toFixed(2) : v.toFixed(v < 10 ? 1 : 0)}`;
   return `${usd(input)} / ${usd(output)}`;
 }
 

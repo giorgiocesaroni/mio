@@ -38,10 +38,14 @@ function supports(model: OpenRouterModel, task: string): boolean {
   );
 }
 
-/** USD per million tokens, from OpenRouter's per-token price. */
+/** USD per million tokens, from OpenRouter's per-token price; null when
+ * unknown, or variable: routers such as openrouter/auto list -1, since they
+ * cost whatever model they route to. */
 function perMillion(price: string | undefined): number | null {
   const value = Number(price);
-  return price === undefined || Number.isNaN(value) ? null : value * 1_000_000;
+  return price === undefined || Number.isNaN(value) || value < 0
+    ? null
+    : value * 1_000_000;
 }
 
 /** The models that can do `task` and match every word of `q` in their id or
