@@ -82,7 +82,9 @@ export async function GET(request: Request): Promise<Response> {
     .slice(0, MAX_RESULTS)
     .map((m) => ({
       id: m.id,
-      name: m.name,
+      // "Anthropic: Claude Sonnet 5.5" → "Claude Sonnet 5.5"; the id still
+      // names the provider.
+      name: m.name.replace(/^[^:]+:\s*/, ""),
       input_per_million: perMillion(m.pricing?.prompt),
       output_per_million: perMillion(m.pricing?.completion),
     }));
