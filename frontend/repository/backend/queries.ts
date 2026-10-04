@@ -4,6 +4,7 @@ import type {
   LogDraft,
   RunAgentStep,
   ModelChoices,
+  ModelInfo,
   ModelOption,
   ModelTask,
   SandboxStep,
@@ -37,6 +38,7 @@ export type {
   SandboxDoneStep,
   SandboxStageName,
   ModelChoices,
+  ModelInfo,
   ModelOption,
   ModelTask,
   LogDraft,
@@ -211,6 +213,11 @@ async function requestJSON<T>(
 export function searchModels(task: ModelTask, query: string): Promise<ModelOption[]> {
   const params = new URLSearchParams({ task, q: query });
   return requestJSON(`/models?${params}`);
+}
+
+/** What OpenRouter lists for one model. */
+export function getModelInfo(id: string): Promise<ModelInfo> {
+  return requestJSON(`/models/info?${new URLSearchParams({ id })}`);
 }
 
 /** The configured model of each task, used when the user picked none. */

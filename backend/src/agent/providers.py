@@ -36,7 +36,7 @@ TASK_DEFAULTS = {
 # What a task's model must support, as OpenRouter's /models lists it: input
 # modalities, and request parameters (tools for tool calls, structured_outputs
 # for strict JSON schemas). The agent reads photos sent in chat. Mirrored by
-# the frontend's model search (frontend/app/backend/models/route.ts).
+# the frontend's model catalog (frontend/app/backend/models/catalog.ts).
 TASK_REQUIREMENTS = {
     "agent": {"input": ["image"], "parameters": ["tools"]},
     "extract_photo": {"input": ["image"], "parameters": ["structured_outputs"]},

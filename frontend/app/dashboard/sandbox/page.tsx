@@ -7,7 +7,13 @@ import {
 import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ModelCombobox } from "@/app/components/model-combobox";
 import {
@@ -21,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DAY_ENTRIES_QUERY_KEY, useDayEntries } from "@/app/dashboard/components/day-entries";
 import { DraftDishes } from "@/app/dashboard/components/draft-card";
+import { ModelSupport } from "./components/model-support";
 import { PipelineRun, formatCost, type Run } from "./components/pipeline-run";
 
 function todayKey(): string {
@@ -33,7 +40,8 @@ export default function SandboxPage() {
     PendingAttachment[]
   >([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [day, setDay] = useState(todayKey);
+  // Runs log for today; the day only lists this session's drafts.
+  const [day] = useState(todayKey);
   const [runs, setRuns] = useState<Run[]>([]);
   // The sandbox's own picks, apart from the user's preferences for the app;
   // null runs the configured model.
@@ -200,46 +208,52 @@ export default function SandboxPage() {
       bodyClassName="gap-6"
     >
       <div className="grid gap-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="sandbox-day">Day</Label>
-            <Input
-              id="sandbox-day"
-              type="date"
-              value={day}
-              onChange={(e) => setDay(e.target.value || todayKey())}
-              className="h-8 w-auto"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="sandbox-extract-model">Extract</Label>
-            <ModelCombobox
-              id="sandbox-extract-model"
-              task="extract_photo"
-              value={extractModel}
-              onChange={setExtractModel}
-              defaultModel={defaults?.extract_photo}
-              disabled={isRunning}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="sandbox-resolve-model">Resolve</Label>
-            <ModelCombobox
-              id="sandbox-resolve-model"
-              task="resolve"
-              value={resolveModel}
-              onChange={setResolveModel}
-              defaultModel={defaults?.resolve}
-              disabled={isRunning}
-            />
-          </div>
-          {finished.length ? (
-            <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-              {finished.length} run{finished.length === 1 ? "" : "s"} · avg{" "}
-              {formatCost(averageCost)}
-            </span>
-          ) : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>
+                <Label htmlFor="sandbox-extract-model">Extract</Label>
+              </CardTitle>
+              <CardDescription>Reads the message and photos into foods.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <ModelCombobox
+                id="sandbox-extract-model"
+                task="extract_photo"
+                value={extractModel}
+                onChange={setExtractModel}
+                defaultModel={defaults?.extract_photo}
+                disabled={isRunning}
+              />
+              <ModelSupport model={extractModel ?? defaults?.extract_photo} photos />
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>
+                <Label htmlFor="sandbox-resolve-model">Resolve</Label>
+              </CardTitle>
+              <CardDescription>Matches each food to the database.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <ModelCombobox
+                id="sandbox-resolve-model"
+                task="resolve"
+                value={resolveModel}
+                onChange={setResolveModel}
+                defaultModel={defaults?.resolve}
+                disabled={isRunning}
+              />
+              <ModelSupport model={resolveModel ?? defaults?.resolve} />
+            </CardContent>
+          </Card>
         </div>
+        {finished.length ? (
+          <span className="justify-self-end text-xs tabular-nums text-muted-foreground">
+            {finished.length} run{finished.length === 1 ? "" : "s"} · avg{" "}
+            {formatCost(averageCost)}
+          </span>
+        ) : null}
         <ChatEditor
           autoFocus
           disabled={isRunning || isTranscribing}
