@@ -52,7 +52,7 @@ const TASKS: { task: ModelTask; label: string; description: string }[] = [
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const { data: preferences } = useQuery({
+  const { data: preferences, error } = useQuery({
     queryKey: PREFERENCES_QUERY_KEY,
     queryFn: getModelPreferences,
   });
@@ -95,6 +95,11 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
+          {error ? (
+            <p className="text-sm text-destructive">
+              Couldn&apos;t load your models: {error.message}
+            </p>
+          ) : null}
           {TASKS.map(({ task, label, description }) => (
             <div
               key={task}
