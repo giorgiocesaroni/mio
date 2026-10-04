@@ -73,9 +73,10 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         {/* Two columns: what each task does, and its picker on the right. */}
-        <CardContent className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-5">
-          {TASKS.map(({ task, label, description }) => (
+        <CardContent className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-4">
+          {TASKS.map(({ task, label, description }, index) => (
             <Fragment key={task}>
+              {index > 0 ? <hr className="col-span-2" /> : null}
               <div className="grid min-w-0 gap-0.5">
                 <Label htmlFor={`model-${task}`}>{label}</Label>
                 <p className="text-sm text-muted-foreground">{description}</p>
