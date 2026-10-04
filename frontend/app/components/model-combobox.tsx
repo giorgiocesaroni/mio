@@ -31,7 +31,7 @@ export function modelLabel(id: string): string {
   return id.split("/").pop() ?? id;
 }
 
-export function usd(value: number): string {
+function usd(value: number): string {
   if (value === 0) return "$0";
   if (value < 0.01) return "<$0.01";
   if (value < 1) return `$${value.toFixed(2)}`;
@@ -40,7 +40,7 @@ export function usd(value: number): string {
 }
 
 /** e.g. '$0.10 / $0.50'; routers, priced as whatever they route to, vary. */
-export function formatPrice(option: ModelOption): string {
+function formatPrice(option: ModelOption): string {
   const { input_per_million: input, output_per_million: output } = option;
   if (input === null || output === null) return "varies";
   if (input === 0 && output === 0) return "free";

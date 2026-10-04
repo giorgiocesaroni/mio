@@ -215,7 +215,7 @@ export function searchModels(task: ModelTask, query: string): Promise<ModelOptio
   return requestJSON(`/models?${params}`);
 }
 
-/** What OpenRouter lists for one model. */
+/** OpenRouter's catalog entry for one model, as it lists it. */
 export function getModelInfo(id: string): Promise<ModelInfo> {
   return requestJSON(`/models/info?${new URLSearchParams({ id })}`);
 }

@@ -130,13 +130,8 @@ export type ModelOption = {
   output_per_million: number | null;
 };
 
-// What OpenRouter lists for one model: the parameters it doesn't list are
-// dropped from requests without an error.
-export type ModelInfo = ModelOption & {
-  input_modalities: string[];
-  supported_parameters: string[];
-  context_length: number | null;
-};
+// OpenRouter's catalog entry for one model, as it lists it.
+export type ModelInfo = Record<string, unknown>;
 
 // The model of each task, as {task: model id}.
 export type ModelChoices = Partial<Record<ModelTask, string>>;

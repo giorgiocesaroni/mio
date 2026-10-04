@@ -208,7 +208,7 @@ export default function SandboxPage() {
       bodyClassName="gap-6"
     >
       <div className="grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <Card size="sm">
             <CardHeader>
               <CardTitle>
@@ -225,7 +225,7 @@ export default function SandboxPage() {
                 defaultModel={defaults?.extract_photo}
                 disabled={isRunning}
               />
-              <ModelSupport model={extractModel ?? defaults?.extract_photo} photos />
+              <ModelSupport model={extractModel ?? defaults?.extract_photo} />
             </CardContent>
           </Card>
           <Card size="sm">

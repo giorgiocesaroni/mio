@@ -1,15 +1,8 @@
-import {
-  catalogUnavailable,
-  displayName,
-  fetchCatalog,
-  perMillion,
-  requireUser,
-} from "../catalog";
+import { catalogUnavailable, fetchCatalog, requireUser } from "../catalog";
 
 export const runtime = "nodejs";
 
-/** What OpenRouter lists for one model (`id`): its inputs, the parameters
- * its providers honour, its prices and its context length. */
+/** OpenRouter's catalog entry for one model (`id`), exactly as it lists it. */
 export async function GET(request: Request): Promise<Response> {
   const denied = await requireUser();
   if (denied) return denied;
@@ -21,13 +14,5 @@ export async function GET(request: Request): Promise<Response> {
   if (!model) {
     return Response.json({ detail: `Unknown model '${id}'` }, { status: 404 });
   }
-  return Response.json({
-    id: model.id,
-    name: displayName(model),
-    input_modalities: model.architecture?.input_modalities ?? [],
-    supported_parameters: model.supported_parameters ?? [],
-    context_length: model.context_length ?? null,
-    input_per_million: perMillion(model.pricing?.prompt),
-    output_per_million: perMillion(model.pricing?.completion),
-  });
+  return Response.json(model);
 }
