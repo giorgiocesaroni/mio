@@ -16,6 +16,7 @@ import {
 } from "@/lib/model-preferences";
 import { getModelDefaults, type ModelTask } from "@/repository/backend/queries";
 import { useQuery } from "@tanstack/react-query";
+import { Fragment } from "react";
 
 const TASKS: { task: ModelTask; label: string; description: string }[] = [
   {
@@ -71,12 +72,10 @@ export default function SettingsPage() {
             sandbox picks its own.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-5">
+        {/* Two columns: what each task does, and its picker on the right. */}
+        <CardContent className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-5">
           {TASKS.map(({ task, label, description }) => (
-            <div
-              key={task}
-              className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2"
-            >
+            <Fragment key={task}>
               <div className="grid min-w-0 gap-0.5">
                 <Label htmlFor={`model-${task}`}>{label}</Label>
                 <p className="text-sm text-muted-foreground">{description}</p>
@@ -88,7 +87,7 @@ export default function SettingsPage() {
                 onChange={(model) => pick(task, model)}
                 defaultModel={defaults?.[task]}
               />
-            </div>
+            </Fragment>
           ))}
         </CardContent>
       </Card>
