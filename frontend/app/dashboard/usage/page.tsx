@@ -24,6 +24,8 @@ import {
 
 // Display names, including models used in the past.
 const MODEL_NAMES: Record<string, string> = {
+  "claude-haiku-5-5": "Claude Haiku 5.5",
+  "gemini-3.5-transcribe": "Gemini 3.5 Transcribe (transcription)",
   "google/gemini-3.8-flash": "Gemini 3.8 Flash",
   "typesafe/jev-1.13-20260917": "Jev 1.13",
   "openai/gpt-6-luna": "GPT-6 Luna",

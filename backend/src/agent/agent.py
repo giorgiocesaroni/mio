@@ -1,39 +1,27 @@
 import json
 import os
+import re
+import anthropic
 import src.agent.models as models
 import src.agent.providers as providers
 import src.agent.repository as repository
 import src.agent.tools as tools
 import src.pipeline.logic as pipeline_logic
 import src.pipeline.service as pipeline
-from src.agent.utils import (
-    extract_tokens,
-    get_openrouter_cost,
-    inline_image_url,
-)
+from src.agent.utils import extract_tokens, image_block, inline_image_url
 from typing import AsyncGenerator
 from uuid import UUID
 
 MAX_TURNS = 35
 
-# Maximum output tokens per model invocation. Reasoning counts toward it, and
-# some models reason at length whatever the effort, so it's generous; only the
-# tokens used are paid for. Too low shows up as a model stopping mid-sentence
-# or a truncated tool call.
+# Maximum output tokens per model invocation. Thinking counts toward it, so
+# it's generous; only the tokens used are paid for. Too low shows up as the
+# model stopping mid-sentence or a truncated tool call.
 MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "16384"))
 
-
-def _sanitize_tool_calls(messages: list[dict]) -> None:
-    """Validate and fix malformed tool call arguments in-place."""
-    for msg in messages:
-        if msg.get("tool_calls"):
-            for tc in msg["tool_calls"]:
-                args_str = tc.get("function", {}).get("arguments", "")
-                if args_str:
-                    try:
-                        json.loads(args_str)
-                    except json.JSONDecodeError:
-                        tc["function"]["arguments"] = "{}"
+# What the user sees when the model declines or runs out of tokens with nothing said.
+REFUSAL_REPLY = "Sorry, I can't help with that one."
+TRUNCATED_REPLY = "Sorry, my answer got cut off. Could you ask again?"
 
 
 # What the agent is doing while a tool runs, shown to the user.
@@ -95,109 +83,110 @@ TOOL_DECLARATIONS = [
 ]
 
 
-def _to_openai_tools(declarations: list) -> list[dict]:
+def _to_tools(declarations: list) -> list[dict]:
     return [
         {
-            "type": "function",
-            "function": {
-                "name": d.name,
-                "description": d.description,
-                "parameters": d.parameters_json_schema,
-            },
+            "name": d.name,
+            "description": d.description,
+            "input_schema": d.parameters_json_schema,
         }
         for d in declarations
     ]
 
 
+def _with_cache_breakpoint(messages: list[dict]) -> list[dict]:
+    """`messages` with a cache breakpoint on the last user message, so the
+    tools, the system prompt and the conversation up to it are cached for the
+    next tool round and the next turn. Not on the trailing system message: a
+    breakpoint there didn't carry over to the next turn."""
+    index = max(i for i, m in enumerate(messages) if m["role"] == "user")
+    blocks = list(messages[index]["content"])
+    blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+    return [
+        *messages[:index],
+        {**messages[index], "content": blocks},
+        *messages[index + 1 :],
+    ]
+
+
 async def _invoke_model(
-    model_id: str,
+    system: str,
     messages: list[dict],
-) -> AsyncGenerator[dict | models.ContentTokenStep | models.ToolCallStartStep, None]:
-    """Stream model response, yielding content tokens, tool call starts, and the final message dict."""
+) -> AsyncGenerator[
+    anthropic.types.Message | models.ContentTokenStep | models.ToolCallStartStep, None
+]:
+    """Stream a model response, yielding content tokens, tool call starts, and
+    the final message."""
     client = providers.get_client()
-    create_kwargs: dict = dict(
-        model=model_id,
-        messages=messages,
-        tools=_to_openai_tools(TOOL_DECLARATIONS),
-        max_completion_tokens=MAX_COMPLETION_TOKENS,
-        stream=True,
-        extra_body=await providers.reasoning_extra_body(model_id),
-    )
+    messages = _with_cache_breakpoint(messages)
     for _ in range(3):
         try:
-            stream = await client.chat.completions.create(**create_kwargs)
-            content_parts: list[str] = []
-            tool_calls_acc: dict[int, dict] = {}
-            tool_names_emitted: set[int] = set()
-            usage = {}
-            finish_reason = None
-
-            async for chunk in stream:
-                choice = chunk.choices[0] if chunk.choices else None
-                if choice:
-                    if choice.finish_reason:
-                        finish_reason = choice.finish_reason
-                    delta = choice.delta
-                    if delta.content:
-                        content_parts.append(delta.content)
-                        yield models.ContentTokenStep(token=delta.content)
-                    if delta.tool_calls:
-                        for tc_delta in delta.tool_calls:
-                            idx = tc_delta.index
-                            if idx not in tool_calls_acc:
-                                tool_calls_acc[idx] = {
-                                    "id": tc_delta.id or "",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                            if tc_delta.id:
-                                tool_calls_acc[idx]["id"] = tc_delta.id
-                            if tc_delta.function:
-                                if tc_delta.function.name:
-                                    tool_calls_acc[idx]["function"][
-                                        "name"
-                                    ] = tc_delta.function.name
-                                    if idx not in tool_names_emitted:
-                                        tool_names_emitted.add(idx)
-                                        yield models.ToolCallStartStep(
-                                            name=tc_delta.function.name
-                                        )
-                                if tc_delta.function.arguments:
-                                    tool_calls_acc[idx]["function"][
-                                        "arguments"
-                                    ] += tc_delta.function.arguments
-                if chunk.usage:
-                    usage = chunk.usage.model_dump()
-
-            completion_tokens = usage.get("completion_tokens") if usage else None
-            if finish_reason == "length":
-                print(
-                    f"[WARN] {model_id}: response TRUNCATED at "
-                    f"max_completion_tokens={MAX_COMPLETION_TOKENS} "
-                    f"(completion_tokens={completion_tokens}). Raise "
-                    f"MAX_COMPLETION_TOKENS if this is unexpected."
-                )
-            else:
-                print(
-                    f"[INFO] {model_id}: finished "
-                    f"(finish_reason={finish_reason}, "
-                    f"completion_tokens={completion_tokens})."
-                )
-
-            message_dict = {
-                "role": "assistant",
-                "content": "".join(content_parts) or None,
-                "tool_calls": list(tool_calls_acc.values()) if tool_calls_acc else None,
-            }
-            yield message_dict, usage
+            async with client.messages.stream(
+                model=providers.MODEL,
+                max_tokens=MAX_COMPLETION_TOKENS,
+                system=system,
+                messages=messages,
+                tools=_to_tools(TOOL_DECLARATIONS),
+                output_config={"effort": providers.EFFORT},
+            ) as stream:
+                async for event in stream:
+                    if event.type == "text":
+                        yield models.ContentTokenStep(token=event.text)
+                    elif (
+                        event.type == "content_block_start"
+                        and event.content_block.type == "tool_use"
+                    ):
+                        yield models.ToolCallStartStep(name=event.content_block.name)
+                response = await stream.get_final_message()
+            print(
+                f"[INFO] {providers.MODEL}: finished "
+                f"(stop_reason={response.stop_reason}, "
+                f"output_tokens={response.usage.output_tokens})."
+            )
+            yield response
             return
+        except anthropic.BadRequestError:
+            # The same request fails the same way again.
+            raise
         except Exception as e:
             print(f"Model exception: {e}")
     raise Exception("Failed to invoke model after 3 attempts.")
 
 
+def _app_message(response: anthropic.types.Message) -> dict:
+    """The assistant message as the app stores and streams it: its text, its
+    tool calls with JSON arguments, and `blocks`, the response exactly as it
+    came (thinking included), which is what the model is sent back."""
+    text = "".join(b.text for b in response.content if b.type == "text")
+    calls = [b for b in response.content if b.type == "tool_use"]
+    blocks = [b.model_dump(exclude_none=True) for b in response.content]
+    if response.stop_reason in ("refusal", "max_tokens"):
+        # A refusal can cut a tool call off, and so can the token limit.
+        print(f"[WARN] {providers.MODEL}: stopped early ({response.stop_reason}).")
+        # Not sent back: what's stored is the reply the user saw.
+        calls, blocks = [], []
+        if not text.strip():
+            text = REFUSAL_REPLY if response.stop_reason == "refusal" else TRUNCATED_REPLY
+    return {
+        "role": "assistant",
+        "content": text or None,
+        "tool_calls": [
+            {
+                "id": c.id,
+                "type": "function",
+                "function": {"name": c.name, "arguments": json.dumps(c.input)},
+            }
+            for c in calls
+        ]
+        or None,
+        **({"blocks": blocks} if blocks else {}),
+    }
+
+
 async def _inline_content_images(parts: list[dict]) -> list[dict]:
-    """Replace remote image URLs with cached base64 data URLs."""
+    """Replace remote image URLs with cached base64 data URLs. A photo that
+    can't be fetched fails the turn: sending anything else in its place would
+    rewrite an earlier turn."""
     inlined: list[dict] = []
     for part in parts:
         if part.get("type") == "image_url":
@@ -209,40 +198,141 @@ async def _inline_content_images(parts: list[dict]) -> list[dict]:
                         "image_url": {"url": await inline_image_url(url)},
                     }
                 except Exception as e:
-                    print(f"Failed to inline image {url}: {e}")
+                    raise RuntimeError(f"Couldn't load a photo in this chat: {e}") from e
         inlined.append(part)
     return inlined
 
 
-def _without_images(parts: list[dict]) -> list[dict]:
-    """Earlier photos as a placeholder: resending them every turn is costly,
-    and what they showed is already in the conversation."""
-    return [
-        {"type": "text", "text": "[photo]"} if part.get("type") == "image_url" else part
-        for part in parts
-    ]
+def _tool_use_id(call_id: str) -> str:
+    """Tool call ids from earlier providers, made valid for Anthropic."""
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", call_id or "") or "call"
+
+
+def _user_blocks(content: str | list) -> list[dict]:
+    """A stored user message's content as Anthropic content blocks."""
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content.strip() else []
+    blocks: list[dict] = []
+    for part in content:
+        if part.get("type") == "text" and (part.get("text") or "").strip():
+            blocks.append({"type": "text", "text": part["text"]})
+        elif part.get("type") == "image_url":
+            url = part.get("image_url", {}).get("url", "")
+            if url.startswith("data:"):
+                blocks.append(image_block(url))
+    return blocks
+
+
+def _arguments(raw: str) -> dict:
+    try:
+        args = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return args if isinstance(args, dict) else {}
+
+
+def _to_anthropic(messages: list[dict]) -> list[dict]:
+    """Stored messages (user text and photos, assistant text and tool calls,
+    tool results) as Anthropic messages: tool calls become `tool_use` blocks,
+    and their results `tool_result` blocks in the next user message. A user
+    message's context (when it was sent) follows it as a system message. Calls
+    left without a result (an interrupted turn) get an error result, and
+    consecutive messages of one role are merged."""
+    converted: list[dict] = []
+    pending: list[str] = []  # tool_use ids still waiting for a result
+
+    def add(role: str, blocks: list[dict]) -> None:
+        if not blocks:
+            return
+        # A system message must be followed by the assistant's reply. One
+        # that wasn't (its turn failed) is dropped: nothing came after it.
+        if converted and converted[-1]["role"] == "system" and role != "assistant":
+            converted.pop()
+        if converted and converted[-1]["role"] == role:
+            converted[-1]["content"].extend(blocks)
+        else:
+            converted.append({"role": role, "content": blocks})
+
+    def close_pending() -> None:
+        add(
+            "user",
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": json.dumps({"error": "Interrupted."}),
+                    "is_error": True,
+                }
+                for call_id in pending
+            ],
+        )
+        pending.clear()
+
+    for msg in messages:
+        role = msg.get("role")
+        if role == "tool":
+            call_id = _tool_use_id(msg.get("tool_call_id", ""))
+            if call_id in pending:
+                pending.remove(call_id)
+                add(
+                    "user",
+                    [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": msg.get("content") or "{}",
+                        }
+                    ],
+                )
+            continue
+        close_pending()
+        if role == "user":
+            add("user", _user_blocks(msg.get("content") or ""))
+            if msg.get("context") and converted and converted[-1]["role"] == "user":
+                converted.append({"role": "system", "content": msg["context"]})
+        elif role == "assistant" and msg.get("blocks"):
+            # The model's response exactly as it came, thinking included.
+            add("assistant", list(msg["blocks"]))
+            pending.extend(
+                b["id"] for b in msg["blocks"] if b.get("type") == "tool_use"
+            )
+        elif role == "assistant":
+            blocks: list[dict] = []
+            if isinstance(msg.get("content"), str) and msg["content"].strip():
+                blocks.append({"type": "text", "text": msg["content"]})
+            for tc in msg.get("tool_calls") or []:
+                call_id = _tool_use_id(tc.get("id", ""))
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": tc["function"]["name"],
+                        "input": _arguments(tc["function"].get("arguments", "")),
+                    }
+                )
+                pending.append(call_id)
+            add("assistant", blocks)
+    close_pending()
+    return converted
 
 
 async def _convert_history(contents: list[dict]) -> list[dict]:
+    """Stored messages as the app's own format, every photo inlined. Earlier
+    turns go to the model exactly as they did the first time: a change would
+    lose the prompt cache and invalidate the thinking that came after it."""
     messages: list[dict] = []
-    latest_user = max(
-        (i for i, msg in enumerate(contents) if msg.get("role") == "user"), default=-1
-    )
-    for index, msg in enumerate(contents):
+    for msg in contents:
         role = msg.get("role")
         if role in ("user", "model"):
             content = msg.get("content")
             if isinstance(content, list):
-                content = (
-                    await _inline_content_images(content)
-                    if index == latest_user
-                    else _without_images(content)
-                )
+                content = await _inline_content_images(content)
             if isinstance(content, (str, list)):
                 messages.append(
                     {
                         "role": "user" if role == "user" else "assistant",
                         "content": content,
+                        **({"context": msg["context"]} if msg.get("context") else {}),
                     }
                 )
             elif "parts" in msg:
@@ -251,17 +341,15 @@ async def _convert_history(contents: list[dict]) -> list[dict]:
                     if isinstance(part, dict) and part.get("text"):
                         text_parts.append(part["text"])
                 if text_parts:
-                    openai_role = "user" if role == "user" else "assistant"
                     messages.append(
-                        {"role": openai_role, "content": "\n".join(text_parts)}
+                        {
+                            "role": "user" if role == "user" else "assistant",
+                            "content": "\n".join(text_parts),
+                        }
                     )
             continue
-        if role == "assistant":
+        if role in ("assistant", "tool"):
             messages.append(msg)
-            continue
-        if role == "tool":
-            messages.append(msg)
-    _sanitize_tool_calls(messages)
     return messages
 
 
@@ -452,7 +540,6 @@ async def _log_food(
             args.get("description", ""),
             _latest_image_urls(input.contents),
             args.get("day"),
-            input.models,
         ):
             if step.type == "stage":
                 # Its message was read already: the statuses start at extraction.
@@ -486,42 +573,42 @@ async def agent(
     | models.StatusStep,
     None,
 ]:
-    messages: list[dict] = [
-        {"role": "system", "content": input.system_prompt},
-        *await _convert_history(input.contents),
-    ]
-    model_id = providers.model_for("agent", input.models)
+    # The model's view of the conversation: earlier turns exactly as they were
+    # sent, and its responses as they came, thinking included.
+    messages = _to_anthropic(await _convert_history(input.contents))
     # What this turn cost, counted toward the drafts it creates.
     turn_cost = 0.0
     draft_ids: list[str] = []
     for _ in range(MAX_TURNS):
-        _sanitize_tool_calls(messages)
         yield models.StatusStep(text="Thinking")
-        async for chunk in _invoke_model(model_id, messages):
-            if isinstance(chunk, tuple):
-                message_dict, usage = chunk
-                if usage:
-                    uncached_input, cached_input, output = extract_tokens(usage)
-                    cost = await get_openrouter_cost(model_id=model_id, usage=usage)
-                    print(f"Invocation cost: ${cost}")
-                    turn_cost += cost
-                    repository.insert_llm_invocation(
-                        total_cost=cost,
-                        raw_usage_metadata=usage,
-                        model_id=model_id,
-                        uncached_input_tokens=uncached_input,
-                        cached_input_tokens=cached_input,
-                        output_tokens=output,
-                        user_id=input.user_id,
-                        conversation_id=input.conversation_id,
-                    )
-                messages.append(message_dict)
+        async for chunk in _invoke_model(input.system_prompt, messages):
+            if isinstance(chunk, anthropic.types.Message):
+                response = chunk
+                usage = response.usage.model_dump(exclude_none=True)
+                uncached_input, cached_input, output = extract_tokens(usage)
+                cost = providers.cost(usage)
+                print(f"Invocation cost: ${cost}")
+                turn_cost += cost
+                repository.insert_llm_invocation(
+                    total_cost=cost,
+                    raw_usage_metadata=usage,
+                    model_id=providers.MODEL,
+                    uncached_input_tokens=uncached_input,
+                    cached_input_tokens=cached_input,
+                    output_tokens=output,
+                    user_id=input.user_id,
+                    conversation_id=input.conversation_id,
+                )
+                message_dict = _app_message(response)
                 yield message_dict
                 tool_calls = message_dict.get("tool_calls") or []
                 if not tool_calls:
                     for draft_id in draft_ids:
                         pipeline.add_draft_cost(draft_id, turn_cost / len(draft_ids))
                     return
+                # The same blocks the stored message replays on later turns.
+                messages.append({"role": "assistant", "content": message_dict["blocks"]})
+                results: list[dict] = []
                 for tc in tool_calls:
                     yield _tool_status(tc["function"]["name"])
                     if tc["function"]["name"] == "log_food":
@@ -535,8 +622,16 @@ async def agent(
                             yield models.DraftStep(draft=draft)
                     else:
                         tool_result = _get_tool_response(tc, input.user_id)
-                    messages.append(tool_result)
+                    results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc["id"],
+                            "content": tool_result["content"],
+                        }
+                    )
                     yield tool_result
+                # Every result of a round in one message.
+                messages.append({"role": "user", "content": results})
             else:
                 yield chunk
                 if isinstance(chunk, models.ToolCallStartStep):

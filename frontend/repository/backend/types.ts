@@ -114,28 +114,6 @@ export type SandboxDoneStep = {
 
 export type SandboxStep = SandboxStageStep | SandboxDoneStep | ErrorStep;
 
-// The tasks a model can be picked for.
-export type ModelTask =
-  | "agent"
-  | "extract_photo"
-  | "extract_text"
-  | "resolve"
-  | "edit";
-
-// One OpenRouter model a task can run with; prices in USD per million tokens.
-export type ModelOption = {
-  id: string;
-  name: string;
-  input_per_million: number | null;
-  output_per_million: number | null;
-};
-
-// OpenRouter's catalog entry for one model, as it lists it.
-export type ModelInfo = Record<string, unknown>;
-
-// The model of each task, as {task: model id}.
-export type ModelChoices = Partial<Record<ModelTask, string>>;
-
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
 export type Per100g = {

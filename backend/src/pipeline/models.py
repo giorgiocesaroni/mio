@@ -143,12 +143,28 @@ class PipelineInput(BaseModel):
     skip_route: bool = False
     # What started the run, stored with the draft for the usage page.
     via: DraftVia = "sandbox"
-    # The model picked for each task, as {task: model id}: the app's settings,
-    # or the sandbox's own picks; see `providers.model_for`.
-    models: dict[str, str] = {}
     # The sandbox's request parameters for "extract" and "resolve", sent as
     # they are instead of `service.default_parameters`.
     parameters: dict[str, dict] = {}
+
+
+class RouteAnswer(BaseModel):
+    """The router's reading of a chat message."""
+
+    depends_on_conversation: bool = Field(
+        description=(
+            "Whether `message` (with its `attached_photos`) only makes sense given "
+            "the conversation: answering something `assistant_last_reply` asked, "
+            "correcting `pending_draft`, or identifying foods by pointing to "
+            "earlier meals or logs (e.g. 'same as yesterday', 'my usual "
+            "breakfast') instead of naming them. A message naming new foods, or a "
+            "photo when nothing was asked for, stands on its own even "
+            "mid-conversation."
+        )
+    )
+    intent: Literal["log_food", "edit_logs", "ask", "other", "unclear"] = Field(
+        description="What the user wants their food-tracking assistant to do with `message`."
+    )
 
 
 # "edit" is a correction applied to an existing entry, not a stage of a new log.

@@ -3,10 +3,6 @@ import type {
   ConfirmDraftResult,
   LogDraft,
   RunAgentStep,
-  ModelChoices,
-  ModelInfo,
-  ModelOption,
-  ModelTask,
   SandboxStep,
 } from "./types";
 import { queryClient } from "@/app/providers";
@@ -37,10 +33,6 @@ export type {
   SandboxStageStep,
   SandboxDoneStep,
   SandboxStageName,
-  ModelChoices,
-  ModelInfo,
-  ModelOption,
-  ModelTask,
   LogDraft,
   DayLog,
   DayEntries,
@@ -158,7 +150,6 @@ async function streamSSE<T extends { type: string } = RunAgentStep>(
 export async function streamChat(
   conversationId: string,
   payload: object,
-  models: ModelChoices,
   signal: AbortSignal,
   onStep: (step: RunAgentStep) => void,
 ): Promise<void> {
@@ -167,7 +158,6 @@ export async function streamChat(
     {
       conversation_id: conversationId,
       message: payload,
-      models,
     },
     signal,
     onStep,
@@ -178,7 +168,6 @@ export async function streamSandboxLog(
   payload: object,
   options: {
     day: string;
-    models: ModelChoices;
     // Request parameters per stage ("extract", "resolve"), sent as they are.
     parameters: Record<string, Record<string, unknown>>;
   },
@@ -190,7 +179,6 @@ export async function streamSandboxLog(
     {
       message: payload,
       day: options.day,
-      models: options.models,
       parameters: options.parameters,
     },
     signal,
@@ -215,38 +203,20 @@ async function requestJSON<T>(
   return res.json();
 }
 
-/** The models that can do `task` matching `query`, searched server-side. */
-export function searchModels(task: ModelTask, query: string): Promise<ModelOption[]> {
-  const params = new URLSearchParams({ task, q: query });
-  return requestJSON(`/models?${params}`);
+/** The request parameters extraction and resolution send. */
+export function getModelParameters(): Promise<Record<string, unknown>> {
+  return requestJSON("/models/parameters");
 }
-
-/** OpenRouter's catalog entry for one model, as it lists it. */
-export function getModelInfo(id: string): Promise<ModelInfo> {
-  return requestJSON(`/models/info?${new URLSearchParams({ id })}`);
-}
-
-/** The request parameters extraction and resolution send to `model`. */
-export function getModelParameters(model: string): Promise<Record<string, unknown>> {
-  return requestJSON(`/models/parameters?${new URLSearchParams({ model })}`);
-}
-
-/** The configured model of each task, used when the user picked none. */
-export function getModelDefaults(): Promise<Required<ModelChoices>> {
-  return requestJSON("/models/defaults");
-}
-
 
 /** Applies a correction in the user's words to one dish of a draft; the draft is null once the correction removed its last dish. */
 export function reviseDraftDish(
   id: string,
   dishId: string,
   instruction: string,
-  models: ModelChoices,
 ): Promise<LogDraft | null> {
   return requestJSON(`/drafts/${id}/dishes/${encodeURIComponent(dishId)}/revise`, {
     method: "POST",
-    body: JSON.stringify({ instruction, models }),
+    body: JSON.stringify({ instruction }),
   });
 }
 
@@ -280,7 +250,6 @@ export function reviseLogs(
   day: string,
   logIds: string[],
   instruction: string,
-  models: ModelChoices,
 ): Promise<ConfirmDraftResult> {
   return requestJSON(`/logs/revise`, {
     method: "POST",
@@ -288,7 +257,6 @@ export function reviseLogs(
       day,
       log_ids: logIds,
       instruction,
-      models,
     }),
   });
 }

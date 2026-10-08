@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import os
 import subprocess
@@ -6,33 +7,29 @@ import tempfile
 from dataclasses import dataclass
 
 import httpx
-from openai import (
-    APIConnectionError,
-    APIError,
-    APITimeoutError,
-)
+from google import genai
 
-from src.agent.providers import get_client
-from src.agent.utils import get_openrouter_cost
+MODEL_ID = "gemini-3.5-transcribe"
 
-MODEL_ID = "openai/gpt-transcribe"
+# USD per million tokens: audio in, text out.
+_USD_PER_INPUT_TOKEN = 2.00 / 1e6
+_USD_PER_OUTPUT_TOKEN = 12.00 / 1e6
 
 logger = logging.getLogger(__name__)
 
+_client: genai.Client | None = None
+
+
+def _get_client() -> genai.Client:
+    """The Gemini client, which reads GOOGLE_API_KEY."""
+    global _client
+    if _client is None:
+        _client = genai.Client()
+    return _client
+
+
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 2.0
-
-_MIME_TO_FILENAME = {
-    "audio/wav": "voice.wav",
-    "audio/webm": "voice.webm",
-    "audio/ogg": "voice.ogg",
-    "audio/mpeg": "voice.mp3",
-    "audio/mp3": "voice.mp3",
-    "audio/flac": "voice.flac",
-    "audio/x-m4a": "voice.m4a",
-    "audio/m4a": "voice.m4a",
-    "audio/mp4": "voice.mp4",
-}
 
 _RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
@@ -47,15 +44,15 @@ class TranscriptionResult:
 
 
 def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, (APITimeoutError, APIConnectionError, httpx.TransportError)):
+    if isinstance(exc, httpx.TransportError):
         return True
-    if isinstance(exc, APIError):
-        return exc.status_code is None or exc.status_code in _RETRYABLE_STATUS
-    return False
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    return status in _RETRYABLE_STATUS
 
 
 def _resample_to_16k_wav(data: bytes) -> bytes:
-    """Resample any audio to 16kHz mono WAV (Meta requirement) via ffmpeg."""
+    """Resample any audio to 16kHz mono WAV via ffmpeg: small, and a format
+    the model takes."""
     with tempfile.NamedTemporaryFile(suffix=".src", delete=False) as tmp:
         tmp.write(data)
         src_path = tmp.name
@@ -83,7 +80,7 @@ def _resample_to_16k_wav(data: bytes) -> bytes:
 
 
 async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionResult:
-    """Transcribe audio to text using GPT Transcribe (via OpenRouter).
+    """Transcribe audio to text using Gemini 3.5 Transcribe.
 
     Args:
         audio_data: Raw audio bytes
@@ -92,17 +89,18 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
     Returns:
         TranscriptionResult with text and cost info
     """
-    client = get_client("openrouter")
     try:
         audio_data = _resample_to_16k_wav(audio_data)
         mime_type = "audio/wav"
     except Exception as exc:
         logger.warning("transcribe resample failed, sending original: %s", exc)
-    filename = _MIME_TO_FILENAME.get(mime_type, "voice.wav")
+        # Gemini lists MP4/AAC recordings as audio/m4a, without codec parameters.
+        mime_type = mime_type.split(";")[0].strip()
+        if mime_type in ("audio/mp4", "audio/x-m4a"):
+            mime_type = "audio/m4a"
     logger.info(
-        "transcribe start: model=%s file=%s mime=%s bytes=%d",
+        "transcribe start: model=%s mime=%s bytes=%d",
         MODEL_ID,
-        filename,
         mime_type,
         len(audio_data),
     )
@@ -110,20 +108,24 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            response = await client.audio.transcriptions.create(
+            interaction = await _get_client().aio.interactions.create(
                 model=MODEL_ID,
-                file=(filename, audio_data, mime_type),
+                input=[
+                    {
+                        "type": "audio",
+                        "data": base64.b64encode(audio_data).decode(),
+                        "mime_type": mime_type,
+                    }
+                ],
+                # Voice messages aren't kept on Google's side.
+                store=False,
             )
         except Exception as exc:
-            status = getattr(exc, "status_code", None)
-            body = getattr(exc, "body", None)
             logger.warning(
-                "transcribe attempt %d/%d failed: %s status=%s body=%s",
+                "transcribe attempt %d/%d failed: %s",
                 attempt + 1,
                 _MAX_RETRIES + 1,
                 exc,
-                status,
-                body,
             )
             if _is_retryable(exc) and attempt < _MAX_RETRIES:
                 last_error = exc
@@ -137,34 +139,21 @@ async def transcribe_audio(audio_data: bytes, mime_type: str) -> TranscriptionRe
             f"Transcription failed after {_MAX_RETRIES} retries."
         ) from last_error
 
-    text = (response.text or "").strip()
-    logger.info(
-        "transcribe success: chars=%d usage=%s",
-        len(text),
-        getattr(response, "usage", None),
-    )
+    text = (interaction.output_text or "").strip()
+    raw_usage = interaction.usage
+    logger.info("transcribe success: chars=%d usage=%s", len(text), raw_usage)
     if not text:
         raise ValueError("No transcription returned by the transcription API.")
 
-    raw_usage = getattr(response, "usage", None)
-    if raw_usage is None:
-        usage: dict = {"prompt_tokens": 0, "completion_tokens": 0}
-    else:
-        dump = (
-            raw_usage if isinstance(raw_usage, dict) else raw_usage.model_dump()
-        )
-        usage = {
-            "prompt_tokens": dump.get("input_tokens", dump.get("prompt_tokens", 0))
-            or 0,
-            "completion_tokens": dump.get(
-                "output_tokens", dump.get("completion_tokens", 0)
-            )
-            or 0,
-        }
-        if isinstance(dump.get("cost"), (int, float)):
-            usage["cost"] = dump["cost"]
-
-    cost = await get_openrouter_cost(model_id=MODEL_ID, usage=usage)
+    # Shaped like the Anthropic usage the rest of the app records.
+    usage = {
+        "input_tokens": (raw_usage.total_input_tokens if raw_usage else 0) or 0,
+        "output_tokens": (raw_usage.total_output_tokens if raw_usage else 0) or 0,
+    }
+    cost = (
+        usage["input_tokens"] * _USD_PER_INPUT_TOKEN
+        + usage["output_tokens"] * _USD_PER_OUTPUT_TOKEN
+    )
 
     return TranscriptionResult(
         text=text,

@@ -35,7 +35,6 @@ import {
   MoreVertical,
   PanelLeftIcon,
   Receipt,
-  Settings,
   SunMoon,
   User,
 } from "lucide-react";
@@ -182,15 +181,6 @@ export function AppSidebar() {
                 >
                   <FlaskConical className="size-4 shrink-0" />
                   <span>Sandbox</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    closeMobile();
-                    router.push("/dashboard/settings");
-                  }}
-                >
-                  <Settings className="size-4 shrink-0" />
-                  <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>

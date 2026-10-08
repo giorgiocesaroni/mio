@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 export const STAGES: { name: SandboxStageName; label: string; kind: string }[] =
   [
     { name: "normalize", label: "Normalize", kind: "code" },
-    { name: "route", label: "Route", kind: "Jev" },
+    { name: "route", label: "Route", kind: "LLM" },
     { name: "extract", label: "Extract", kind: "LLM" },
     { name: "retrieve", label: "Retrieve", kind: "code" },
     { name: "resolve", label: "Resolve", kind: "LLM" },
@@ -56,104 +56,26 @@ const OUTCOME_LABELS: Record<SandboxDoneStep["outcome"], string> = {
   error: "Error",
 };
 
-type JevAnswer =
-  | {
-      type: "choice";
-      choice: string;
-      confidence: number;
-      probabilities: Record<string, number>;
-    }
-  | { type: "noul"; noul: number };
-
-type JevDebug = {
-  model: string;
-  questions: Record<string, { criteria?: Record<string, unknown> }>;
-  answers: Record<string, JevAnswer>;
+type RouterAnswer = {
+  depends_on_conversation: boolean;
+  intent: string;
 };
 
-function ProbabilityBar({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: number;
-  highlight?: boolean;
-}) {
+/** The router's answers, as it gave them. */
+function RouterAnswers({ answer }: { answer: RouterAnswer }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_6rem_3rem] items-center gap-2 text-xs">
-      <span
-        className={cn(
-          "truncate",
-          highlight ? "font-medium" : "text-muted-foreground",
-        )}
-        title={label}
-      >
-        {label}
-      </span>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            highlight ? "bg-primary" : "bg-muted-foreground/40",
-          )}
-          style={{ width: `${Math.round(value * 100)}%` }}
-        />
-      </div>
-      <span className="text-right tabular-nums text-muted-foreground">
-        {value.toFixed(2)}
-      </span>
-    </div>
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+      <dt><code>depends_on_conversation</code></dt>
+      <dd className="text-muted-foreground">{answer.depends_on_conversation ? "yes" : "no"}</dd>
+      <dt><code>intent</code></dt>
+      <dd className="text-muted-foreground">{answer.intent}</dd>
+    </dl>
   );
 }
 
-/** Every Jev answer with its full distribution, labelled by criteria text. */
-function JevAnswers({ jev }: { jev: JevDebug }) {
-  return (
-    <div className="grid gap-3">
-      {Object.entries(jev.answers).map(([key, answer]) => {
-        const criteria = jev.questions[key]?.criteria ?? {};
-        const optionLabel = (option: string) => {
-          const description = criteria[option];
-          return typeof description === "string"
-            ? `${option} · ${description}`
-            : option;
-        };
-        return (
-          <div key={key} className="grid gap-1">
-            <div className="flex items-center gap-2 text-xs">
-              <code className="font-medium">{key}</code>
-              {answer.type === "choice" ? (
-                <span className="text-muted-foreground">
-                  → {answer.choice} · confidence{" "}
-                  {answer.confidence.toFixed(2)}
-                </span>
-              ) : null}
-            </div>
-            {answer.type === "choice" ? (
-              Object.entries(answer.probabilities)
-                .sort(([, a], [, b]) => b - a)
-                .map(([option, p]) => (
-                  <ProbabilityBar
-                    key={option}
-                    label={optionLabel(option)}
-                    value={p}
-                    highlight={option === answer.choice}
-                  />
-                ))
-            ) : (
-              <ProbabilityBar label="yes" value={answer.noul} highlight />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function jevOf(stage: SandboxStageStep): JevDebug | null {
-  const data = stage.data as { jev?: JevDebug | null } | null;
-  return data?.jev ?? null;
+function routerOf(stage: SandboxStageStep): RouterAnswer | null {
+  const data = stage.data as { router?: { answer?: RouterAnswer } | null } | null;
+  return data?.router?.answer ?? null;
 }
 
 function StageRow({
@@ -169,7 +91,7 @@ function StageRow({
   isPending: boolean;
   pendingSince: number;
 }) {
-  const jev = stage ? jevOf(stage) : null;
+  const router = stage ? routerOf(stage) : null;
   return (
     <li className="grid grid-cols-[1rem_minmax(0,1fr)] gap-3">
       <span
@@ -221,9 +143,9 @@ function StageRow({
             ))}
           </ul>
         ) : null}
-        {jev ? (
+        {router ? (
           <div className="mt-1 rounded-md border p-3">
-            <JevAnswers jev={jev} />
+            <RouterAnswers answer={router} />
           </div>
         ) : null}
         {stage?.data ? (

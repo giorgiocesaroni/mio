@@ -10,8 +10,6 @@ class AgentInput(BaseModel):
     system_prompt: str
     contents: list[dict]
     thinking: bool = True
-    # The model picked for each task, as {task: model id}; see `providers.model_for`.
-    models: dict[str, str] = {}
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:
@@ -91,8 +89,6 @@ class RunAgentInput(BaseModel):
     thinking: bool = True
     # The day the user is viewing (YYYY-MM-DD, their timezone); defaults to today.
     day: Optional[str] = None
-    # The models the user picked in the app's settings, as {task: model id}.
-    models: dict[str, str] = {}
 
     @field_serializer("conversation_id")
     def serialize_conversation_id(self, conversation_id: UUID) -> str:

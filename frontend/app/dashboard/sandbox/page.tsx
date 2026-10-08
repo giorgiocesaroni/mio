@@ -8,12 +8,11 @@ import { DashboardPage } from "@/app/dashboard/components/dashboard-page";
 import { useAudioRecorder } from "@/app/hooks/use-audio-recorder";
 import { Button } from "@/components/ui/button";
 import {
-  getModelDefaults,
   streamSandboxLog,
   transcribeAudio,
   uploadFile,
 } from "@/repository/backend/queries";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { DAY_ENTRIES_QUERY_KEY, useDayEntries } from "@/app/dashboard/components/day-entries";
@@ -34,18 +33,9 @@ export default function SandboxPage() {
   // Runs log for today; the day only lists this session's drafts.
   const [day] = useState(todayKey);
   const [runs, setRuns] = useState<Run[]>([]);
-  // The sandbox's own picks, apart from the user's preferences for the app;
-  // null runs the configured model.
-  const [extractModel, setExtractModel] = useState<string | null>(null);
-  const [resolveModel, setResolveModel] = useState<string | null>(null);
   // Request parameters typed per stage; null sends the backend's own.
   const [extractParameters, setExtractParameters] = useState<string | null>(null);
   const [resolveParameters, setResolveParameters] = useState<string | null>(null);
-  const { data: defaults } = useQuery({
-    queryKey: ["getModelDefaults"],
-    queryFn: getModelDefaults,
-    staleTime: Infinity,
-  });
   const abortRef = useRef<AbortController | null>(null);
   const { isRecording, startRecording, stopRecording } = useAudioRecorder();
   const queryClient = useQueryClient();
@@ -112,12 +102,6 @@ export default function SandboxPage() {
         { parts },
         {
           day,
-          models: {
-            ...(extractModel
-              ? { extract_photo: extractModel, extract_text: extractModel }
-              : {}),
-            ...(resolveModel ? { resolve: resolveModel } : {}),
-          },
           parameters,
         },
         controller.signal,
@@ -227,14 +211,6 @@ export default function SandboxPage() {
             id="sandbox-extract"
             title="Extract"
             description="Reads the message and photos into foods."
-            task="extract_photo"
-            model={extractModel}
-            onModelChange={(model) => {
-              setExtractModel(model);
-              // Parameters belong to a model: start over from the new one's.
-              setExtractParameters(null);
-            }}
-            defaultModel={defaults?.extract_photo}
             parameters={extractParameters}
             onParametersChange={setExtractParameters}
             disabled={isRunning}
@@ -243,13 +219,6 @@ export default function SandboxPage() {
             id="sandbox-resolve"
             title="Resolve"
             description="Matches each food to the database."
-            task="resolve"
-            model={resolveModel}
-            onModelChange={(model) => {
-              setResolveModel(model);
-              setResolveParameters(null);
-            }}
-            defaultModel={defaults?.resolve}
             parameters={resolveParameters}
             onParametersChange={setResolveParameters}
             disabled={isRunning}

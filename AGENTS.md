@@ -16,9 +16,9 @@ The monorepo of Mio, the AI nutritionist. Additional details can be found at `RE
 
 | Directory   | Notes                           | Core Technologies            |
 | ----------- | ------------------------------- | ---------------------------- |
-| `agent/`    | The agent's core logic.         | GPT-6 Luna via OpenRouter |
+| `agent/`    | The agent's core logic.         | Claude Haiku 5.5 (Anthropic); Gemini for transcription and embeddings |
 | `api/`      | The API of the application.     | FastAPI                      |
-| `pipeline/` | The structured food-logging pipeline and its log drafts. Every chat message is routed here first; the agent's `log_food` tool uses it too. Corrections to a draft dish or a logged entry go through the entry editor instead: a small tool loop that edits the existing rows, so what the correction doesn't mention is kept as is. | Jev (routing); GPT-6 Luna by default for extraction, resolve and the entry editor, any OpenRouter model per request (`providers.model_for`) |
+| `pipeline/` | The structured food-logging pipeline and its log drafts. Every chat message is routed here first; the agent's `log_food` tool uses it too. Corrections to a draft dish or a logged entry go through the entry editor instead: a small tool loop that edits the existing rows, so what the correction doesn't mention is kept as is. | Claude Haiku 5.5 (Anthropic) for routing (thinking off), extraction, resolve and the entry editor (`providers.MODEL`) |
 
 ### Module Structure
 

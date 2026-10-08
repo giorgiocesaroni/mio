@@ -23,7 +23,6 @@ import { MessageContent } from "./message-content";
 import { dayEntriesQueryKey } from "@/app/dashboard/components/day-entries";
 import { ChatDraft } from "@/app/dashboard/components/draft-card";
 import type { DayEntries, LogDraft } from "@/repository/backend/queries";
-import { readModelPreferences } from "@/lib/model-preferences";
 
 function StepDisplay({ step }: { step: RunAgentStep }) {
   if (step.type === "user_message") {
@@ -152,7 +151,6 @@ export function ChatThread({
         await streamChat(
           id,
           payload,
-          readModelPreferences(),
           controller.signal,
           (step) => {
             if (step.type === "status") {

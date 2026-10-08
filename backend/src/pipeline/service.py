@@ -3,7 +3,7 @@
 A fixed sequence of steps, where each model only makes the decision it is
 good at:
 
-    normalize → route (Jev) → extract (LLM) → retrieve (code)
+    normalize → route (LLM) → extract (LLM) → retrieve (code)
               → resolve (LLM) → draft (persisted)
 
 Every chat message starts here. Nothing is logged directly: the result is a
@@ -24,17 +24,16 @@ from typing import AsyncGenerator, TypeVar
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from typesafe_sdk import Choice, Noul
+from anthropic import transform_schema
 
 import src.agent.embeddings as embeddings
 import src.agent.models as agent_models
 import src.agent.providers as providers
 import src.agent.repository as agent_repository
 import src.agent.tools as tools
-import src.pipeline.jev as jev
 import src.pipeline.logic as logic
 import src.pipeline.repository as repository
-from src.agent.utils import extract_tokens, get_openrouter_cost, inline_image_url
+from src.agent.utils import extract_tokens, image_block, inline_image_url
 from pydantic import BaseModel
 
 from src.pipeline.models import (
@@ -47,6 +46,7 @@ from src.pipeline.models import (
     RemoveFood,
     RenameDish,
     Resolution,
+    RouteAnswer,
     PipelineInput,
     PipelineStep,
     ScaleEntry,
@@ -58,9 +58,13 @@ from src.pipeline.models import (
     SwapFood,
 )
 
-# Reasoning counts toward this, and some models reason at length whatever the
-# effort, so it's generous; only the tokens used are paid for.
+# Thinking counts toward this, so it's generous; only the tokens used are paid for.
 LLM_MAX_COMPLETION_TOKENS = 16384
+
+ROUTE_PROMPT = """You route the messages a user sends their food-tracking assistant. The input describes one: `message` (empty for a photo without text), how many `attached_photos` it has, the assistant's last reply (`assistant_last_reply`), and the entries of a draft awaiting the user's confirmation (`pending_draft`).
+
+Answer `depends_on_conversation` and `intent` as their descriptions say. The intents:
+{intents}"""
 
 EXTRACT_PROMPT = """You turn a food log message (text and/or photos) into structured foods for a nutrition tracker. The user's local time is {now}.
 
@@ -149,100 +153,80 @@ async def _normalize(message: agent_models.MessageType) -> tuple[str, list[str],
     return text, images, displayable
 
 
-async def _route(
-    user_id: str, input: PipelineInput, text: str, image_count: int
-) -> tuple[dict, float]:
+async def _route(input: PipelineInput, text: str, image_count: int) -> tuple[dict, float]:
+    """Whether a message is a new, self-contained food log, in one quick call
+    without thinking."""
     state = logic.route_state(text, image_count, input.last_reply, input.pending_draft)
-    questions: dict[str, jev.Question] = {
-        "depends_on_conversation": Noul(
-            instructions=(
-                "Does `message` (with its `attached_photos`) only make sense given "
-                "the conversation: answering something `assistant_last_reply` "
-                "asked, correcting `pending_draft`, or identifying foods by "
-                "pointing to earlier meals or logs (e.g. 'same as yesterday', 'my "
-                "usual breakfast') instead of naming them? A message naming new "
-                "foods, or a photo when nothing was asked for, stands on its own "
-                "even mid-conversation."
-            ),
-        ),
-    }
+    intents = "\n".join(f"- {k}: {v}" for k, v in logic.ROUTE_INTENTS.items())
+    answer, cost, usage = await _complete(
+        input.user_id,
+        ROUTE_PROMPT.format(intents=intents),
+        [{"role": "user", "content": json.dumps(state, ensure_ascii=False)}],
+        RouteAnswer,
+        {
+            "max_tokens": 256,
+            "thinking": {"type": "disabled"},
+            "output_config": {"effort": providers.EFFORT},
+        },
+    )
     # A photo without text has no intent to read; only its context decides.
-    if text:
-        questions["intent"] = Choice(
-            instructions="What does the user want their food-tracking assistant to do with `message`?",
-            criteria=logic.ROUTE_INTENTS,
-        )
-    response, cost = await jev.ask(user_id, f"route-{uuid.uuid4()}", state, questions)
-    intent = response.choices.get("intent")
     route, reason = logic.route_decision(
-        intent.choice if intent else None,
-        intent.confidence if intent else 1.0,
-        response.nouls["depends_on_conversation"].noul,
+        answer.intent if text else None, answer.depends_on_conversation
     )
     return {
         "route": route,
         "reason": reason,
-        "jev": jev.debug(state, questions, response),
+        "router": {"state": state, "answer": answer.model_dump(), "usage": usage},
     }, cost
 
 
-async def default_parameters(model_id: str) -> dict:
-    """The request parameters extraction and resolution send to `model_id`,
-    as OpenRouter's request body has them; the sandbox can replace them."""
+def default_parameters() -> dict:
+    """The request parameters extraction and resolution send, as the
+    Anthropic request body has them; the sandbox can replace them."""
     return {
-        "max_completion_tokens": LLM_MAX_COMPLETION_TOKENS,
-        # Extraction and resolution are estimation, not writing: sampling at a
-        # non-zero temperature makes the same message draft differently every
-        # run. Greedy keeps the draft reproducible, for the models that take
-        # a temperature (OpenRouter drops it for the others).
-        "temperature": 0,
-        **await providers.reasoning_extra_body(model_id),
+        "max_tokens": LLM_MAX_COMPLETION_TOKENS,
+        "output_config": {"effort": providers.EFFORT},
     }
 
 
 async def _complete(
     user_id: str,
-    model_id: str,
+    system: str,
     messages: list[dict],
     output: type[_Output],
     parameters: dict,
 ) -> tuple[_Output, float, dict]:
     """One structured-output completion, validated into `output`.
-    `parameters` go into the request body as they are (see
-    `default_parameters`)."""
-    client = providers.get_client()
-    response = await client.chat.completions.create(
-        model=model_id,
+    `parameters` go into the request as they are (see `default_parameters`);
+    the output format is added to their `output_config`."""
+    parameters = dict(parameters)
+    output_config = {
+        **parameters.pop("output_config", {}),
+        "format": {"type": "json_schema", "schema": transform_schema(output)},
+    }
+    response = await providers.get_client().messages.create(
+        model=providers.MODEL,
+        system=system,
         messages=messages,  # type: ignore[arg-type]
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": output.__name__.lower(),
-                "strict": True,
-                "schema": logic.inline_refs(output.model_json_schema()),
-            },
-        },
-        extra_body=parameters,
+        output_config=output_config,  # type: ignore[arg-type]
+        **{"max_tokens": LLM_MAX_COMPLETION_TOKENS, **parameters},
     )
-    usage = response.usage.model_dump() if response.usage else {}
-    cost = await get_openrouter_cost(model_id=model_id, usage=usage) if usage else 0.0
-    if usage:
-        repository.record_invocation(user_id, model_id, cost, usage, extract_tokens(usage))
-    choice = response.choices[0]
-    raw = choice.message.content or ""
-    if choice.finish_reason == "length":
-        reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
-        spent = f", {reasoning} of them reasoning" if reasoning else ""
-        limit = parameters.get("max_completion_tokens", "its limit")
+    usage = response.usage.model_dump(exclude_none=True)
+    cost = providers.cost(usage)
+    repository.record_invocation(user_id, providers.MODEL, cost, usage, extract_tokens(usage))
+    if response.stop_reason == "refusal":
+        raise RuntimeError(f"{providers.MODEL} declined to answer")
+    if response.stop_reason == "max_tokens":
+        limit = parameters.get("max_tokens", LLM_MAX_COMPLETION_TOKENS)
         raise RuntimeError(
-            f"{model_id} ran out of output tokens "
-            f"({limit}{spent}) before finishing its answer"
+            f"{providers.MODEL} ran out of output tokens ({limit}) before finishing its answer"
         )
+    raw = "".join(b.text for b in response.content if b.type == "text")
     if not raw.strip():
         raise RuntimeError(
-            f"{model_id} returned no content (finish reason: {choice.finish_reason})"
+            f"{providers.MODEL} returned no content (stop reason: {response.stop_reason})"
         )
-    return output.model_validate(logic.parse_json(raw)), cost, usage
+    return output.model_validate_json(raw), cost, usage
 
 
 async def _extract(
@@ -250,19 +234,18 @@ async def _extract(
     text: str,
     images: list[str],
     now: str,
-    model_id: str,
     parameters: dict,
 ) -> tuple[Extraction, float, dict]:
-    content: list[dict] = []
+    content: list[dict] = [image_block(url) for url in images]
     if text:
         content.append({"type": "text", "text": text})
-    for url in images:
-        content.append({"type": "image_url", "image_url": {"url": url}})
-    messages = [
-        {"role": "system", "content": EXTRACT_PROMPT.format(now=now)},
-        {"role": "user", "content": content},
-    ]
-    return await _complete(user_id, model_id, messages, Extraction, parameters)
+    return await _complete(
+        user_id,
+        EXTRACT_PROMPT.format(now=now),
+        [{"role": "user", "content": content}],
+        Extraction,
+        parameters,
+    )
 
 
 async def _candidates(user_id: str, queries: list[str], ingredients: bool) -> list[dict]:
@@ -334,7 +317,6 @@ async def _resolve(
     dish_recipes: list[list[dict]],
     day: str,
     now: str,
-    model_id: str,
     parameters: dict,
 ) -> tuple[Resolution, float, dict]:
     """Match each food to a candidate and decide how to log it, in one call.
@@ -344,32 +326,30 @@ async def _resolve(
     the omissions spelled out before accepting a partial answer.
     """
     dishes = logic.resolver_dishes(extraction, candidates, dish_recipes)
+    system = RESOLVE_PROMPT.format(
+        now=now, day=day, message=json.dumps(text or "(photo only)")
+    )
     messages = [
-        {
-            "role": "system",
-            "content": RESOLVE_PROMPT.format(
-                now=now, day=day, message=json.dumps(text or "(photo only)")
-            ),
-        },
         {"role": "user", "content": json.dumps({"dishes": dishes}, ensure_ascii=False)},
     ]
     resolution, cost, usage = await _complete(
-        user_id, model_id, messages, Resolution, parameters
+        user_id, system, messages, Resolution, parameters
     )
     missing = logic.missing_rows(extraction, resolution, dish_recipes)
     if missing:
         retry, retry_cost, retry_usage = await _complete(
             user_id,
-            model_id,
+            system,
             messages
             + [
+                {"role": "assistant", "content": resolution.model_dump_json()},
                 {
                     "role": "user",
                     "content": (
                         "Return exactly one row per component: your answer was "
                         f"missing items {missing}. Include every component."
                     ),
-                }
+                },
             ],
             Resolution,
             parameters,
@@ -437,7 +417,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         if input.skip_route:
             decision, cost = {"route": "pipeline", "reason": "Requested by the agent."}, 0.0
         else:
-            decision, cost = await _route(input.user_id, input, text, len(images))
+            decision, cost = await _route(input, text, len(images))
         total_cost += cost
         yield StageStep(
             name=stage,
@@ -445,7 +425,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             summary=f"{decision['route']}: {decision['reason']}",
             ms=_ms(t),
             cost=cost,
-            model=None if input.skip_route else "jev",
+            model=None if input.skip_route else providers.MODEL,
             data=decision,
         )
         if decision["route"] != "pipeline":
@@ -455,20 +435,12 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 3. Extract
         stage = "extract"
         t = time.perf_counter()
-        extract_model = providers.model_for(
-            "extract_photo" if images else "extract_text", input.models
-        )
-        extract_parameters = (
-            input.parameters["extract"]
-            if "extract" in input.parameters
-            else await default_parameters(extract_model)
-        )
+        extract_parameters = input.parameters.get("extract") or default_parameters()
         extraction, cost, usage = await _extract(
             input.user_id,
             text,
             images,
             now.strftime("%Y-%m-%d %H:%M"),
-            extract_model,
             extract_parameters,
         )
         total_cost += cost
@@ -479,7 +451,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             summary=f"{len(items)} item(s): {logic.extraction_summary(extraction)}",
             ms=_ms(t),
             cost=cost,
-            model=extract_model,
+            model=providers.MODEL,
             data={
                 "dishes": [d.model_dump() for d in extraction.dishes],
                 "usage": usage,
@@ -520,12 +492,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
         # 5. Resolve
         stage = "resolve"
         t = time.perf_counter()
-        resolve_model = providers.model_for("resolve", input.models)
-        resolve_parameters = (
-            input.parameters["resolve"]
-            if "resolve" in input.parameters
-            else await default_parameters(resolve_model)
-        )
+        resolve_parameters = input.parameters.get("resolve") or default_parameters()
         resolution, cost, debug = await _resolve(
             input.user_id,
             text,
@@ -534,7 +501,6 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             dish_recipes,
             day,
             now.strftime("%Y-%m-%d %H:%M"),
-            resolve_model,
             resolve_parameters,
         )
         total_cost += cost
@@ -559,7 +525,7 @@ async def _run(input: PipelineInput) -> AsyncGenerator[PipelineStep, None]:
             ),
             ms=_ms(t),
             cost=cost,
-            model=resolve_model,
+            model=providers.MODEL,
             data={
                 "resolution": resolution.model_dump(),
                 "rows": enriched,
@@ -672,7 +638,6 @@ def draft_food(
     description: str,
     image_urls: list[str],
     day: str | None,
-    models: dict[str, str],
 ) -> AsyncGenerator[PipelineStep, None]:
     """Draft a food log from the agent's description, skipping the router;
     streams the run like `run`.
@@ -691,7 +656,6 @@ def draft_food(
             day=day,
             skip_route=True,
             via="agent",
-            models=models,
         )
     )
 
@@ -699,23 +663,22 @@ def draft_food(
 def _edit_tools() -> list[dict]:
     return [
         {
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": " ".join((args.__doc__ or "").split()),
-                "parameters": logic.inline_refs(args.model_json_schema()),
-                "strict": True,
-            },
+            "name": name,
+            "description": " ".join((args.__doc__ or "").split()),
+            "input_schema": transform_schema(args),
+            "strict": True,
         }
         for name, args in EDIT_TOOLS.items()
     ]
 
 
-async def _edit_call(user_id: str, editor: logic.EntryEditor, name: str, raw: str) -> dict:
+async def _edit_call(
+    user_id: str, editor: logic.EntryEditor, name: str, raw: object
+) -> dict:
     """Run one of the editor's tool calls; a bad call returns the error for
     the model to fix instead of failing the edit."""
     try:
-        args = EDIT_TOOLS[name].model_validate_json(raw or "{}")
+        args = EDIT_TOOLS[name].model_validate(raw or {})
     except KeyError:
         return {"error": f"Unknown tool '{name}'."}
     except ValueError as e:
@@ -758,7 +721,6 @@ async def _edit(
     day: str,
     rows: list[dict],
     instruction: str,
-    model_id: str,
     draft_id: UUID | None = None,
 ) -> list[dict]:
     """The rows of an entry after a correction in the user's words.
@@ -777,8 +739,8 @@ async def _edit(
     before = editor.view()
     timezone = await asyncio.to_thread(agent_repository.get_user_timezone, user_id)
     now = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d %H:%M")
+    system = EDIT_PROMPT.format(now=now)
     messages: list[dict] = [
-        {"role": "system", "content": EDIT_PROMPT.format(now=now)},
         {
             "role": "user",
             "content": json.dumps(
@@ -797,60 +759,48 @@ async def _edit(
     error: str | None = None
     try:
         for _ in range(EDIT_MAX_TURNS):
-            response = await client.chat.completions.create(
-                model=model_id,
+            response = await client.messages.create(
+                model=providers.MODEL,
+                system=system,
                 messages=messages,  # type: ignore[arg-type]
                 tools=_edit_tools(),  # type: ignore[arg-type]
-                max_completion_tokens=LLM_MAX_COMPLETION_TOKENS,
-                temperature=0,
-                extra_body=await providers.reasoning_extra_body(model_id),
+                max_tokens=LLM_MAX_COMPLETION_TOKENS,
+                output_config={"effort": providers.EFFORT},
             )
-            usage = response.usage.model_dump() if response.usage else {}
-            if usage:
-                call_cost = await get_openrouter_cost(model_id=model_id, usage=usage)
-                cost += call_cost
-                repository.record_invocation(
-                    user_id, model_id, call_cost, usage, extract_tokens(usage)
-                )
-            message = response.choices[0].message
-            calls = message.tool_calls or []
+            usage = response.usage.model_dump(exclude_none=True)
+            call_cost = providers.cost(usage)
+            cost += call_cost
+            repository.record_invocation(
+                user_id, providers.MODEL, call_cost, usage, extract_tokens(usage)
+            )
+            if response.stop_reason == "refusal":
+                raise DraftError("Couldn't apply that correction; try rephrasing it.")
+            if response.stop_reason == "max_tokens":
+                raise DraftError("The correction took too long; try rephrasing it.")
+            # Sent back as it came, thinking included.
             messages.append(
                 {
                     "role": "assistant",
-                    "content": message.content or "",
-                    **(
-                        {
-                            "tool_calls": [
-                                {
-                                    "id": c.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": c.function.name,
-                                        "arguments": c.function.arguments,
-                                    },
-                                }
-                                for c in calls
-                            ]
-                        }
-                        if calls
-                        else {}
-                    ),
+                    "content": [b.model_dump(exclude_none=True) for b in response.content],
                 }
             )
+            calls = [b for b in response.content if b.type == "tool_use"]
             if not calls:
-                reply = (message.content or "").strip()
+                reply = "".join(
+                    b.text for b in response.content if b.type == "text"
+                ).strip()
                 break
+            results = []
             for call in calls:
-                result = await _edit_call(
-                    user_id, editor, call.function.name, call.function.arguments
-                )
-                messages.append(
+                result = await _edit_call(user_id, editor, call.name, call.input)
+                results.append(
                     {
-                        "role": "tool",
-                        "tool_call_id": call.id,
+                        "type": "tool_result",
+                        "tool_use_id": call.id,
                         "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
+            messages.append({"role": "user", "content": results})
         else:
             raise DraftError("The correction took too many steps; try rephrasing it.")
         if not editor.changed():
@@ -866,12 +816,12 @@ async def _edit(
             summary=error or reply,
             ms=_ms(started),
             cost=cost,
-            model=model_id,
+            model=providers.MODEL,
             data={
                 "before": before,
                 "after": editor.view(),
                 "reply": reply,
-                "messages": messages[1:],
+                "messages": messages,
             },
         )
         await asyncio.to_thread(
@@ -909,13 +859,12 @@ async def revise_draft_dish(
     draft_id: UUID,
     dish_id: str,
     instruction: str,
-    models: dict[str, str],
 ) -> dict | None:
     """Apply a correction in the user's words to one dish of a draft; returns
     the draft, or None when the correction removed its last dish.
 
     A dish is a component's group, or a standalone row; `dish_id` is what
-    `logic.group_key` returns for it. `models` picks the editor's model.
+    `logic.group_key` returns for it.
     """
     draft = await asyncio.to_thread(repository.get_pending_draft, user_id, draft_id)
     rows = [r for r in draft["rows"] if logic.group_key(r) == dish_id]
@@ -926,7 +875,6 @@ async def revise_draft_dish(
         draft["day"].isoformat(),
         rows,
         instruction,
-        providers.model_for("edit", models),
         draft_id,
     )
     if not new_rows:
@@ -947,7 +895,6 @@ async def revise_logs(
     day: str,
     log_ids: list[str],
     instruction: str,
-    models: dict[str, str],
 ) -> dict:
     """Apply a correction in the user's words to logged entries (one card).
 
@@ -967,7 +914,6 @@ async def revise_logs(
         day,
         logic.log_rows(logs),
         instruction,
-        providers.model_for("edit", models),
     )
     result = (
         await asyncio.to_thread(_write_rows, user_id, new_rows)

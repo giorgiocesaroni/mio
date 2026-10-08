@@ -1,36 +1,57 @@
+import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@/repository/supabase/server";
 
 // Takes over /backend/transcribe from the catch-all proxy to the Python
 // backend, so a voice memo doesn't wait for Cloud Run to start.
 export const runtime = "nodejs";
 
-const MODEL_ID = "openai/gpt-transcribe";
+const MODEL_ID = "gemini-3.5-transcribe";
+// USD per million tokens: audio in, text out.
+const USD_PER_INPUT_TOKEN = 2.0 / 1e6;
+const USD_PER_OUTPUT_TOKEN = 12.0 / 1e6;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-type Transcription = { text?: string; usage?: { cost?: number } };
+type Transcription = {
+  text?: string;
+  usage: { input_tokens: number; output_tokens: number };
+};
 
-/** Transcribes with GPT Transcribe via OpenRouter, retrying transient errors.
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
+
+/** The MIME type Gemini takes for a recording: codec parameters dropped, and
+ * Safari's MP4/AAC under the name Gemini lists it by. */
+function audioMimeType(type: string): string {
+  const base = type.split(";")[0].trim();
+  return base === "audio/mp4" || base === "audio/x-m4a" ? "audio/m4a" : base;
+}
+
+/** Transcribes with Gemini 3.5 Transcribe, retrying transient errors.
  * Browsers' native formats (WebM/Opus, MP4/AAC) are sent as recorded. */
 async function transcribe(file: File): Promise<Transcription> {
+  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
   for (let attempt = 0; ; attempt++) {
-    const body = new FormData();
-    body.append("model", MODEL_ID);
-    body.append("file", file);
-    let res: Response | null = null;
     try {
-      res = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
-        body,
+      const interaction = await ai.interactions.create({
+        model: MODEL_ID,
+        input: [
+          { type: "audio", data, mime_type: audioMimeType(file.type) },
+        ],
+        // Voice messages aren't kept on Google's side.
+        store: false,
       });
+      return {
+        text: interaction.output_text,
+        usage: {
+          input_tokens: interaction.usage?.total_input_tokens ?? 0,
+          output_tokens: interaction.usage?.total_output_tokens ?? 0,
+        },
+      };
     } catch (error) {
-      if (attempt >= MAX_RETRIES) throw error;
-    }
-    if (res?.ok) return res.json();
-    if (res && (!RETRYABLE_STATUS.has(res.status) || attempt >= MAX_RETRIES)) {
-      throw new Error(`HTTP ${res.status} ${await res.text().catch(() => "")}`);
+      const status = (error as { status?: number }).status;
+      const retryable = status === undefined || RETRYABLE_STATUS.has(status);
+      if (!retryable || attempt >= MAX_RETRIES) throw error;
     }
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
   }
@@ -68,15 +89,16 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // OpenRouter reports the cost; transcription has no token counts.
   const { error } = await supabase.from("llm_invocations").insert({
     user_id: userId,
     model_id: MODEL_ID,
-    total_cost: result.usage?.cost ?? 0,
-    raw_usage_metadata: result.usage ?? {},
-    uncached_input_tokens: 0,
+    total_cost:
+      result.usage.input_tokens * USD_PER_INPUT_TOKEN +
+      result.usage.output_tokens * USD_PER_OUTPUT_TOKEN,
+    raw_usage_metadata: result.usage,
+    uncached_input_tokens: result.usage.input_tokens,
     cached_input_tokens: 0,
-    output_tokens: 0,
+    output_tokens: result.usage.output_tokens,
   });
   if (error) console.error("Could not record the transcription cost", error);
 

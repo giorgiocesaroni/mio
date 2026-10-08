@@ -50,10 +50,6 @@ from src.pipeline.models import (
 
 CANDIDATES_PER_KIND = 4
 
-# Confidence gates (tune against QA data).
-ROUTE_MIN_CONFIDENCE = 0.5
-CONTEXT_MAX_NOUL = 0.5
-
 # A matched ingredient whose calories differ from the extraction's estimate
 # (same state) by both this factor and this many kcal per 100 g is likely a
 # different food, e.g. a sausage ragù matched to plain sausage.
@@ -151,6 +147,7 @@ ROUTE_INTENTS = {
     "edit_logs": "Correct, change, move, or remove foods that are already logged or drafted",
     "ask": "Get an answer or advice, e.g. about nutrition, their intake, or their progress, without logging anything",
     "other": "Anything else, such as setting goals, recording body weight, or managing recipes and ingredients",
+    "unclear": "The message could mean more than one of these",
 }
 
 # Longest assistant reply the router reads; its end is where a question is.
@@ -171,20 +168,16 @@ def route_state(
     }
 
 
-def route_decision(
-    intent: str | None, confidence: float, context_noul: float
-) -> tuple[str, str]:
+def route_decision(intent: str | None, depends_on_conversation: bool) -> tuple[str, str]:
     """Return (route, reason): "pipeline" for new food logs, "agent" otherwise.
 
     `intent` is None for a photo without text, which is a new meal unless it
     answers or corrects what came before.
     """
-    if context_noul >= CONTEXT_MAX_NOUL:
-        return "agent", f"Depends on the conversation (noul {context_noul:.2f})."
+    if depends_on_conversation:
+        return "agent", "Depends on the conversation."
     if intent is None:
         return "pipeline", "Photo of a new meal."
-    if confidence < ROUTE_MIN_CONFIDENCE:
-        return "agent", f"Intent unclear (confidence {confidence:.2f})."
     if intent != "log_food":
         return "agent", f"Intent is '{intent}', not a new log."
     return "pipeline", "New food log."

@@ -119,6 +119,17 @@ def _convert_input(message: models.MessageType) -> dict:
     return {"role": "user", "content": parts}
 
 
+def message_context(timezone: str, day: str | None) -> str:
+    """When a message was sent, and the day the user is looking at when it
+    isn't today: stored with the message and sent after it as a system
+    message, so the system prompt stays the same on every turn."""
+    now = datetime.datetime.now(tz=ZoneInfo(timezone))
+    context = f"Sent {now.strftime('%Y-%m-%d %H:%M')} (user's local time)."
+    if day and day != now.strftime("%Y-%m-%d"):
+        context += f" The user is looking at {day} in the app."
+    return context
+
+
 def _extract_title_from_parts(parts: list[models.UserMessagePart]) -> str | None:
     """Extract a title from message parts (first text part, truncated)."""
     for part in parts:
@@ -161,6 +172,9 @@ async def run_agent(
                 input.conversation_id, transcribed_title
             )
     user_input = _convert_input(preprocessed_message)
+    user_input["context"] = message_context(
+        repository.get_user_timezone(input.user_id), input.day
+    )
     repository.insert_conversation_message(
         input.conversation_id, user_input, input.user_id
     )
@@ -177,24 +191,12 @@ async def run_agent(
         yield step
     if drafted:
         return
-    timezone = repository.get_user_timezone(input.user_id)
-    today = datetime.datetime.now(tz=ZoneInfo(timezone)).strftime("%Y-%m-%d")
-    daily_macros = repository.get_daily_macros(today, input.user_id)
-    current_goal = repository.get_current_goal(input.user_id)
-    system_prompt = prompts.get_system_prompt(
-        daily_macros=daily_macros,
-        current_goal=current_goal.model_dump(mode="json") if current_goal else None,
-        timezone=timezone,
-        day=input.day,
-    )
-
     agent_input = models.AgentInput(
         conversation_id=input.conversation_id,
         user_id=input.user_id,
-        system_prompt=system_prompt,
+        system_prompt=prompts.get_system_prompt(),
         contents=contents,
         thinking=input.thinking,
-        models=input.models,
     )
     async for chunk in agent(agent_input):
         if isinstance(
@@ -280,7 +282,6 @@ async def _draft_directly(
             last_reply=last_reply,
             pending_draft=pending,
             via="pipeline",
-            models=input.models,
         )
     ):
         if step.type == "stage":
